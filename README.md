@@ -73,14 +73,3 @@ Passing both at once raises `ValueError`.
 | `"UpperConfidenceBound"` | `ucb_kappa` | `kappa` set at construction |
 | `"DiversityUCB"` | `kappa0`, `lambda_div` | Encourages diverse exploration |
 
-### Defect regression tests
-
-Every defect F1–F20 from the refactoring plan has at least one regression
-test.  Run the full suite with:
-
-```
-pytest -m "not slow"      # fast unit + property tests
-pytest -m slow            # integration tests
-pytest --cov=bayesian_optimization  # ≥ 85 % line coverage
-mypy bayesian_optimization/         # 0 errors
-```
