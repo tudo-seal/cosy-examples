@@ -7,7 +7,7 @@ name = "cosy-bayesian-optimization"
 version = "0.1.0"
 description = "Elaborate examples for the CoSy framework"
 readme = "README.md"
-requires-python = "==3.11"
+requires-python = ">=3.11"
 license = {text = "LICENSE"}
 authors = [
     {name = "CoSy Contributors"}
