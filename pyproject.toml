@@ -3,7 +3,7 @@ requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "cosy-bayesian-optimization"
+name = "cosy-examples"
 version = "0.1.0"
 description = "Elaborate examples for the CoSy framework"
 readme = "README.md"
@@ -65,7 +65,13 @@ Repository = "https://github.com/tudo-seal/cosy-examples.git"
 "Bug Tracker" = "https://github.com/tudo-seal/cosy-examples/issues"
 
 [tool.setuptools]
-packages = ["bayesian_optimization", "bayesian_optimization.kernels", "bayesian_optimization.examples"]
+packages = [
+    "bayesian_optimization",
+    "bayesian_optimization.kernels",
+    "bayesian_optimization.examples",
+    "bayesian_optimization.examples.damg_nas",
+    "bayesian_optimization.examples.simple_nas",
+]
 
 [tool.setuptools.package-data]
 bayesian_optimization = ["examples/simple_nas/data/*"]
