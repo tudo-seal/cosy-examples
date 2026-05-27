@@ -1,0 +1,93 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cosy-bayesian-optimization"
+version = "0.1.0"
+description = "Elaborate examples for the CoSy framework"
+readme = "README.md"
+requires-python = "3.11"
+license = {text = "LICENSE"}
+authors = [
+    {name = "CoSy Contributors"}
+]
+keywords = [
+    "bayesian-optimization",
+    "gaussian-process",
+    "evolutionary-algorithm",
+    "grammar-based-search",
+    "cosy"
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+]
+
+dependencies = [
+    "networkx==3.5",
+    "numpy==1.26.4",
+    "scikit-learn==1.6.1",
+    "scipy==1.12.0",
+    "combinatory-synthesizer @ git+https://github.com/tudo-seal/cosy.git",
+    "grakel==0.1.10",
+    "torch",
+    "pandas",
+    "matplotlib",
+    "tqdm",
+]
+
+[project.optional-dependencies]
+dev = [
+    "mypy==1.15.0",
+    "mypy_extensions==1.1.0",
+    "typing_extensions==4.13.2",
+    "pydot",
+    "pytest",
+    "hypothesis>=6.100",
+    "pytest-cov>=4.1",
+]
+test = [
+    "pytest",
+    "pytest-cov>=4.1",
+    "hypothesis>=6.100",
+]
+
+[project.urls]
+Homepage = "https://github.com/tudo-seal/cosy-examples"
+Repository = "https://github.com/tudo-seal/cosy-examples.git"
+"Bug Tracker" = "https://github.com/tudo-seal/cosy-examples/issues"
+
+[tool.setuptools]
+packages = ["bayesian_optimization", "bayesian_optimization.kernels", "bayesian_optimization.examples"]
+
+[tool.setuptools.package-data]
+bayesian_optimization = ["examples/simple_nas/data/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+ignore_missing_imports = true
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+
+[tool.isort]
+profile = "black"
+line_length = 100
+
