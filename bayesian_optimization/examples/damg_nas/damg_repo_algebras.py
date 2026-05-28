@@ -589,6 +589,53 @@ def pytorch_function_algebra():
                                                                                                              y_test)),
     }
 
+def pytorch_model_algebra():
+    # Use nn.ModuleDict to store layers with unique names (that's why we abstract over an id) and implement
+    # it as the pytorch algebra nn.ModuleDict then becomes the __init__ part and
+    # the forward function is constructed accordingly
+    return {
+        "edges": (
+            lambda io, para1, para2, para3, para4, para5, para6, para7, para8, para9, para10, para11, para12, para13,
+                   para14, para15, para16: EdgesModule()),
+
+        "swap": (lambda io, n, m, para1, para2, para3, para4, para5, para6, para7, para8, para9, para10, para11, para12,
+                        para13, para14, para15, para16: SwapModule(n, m)),
+
+        "linear_layer": (
+            lambda l, i, o, para1, para2, para3, para4, para5, para6, para7: SynthLinear(o, l.in_features,
+                                                                                              l.out_features, l.bias)),
+
+        "sigmoid": (lambda l, i, o, para1, para2, para3, para4, para5, para6, para7: SynthSigmoid(o)),
+
+        "relu": (lambda l, i, o, para1, para2, para3, para4, para5, para6, para7: SynthReLU(o, l.inplace)),
+
+        "tanh": (lambda l, i, o, para1, para2, para3, para4, para5, para6, para7: SynthTanh(o)),
+
+        "sum": (lambda l, i, o, para1, para2, para3, para4, para5, para6, para7: SumModule(o, l.with_constant)),
+
+        "product": (
+            lambda l, i, o, para1, para2, para3, para4, para5, para6, para7: ProductModule(o, l.with_constant)),
+
+        "copy": (lambda l, i, o, para1, para2, para3, para4, para5, para6, para7: CopyModule(o)),
+
+        "beside_singleton": (lambda i, o, ls, para, x: BesideModule(x, None, i)),
+
+        "beside_cons": (lambda i, i1, i2, o, o1, o2, ls, head, tail, x, y: BesideModule(x, y, i1)),
+
+        "before_singleton": (lambda i, o, r, ls, ls1, x: BeforeModule(x, None)),
+
+        "before_cons": (lambda i, j, o, r, ls, head, tail, x, y: BeforeModule(x, y)),
+
+        "mse_loss": (lambda l: nn.MSELoss(reduction=l.reduction)),
+
+        "l1loss": (lambda l: nn.L1Loss(reduction=l.reduction)),
+
+        "adam_optimizer": (lambda o: lambda m: optim.Adam(m.parameters(), lr=o.learning_rate)),
+
+        "learner": (
+            lambda i, o, r, ls, e, l, opt, loss, optimizer, model: lambda x, y, x_test, y_test: model),
+    }
+
 def hierarchy_algebra(level: int):
     # Currently only level 0, 1, 2 and 3 exists. So if the level isn't 1, 2 or 3, level 0 is assumed.
     if level == 1:
