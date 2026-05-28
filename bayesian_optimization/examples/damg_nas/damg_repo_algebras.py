@@ -633,7 +633,7 @@ def pytorch_model_algebra():
         "adam_optimizer": (lambda o: lambda m: optim.Adam(m.parameters(), lr=o.learning_rate)),
 
         "learner": (
-            lambda i, o, r, ls, e, l, opt, loss, optimizer, model: lambda x, y, x_test, y_test: model),
+            lambda i, o, r, ls, e, l, opt, loss, optimizer, model: model),
     }
 
 def hierarchy_algebra(level: int):
