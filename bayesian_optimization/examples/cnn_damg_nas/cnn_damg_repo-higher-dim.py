@@ -158,7 +158,10 @@ class CNNrepository:
                                                                             max(linear_feature_dimensions)))
                            else dimensions)
         self.channel_dimensions: list[int] = channel_dimensions
-        self.higher_dimensions: list[tuple[int, int]] = height_width_dimensions
+        self.hw_dimensions: list[tuple[int, int]] = height_width_dimensions
+        self.higher_dimensions: list[tuple[int, int, int]] = [(c, h, w)
+                                                              for c in self.channel_dimensions
+                                                              for h, w in self.hw_dimensions]
         self.kernel_dimensions: list[tuple[int, int]] = kernel_dimensions
         self.stride_values: list[int] = stride_values
         self.padding_values: list[int] = padding_values
@@ -446,25 +449,62 @@ class CNNrepository:
     class Para(Group):
         name = "Para"
 
-        def __init__(self, labels, dimensions):
+        def __init__(self, labels, dimensions, higher_dimensions):
             self.labels = tuple(labels) + (None,)
             self.label_set = set(self.labels)
             self.dimensions = tuple(dimensions) + (None,)
             self.dimension_set = set(self.dimensions)
+            self.higher_dimensions = tuple(higher_dimensions) + (None,)
+            self.higher_dimension_set = set(self.higher_dimensions)
 
         def __iter__(self):
             for l in self.labels:
-                if l is not None:
+                if (l is not None
+                        and l is not isinstance(l, CNNrepository.Conv2d)
+                        and l is not isinstance(l, CNNrepository.MaxPool2d)
+                        and l is not isinstance(l, CNNrepository.Flatten)
+                        and l is not isinstance(l, CNNrepository.Unflatten)):
                     for i in self.dimensions:
                         if i is not None:
                             for o in self.dimensions:
                                 if o is not None:
                                     yield l, i, o
                                     if i == o:
-                                        for n in range (0, i):
+                                        for n in range(0, i):
                                             m = i - n
                                             assert m > 0
                                             yield ("swap", n, m), i, o
+            for l in self.labels:
+                if (l is not None
+                        and l is isinstance(l, CNNrepository.Conv2d)
+                        and l is isinstance(l, CNNrepository.MaxPool2d)):
+                    for i in self.higher_dimensions:
+                        if i is not None:
+                            for o in self.higher_dimensions:
+                                if o is not None:
+                                    yield l, i, o
+                                    if i == o:
+                                        for n in range(0, i):
+                                            m = i - n
+                                            assert m > 0
+                                            yield ("swap", n, m), i, o
+                                            # TODO: wie funktioniert swap auf CNNs?
+            for l in self.labels:
+                if (l is not None
+                        and l is isinstance(l, CNNrepository.Flatten)):
+                    for i in self.higher_dimensions:
+                        if i is not None:
+                            for o in self.dimensions:
+                                if o is not None:
+                                    yield l, i, o
+            for l in self.labels:
+                if (l is not None
+                        and l is not isinstance(l, CNNrepository.Unflatten)):
+                    for i in self.dimensions:
+                        if i is not None:
+                            for o in self.higher_dimensions:
+                                if o is not None:
+                                    yield l, i, o
             yield None
 
         def __contains__(self, value):
@@ -512,6 +552,7 @@ class CNNrepository:
 
         # As ParaTuples defines all possible parallel compositions of components as literals, we can ensure normalforms
         # on the literal-level by normalizing them.
+        # TODO: wie funktioniert swap auf CNNs?
         def normalform(self, value) -> bool:
             """
             beside(swap(n, 0, n), swap(m, 0, m))
@@ -571,6 +612,7 @@ class CNNrepository:
             return value is None or (isinstance(value, tuple) and all(True if v is None else v in self.para_tuples for v in value))
 
         # As for ParaTuples we ensure normalforms on the literal-level for ParaTupleTulpes as well by normalizing them.
+        # TODO: wie funktioniert swap auf CNNs?
         def normalform(self, value) -> bool:
             """
             The associativity laws are handled by the way we use python tuples.
@@ -1120,7 +1162,7 @@ class CNNrepository:
     def specification(self):
         labels = self.Label(self.dimensions, self.linear_feature_dimensions, self.constant_values,
                             self.channel_dimensions, self.kernel_dimensions, self.stride_values,
-                            self.padding_values, self.higher_dimensions)
+                            self.padding_values, self.hw_dimensions)
         para_labels = self.Para(labels, self.dimensions)
         #print("linear" in para_labels)
         paratuples = self.ParaTuples(para_labels, max_length=max(self.dimensions))
@@ -1129,10 +1171,10 @@ class CNNrepository:
         dimension_with_None = DataGroup("dimension_with_None", list(self.dimensions) + [None])
         feature_dimension = DataGroup("feature_dimension", self.linear_feature_dimensions)
         higher_dimension = DataGroup("higher_dimension",
-                                     [(c, h, w) for c in self.channel_dimensions for h, w in self.higher_dimensions])
+                                     [(c, h, w) for c in self.channel_dimensions for h, w in self.hw_dimensions])
         higher_dimension_with_None = DataGroup("higher_dimension_with_None",
                                                [(c, h, w) for c in self.channel_dimensions
-                                                for h, w in self.higher_dimensions] + [None])
+                                                for h, w in self.hw_dimensions] + [None])
         channel_dimension = DataGroup("channel_dimension", self.channel_dimensions)
         loss_function = self.LossFunction()
         optimizer = self.Optimizer(self.learning_rate_values)
@@ -1552,6 +1594,8 @@ class CNNrepository:
             "beside_singleton": SpecificationBuilder()
             .parameter("i", dimension)
             .parameter("o", dimension)
+            .parameter("h_i", higher_dimension)
+            .parameter("h_o", higher_dimension)
             .parameter("ls", paratuples)
             .parameter_constraint(lambda v: v["ls"] is None or len(v["ls"]) == 1)
             .parameter("para", para_labels, lambda v: [None] if v["ls"] is None else [v["ls"][0]])
