@@ -211,8 +211,15 @@ tempCodeRunnerFile.py
 
 # Marimo
 marimo/_static/
+
+# torchvision dataset downloads (USPS/FashionMNIST/MNIST/CIFAR-10 caches used by cnn_damg_nas)
+/data/
 marimo/_lsp/
 __marimo__/
+
+# Claude Code
+.claude/
+CLAUDE.local.md
 
 # Streamlit
 .streamlit/secrets.toml

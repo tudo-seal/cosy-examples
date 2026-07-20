@@ -38,6 +38,7 @@ dependencies = [
     "combinatory-synthesizer @ git+https://github.com/tudo-seal/cosy.git",
     "grakel==0.1.10",
     "torch",
+    "torchvision",
     "pandas",
     "matplotlib",
     "tqdm",
