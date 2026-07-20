@@ -30,6 +30,12 @@ from bayesian_optimization.examples.cnn_damg_nas.cnn_damg_repo_algebras import (
     pytorch_model_algebra,
     learner as raw_learner,
 )
+from bayesian_optimization.examples.cnn_damg_nas.cnn_damg_reference_architectures import (
+    usps_lecun1989_repo,
+    usps_lecun1989_structure,
+    cifar10_tutorial_repo,
+    cifar10_tutorial_structure,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -62,10 +68,13 @@ def _concrete_target(repo: CNNrepository, n_in: int, n_out: int, structure: tupl
                         & Constructor("epochs", Literal(epochs)))
 
 
-def _synthesize_one(repo: CNNrepository, target):
-    """Enumerate a concrete (wildcard-free) target - this must resolve near-instantly since there
-    is (almost) nothing left to search for; a slow/exhaustive search here would indicate the
-    structure literal was not actually concrete."""
+def _synthesize_one(repo: CNNrepository, target, max_seconds: float = 5.0):
+    """Enumerate a concrete (wildcard-free) target - this must resolve quickly since there is
+    (almost) nothing left to search for; a slow/exhaustive search here would indicate the structure
+    literal was not actually concrete. `max_seconds` defaults to a tight bound for the small
+    DNN-style test repos; larger repos (more channel/kernel/feature combinations, e.g. the CIFAR-10
+    tutorial net) need a looser bound - cosy's construct_solution_space cost grows worse than
+    linearly with the label count even though the target itself is fully concrete."""
     spec = repo.specification()
     synthesizer = Synthesizer(spec, {})
     t0 = time.time()
@@ -73,7 +82,7 @@ def _synthesize_one(repo: CNNrepository, target):
     trees = list(search_space.enumerate_trees(target, max_count=5))
     dt = time.time() - t0
     assert trees, f"expected the concrete target to be directly synthesizable, found none: {target}"
-    assert dt < 5.0, f"synthesizing a fully concrete target took {dt:.2f}s - structure literal is not actually concrete"
+    assert dt < max_seconds, f"synthesizing a fully concrete target took {dt:.2f}s - structure literal is not actually concrete"
     return trees[0]
 
 
@@ -242,48 +251,14 @@ def test_learner_cross_entropy_and_adam_train_end_to_end():
 #    published number is a real correctness signal, not just "did it run".
 # ---------------------------------------------------------------------------
 
-def _lecun1989_repo() -> CNNrepository:
-    return CNNrepository(
-        linear_feature_dimensions=[256, 768, 192, 30, 10],
-        constant_values=[0, 1, -1],
-        learning_rate_values=[1e-3],
-        n_epoch_values=[300],
-        channel_dimensions=[1, 12],
-        height_width_dimensions=[(16, 16), (8, 8)],
-        kernel_dimensions=[(5, 5)],
-        stride_values=[2],
-        padding_values=[2],
-        max_parallel_width=2,
-    )
-
-
-def _lecun1989_structure():
-    conv1 = CNNrepository.Conv2d(in_channels=1, out_channels=12, input_size=(16, 16), output_size=(8, 8),
-                                  kernel_size=(5, 5), stride=2, padding=2, bias=True)
-    conv2 = CNNrepository.Conv2d(in_channels=12, out_channels=12, input_size=(8, 8), output_size=(4, 4),
-                                  kernel_size=(5, 5), stride=2, padding=2, bias=True)
-    linear1 = CNNrepository.Linear(in_features=192, out_features=30, bias=True)
-    linear2 = CNNrepository.Linear(in_features=30, out_features=10, bias=True)
-    tanh = CNNrepository.Tanh()
-    return (
-        ((conv1, 256, 768),),
-        ((tanh, 768, 768),),
-        ((conv2, 768, 192),),
-        ((tanh, 192, 192),),
-        ((linear1, 192, 30),),
-        ((tanh, 30, 30),),
-        ((linear2, 30, 10),),
-    )
-
-
 @pytest.mark.slow
 @pytest.mark.integration
 def test_lecun1989_reference_architecture_matches_published_accuracy_on_usps():
     torchvision = pytest.importorskip("torchvision")
     from torchvision import transforms
 
-    repo = _lecun1989_repo()
-    target = _concrete_target(repo, 256, 10, _lecun1989_structure(), epochs=300)
+    repo = usps_lecun1989_repo()
+    target = _concrete_target(repo, 256, 10, usps_lecun1989_structure(), epochs=300)
     tree = _synthesize_one(repo, target)
     pretty = tree.interpret(pretty_term_algebra())
     assert pretty.count("Conv2d(") == 2
@@ -322,3 +297,77 @@ def test_lecun1989_reference_architecture_matches_published_accuracy_on_usps():
         f"expected the LeCun-1989-echo architecture to reach roughly the published ~95% USPS test "
         f"accuracy, got {accuracy * 100:.2f}%"
     )
+
+
+# ---------------------------------------------------------------------------
+# 6. CIFAR-10 stage: the official PyTorch CIFAR-10 tutorial network, chosen over e.g. Caffe's
+#    cifar10_quick because its pooling already satisfies our stride == kernel_size restriction on
+#    MaxPool2d (see the "Future Extensions" note in the CNN refactoring plan). This is a *local*
+#    smoke test before moving the same setup to the A30 server - it only checks that synthesis,
+#    interpretation and a short training run work correctly, not full convergence/accuracy (that
+#    full-scale check is deferred to the actual A30 experiment where more epochs are affordable).
+# ---------------------------------------------------------------------------
+
+@pytest.mark.slow
+def test_cifar10_tutorial_architecture_synthesizes_and_interprets():
+    # This repo config has ~4x more labels than the USPS-scale tests above (8 linear feature sizes,
+    # 3 channel counts, 4 spatial sizes, 2 kernel sizes - all needed for the exact architecture, none
+    # removable), and cosy's construct_solution_space cost grows worse than linearly with label
+    # count even for a fully concrete target - construction alone measured ~150s locally.
+    repo = cifar10_tutorial_repo()
+    target = _concrete_target(repo, 3072, 10, cifar10_tutorial_structure(), epochs=20)
+    tree = _synthesize_one(repo, target, max_seconds=240.0)
+
+    pretty = tree.interpret(pretty_term_algebra())
+    assert pretty.count("Conv2d(") == 2
+    assert pretty.count("MaxPool2d(") == 2
+    assert pretty.count("Linear(") == 3
+
+    model = tree.interpret(pytorch_model_algebra())
+    n_params = sum(p.numel() for p in model.parameters())
+    # sanity check against the well-known parameter count of this exact tutorial network
+    assert 60_000 <= n_params <= 65_000
+
+    x = torch.randn(5, 3072)
+    y = model(x)
+    assert y.shape == (5, 10)
+
+
+@pytest.mark.slow
+@pytest.mark.integration
+def test_cifar10_tutorial_architecture_trains_locally_as_cpu_baseline():
+    """Local CPU smoke test/timing baseline, to compare against the same run on the A30 server -
+    not a convergence/accuracy check (few epochs on CPU won't reach the ~60-65% this network
+    typically needs many more epochs for)."""
+    torchvision = pytest.importorskip("torchvision")
+    from torchvision import transforms
+
+    repo = cifar10_tutorial_repo()
+    target = _concrete_target(repo, 3072, 10, cifar10_tutorial_structure(), epochs=20)
+    tree = _synthesize_one(repo, target, max_seconds=240.0)
+    model = tree.interpret(pytorch_model_algebra())
+
+    transform = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2470, 0.2435, 0.2616)),
+    ])
+    train_set = torchvision.datasets.CIFAR10(root="./data", train=True, download=True, transform=transform)
+    test_set = torchvision.datasets.CIFAR10(root="./data", train=False, download=True, transform=transform)
+
+    def to_tensors(dataset):
+        loader = torch.utils.data.DataLoader(dataset, batch_size=len(dataset), shuffle=False, num_workers=0)
+        images, labels = next(iter(loader))
+        return images.reshape(images.shape[0], -1), labels.long()
+
+    x, y = to_tensors(train_set)
+    x_test, y_test = to_tensors(test_set)
+
+    loss_fn = nn.CrossEntropyLoss(reduction="mean")
+    t0 = time.time()
+    test_loss = raw_learner(3072, model, loss_fn, lambda m: optim.Adam(m.parameters(), lr=1e-3),
+                             20, x, y, x_test, y_test, batch_size=128)
+    dt = time.time() - t0
+    print(f"\nCIFAR-10 tutorial net, CPU, 20 epochs, n_train={x.shape[0]}: {dt:.1f}s, "
+          f"test loss={test_loss:.4f}")
+
+    assert torch.isfinite(torch.tensor(test_loss))

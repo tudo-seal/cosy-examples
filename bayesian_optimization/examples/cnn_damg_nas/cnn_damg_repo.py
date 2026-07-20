@@ -309,6 +309,15 @@ class CNNrepository:
         def iter_maxpool2d(self):
             # Restricted to the usual case stride = kernel_size, padding = 0 (PyTorch's own default),
             # and out_channels = in_channels (pooling never changes the channel count).
+            #
+            # FUTURE EXTENSION (not needed yet, deliberately deferred): some well-known reference
+            # CNNs use pooling with stride != kernel_size and/or average pooling instead of max
+            # (e.g. Caffe's cifar10_quick: 3x3 pooling with stride 2, and average pooling for its
+            # second/third pooling layer). Reproducing such an architecture exactly would need (a)
+            # free stride/padding parameters here analogous to conv2d's, and (b) a separate
+            # AvgPool2d combinator/dataclass mirroring this one with nn.AvgPool2d. Left out for now
+            # since every CNN target we currently care about (see cnn_damg_targets.py) only needs
+            # stride == kernel_size max pooling.
             for in_c in self.channel_dimensions:
                 for (in_h, in_w) in self.height_width_dimensions:
                     for (kh, kw) in self.kernel_dimensions:
