@@ -1,15 +1,23 @@
-"""First real NAS search experiment (not a single pinned reference architecture): a genuine
-Bayesian-optimization search over a CNN search space on USPS.
+"""CIFAR-10 NAS search experiment: a genuine Bayesian-optimization search over a CNN search space.
 
-Deliberately scoped as a *small validation run* - the goal is to confirm the full pipeline
-(synthesis, training, GP kernel, evolutionary acquisition optimization) works correctly end to end
-on real hardware (CPU here, the A30 GPU server next), not to find the best possible architecture.
-Sized so it's practical to run to completion both locally (CPU) and on the A30, for a direct
-wall-clock comparison.
+The CIFAR-10 counterpart of `cnn_damg_usps_experiment.py` (same ask/tell + CSV-logging structure),
+and the actual target experiment of the staged strategy - meant to run on the A30 GPU server.
+
+Two things differ from the USPS script, both because CIFAR-10 training is far more expensive
+(50k 3x32x32 images vs. 7.3k 1x16x16 ones):
+  * `--epochs` is a CLI argument rather than a hard-coded constant, so a cheap smoke test can run a
+    couple of epochs per candidate while the real run uses the full budget. The target is built to
+    match (see `make_cifar_experiment_target`) - repository `n_epoch_values` and target epochs must
+    always agree or nothing synthesizes.
+  * `BATCH_SIZE` defaults to 128 (CIFAR-10 convention) instead of 64.
 
 Usage:
-    python -m bayesian_optimization.examples.cnn_damg_nas.cnn_damg_usps_experiment
-    python -m bayesian_optimization.examples.cnn_damg_nas.cnn_damg_usps_experiment --n-pre-samples 2 --n-iterations 2
+    # cheap local smoke test (pipeline check + CPU timing reference)
+    python -m bayesian_optimization.examples.cnn_damg_nas.cnn_damg_cifar_experiment \
+        --epochs 2 --n-pre-samples 2 --n-iterations 1 --population-size 5 --evo-generations 3
+
+    # real run (A30)
+    python -m bayesian_optimization.examples.cnn_damg_nas.cnn_damg_cifar_experiment
 """
 
 import argparse
@@ -35,63 +43,88 @@ from bayesian_optimization import BayesianOptimization
 from bayesian_optimization.examples.cnn_damg_nas.cnn_damg_repo import CNNrepository
 from bayesian_optimization.examples.cnn_damg_nas.cnn_damg_repo_algebras import pretty_term_algebra
 from bayesian_optimization.examples.cnn_damg_nas.cnn_damg_kernels import noisy_hierarchical_damg_kernel
-from bayesian_optimization.examples.cnn_damg_nas.cnn_damg_targets import usps_experiment_target
+from bayesian_optimization.examples.cnn_damg_nas.cnn_damg_targets import make_cifar_experiment_target
 from bayesian_optimization.examples.cnn_damg_nas.cnn_damg_experiment_utils import (
     ExperimentCSVLogger,
     evaluate_candidate,
     write_run_metadata,
 )
 
-# Search space: richer than the single-architecture reference tests (more channel/kernel/spatial/
-# feature choices), but still validated locally for construct_solution_space tractability
-# (~70s one-time setup cost on CPU - see cnn_damg_nas tests/development notes).
-LINEAR_FEATURE_DIMENSIONS = [256, 768, 400, 192, 64, 30, 16, 10]
-CHANNEL_DIMENSIONS = [1, 4, 8, 12]
-HEIGHT_WIDTH_DIMENSIONS = [(16, 16), (8, 8), (4, 4)]
-KERNEL_DIMENSIONS = [(3, 3), (5, 5)]
+# Search space. Bootstrapped from the PyTorch-tutorial reference config in
+# cnn_damg_reference_architectures.cifar10_tutorial_repo() (which is deliberately narrow - just wide
+# enough for that one architecture) and widened into a genuine search space, the same way
+# cnn_damg_usps_experiment.py widened usps_lecun1989_repo().
+#
+# Feature dimensions and channel/spatial choices have to be co-designed: a conv2d label is only
+# generated when BOTH its flattened input (in_c*h*w) and output (out_c*h'*w') land in
+# LINEAR_FEATURE_DIMENSIONS (see CNNrepository.Label.iter_conv2d). The values below are exactly the
+# flattened sizes reachable from 3x32x32 through the listed channel/spatial combinations:
+#   3*32*32=3072 (input)  6*28*28=4704  6*14*14=1176  16*10*10=1600  16*5*5=400
+#   3*16*16=768           6*16*16=1536  16*8*8=1024   16*16*16=4096
+# plus the small fully-connected sizes 120/84/10 the classifier head needs.
+LINEAR_FEATURE_DIMENSIONS = [3072, 4704, 4096, 1600, 1536, 1176, 1024, 768, 400, 120, 84, 10]
+CHANNEL_DIMENSIONS = [3, 6, 16]
+HEIGHT_WIDTH_DIMENSIONS = [(32, 32), (28, 28), (16, 16), (14, 14), (10, 10), (8, 8), (5, 5)]
+KERNEL_DIMENSIONS = [(5, 5), (3, 3), (2, 2)]
 STRIDE_VALUES = [1, 2]
-PADDING_VALUES = [0, 1, 2]
+PADDING_VALUES = [0, 1]
 MAX_PARALLEL_WIDTH = 2
 
 CONSTANT_VALUES = [0, 1, -1]
 LEARNING_RATE_VALUES = [1e-3]
-N_EPOCH_VALUES = [50]  # must match usps_experiment_target's epochs
-BATCH_SIZE = 64
+BATCH_SIZE = 128
 MAX_DEPTH = 1000
+
+DEFAULT_EPOCHS = 50
+DEFAULT_STRUCTURE_LENGTH = 5  # matches the agreed full-variance target (None,)*5
 
 DATA_DIR = "./data"
 
+# CIFAR-10 per-channel normalization statistics (standard values, same as used by the reference
+# architecture tests in tests/integration/test_cnn_damg_nas.py).
+CIFAR10_MEAN = (0.4914, 0.4822, 0.4465)
+CIFAR10_STD = (0.2470, 0.2435, 0.2616)
 
-def load_usps(data_dir: str = DATA_DIR):
-    transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5,), (0.5,))])
-    train_set = torchvision.datasets.USPS(root=data_dir, train=True, download=True, transform=transform)
-    test_set = torchvision.datasets.USPS(root=data_dir, train=False, download=True, transform=transform)
+
+def load_cifar10(data_dir: str = DATA_DIR):
+    transform = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize(CIFAR10_MEAN, CIFAR10_STD),
+    ])
+    train_set = torchvision.datasets.CIFAR10(root=data_dir, train=True, download=True, transform=transform)
+    test_set = torchvision.datasets.CIFAR10(root=data_dir, train=False, download=True, transform=transform)
     return train_set, test_set
 
 
 def dataset_to_tensors(dataset, device):
+    # Flat-feature-vector convention: (N, C*H*W), labels as class indices for cross_entropy_loss.
+    # The whole split is materialized as one tensor (~614 MB for CIFAR-10 train in float32), which
+    # keeps every candidate evaluation free of dataloader overhead - the same trade-off the USPS
+    # script makes, and comfortably within the A30's 24 GB.
     loader = torch.utils.data.DataLoader(dataset, batch_size=len(dataset), shuffle=False, num_workers=0)
     images, labels = next(iter(loader))
     return images.reshape(images.shape[0], -1).to(device), labels.to(device).long()
 
 
 def run_experiment(n_pre_samples: int, n_iterations: int, population_size: int, evo_generations: int,
-                    csv_path: str, data_dir: str = DATA_DIR, verbose: bool = True):
+                    csv_path: str, epochs: int = DEFAULT_EPOCHS,
+                    structure_length: int = DEFAULT_STRUCTURE_LENGTH,
+                    data_dir: str = DATA_DIR, verbose: bool = True):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
     if device.type == "cuda":
         print(f"  GPU: {torch.cuda.get_device_name(0)}")
 
-    train_set, test_set = load_usps(data_dir)
+    train_set, test_set = load_cifar10(data_dir)
     x, y = dataset_to_tensors(train_set, device)
     x_test, y_test = dataset_to_tensors(test_set, device)
-    print(f"Loaded USPS: train={tuple(x.shape)}, test={tuple(x_test.shape)}")
+    print(f"Loaded CIFAR-10: train={tuple(x.shape)}, test={tuple(x_test.shape)}")
 
     repo = CNNrepository(
         linear_feature_dimensions=LINEAR_FEATURE_DIMENSIONS,
         constant_values=CONSTANT_VALUES,
         learning_rate_values=LEARNING_RATE_VALUES,
-        n_epoch_values=N_EPOCH_VALUES,
+        n_epoch_values=[epochs],  # must match the target's epochs literal
         channel_dimensions=CHANNEL_DIMENSIONS,
         height_width_dimensions=HEIGHT_WIDTH_DIMENSIONS,
         kernel_dimensions=KERNEL_DIMENSIONS,
@@ -99,7 +132,7 @@ def run_experiment(n_pre_samples: int, n_iterations: int, population_size: int, 
         padding_values=PADDING_VALUES,
         max_parallel_width=MAX_PARALLEL_WIDTH,
     )
-    target = usps_experiment_target
+    target = make_cifar_experiment_target(epochs=epochs, length=structure_length)
 
     # Every candidate's full metric set, keyed by its term. The BO's initialize() evaluates the
     # pre-samples internally and only hands back objective values, so metrics measured during those
@@ -120,11 +153,11 @@ def run_experiment(n_pre_samples: int, n_iterations: int, population_size: int, 
     print(f"Search space construction took {construction_time:.2f}s")
 
     metadata = {
-        "dataset": "usps",
+        "dataset": "cifar10",
         "device": str(device),
         "target": str(target),
-        "structure_length": 5,  # usps_experiment_target is (None,)*5
-        "epochs_per_candidate": N_EPOCH_VALUES[0],
+        "structure_length": structure_length,
+        "epochs_per_candidate": epochs,
         "batch_size": BATCH_SIZE,
         "max_depth": MAX_DEPTH,
         "train_samples": int(x.shape[0]),
@@ -185,7 +218,7 @@ def run_experiment(n_pre_samples: int, n_iterations: int, population_size: int, 
                                      max_depth=MAX_DEPTH)
 
     print(f"Starting Bayesian Optimization: n_pre_samples={n_pre_samples}, n_iterations={n_iterations}, "
-          f"population_size={population_size}, evo_generations={evo_generations}")
+          f"population_size={population_size}, evo_generations={evo_generations}, epochs={epochs}")
     print(f"Logging every evaluated structure to {csv_path}")
 
     t0 = time.time()
@@ -205,7 +238,7 @@ def run_experiment(n_pre_samples: int, n_iterations: int, population_size: int, 
 
         for _ in range(n_iterations):
             suggestion = optimizer.suggest(ei_xi=0.01, verbose=verbose)
-            # NOTE: must not be named `y` - f_obj closes over the outer `y` (USPS label tensor),
+            # NOTE: must not be named `y` - f_obj closes over the outer `y` (CIFAR-10 label tensor),
             # and reassigning that name here would clobber it for every subsequent f_obj() call.
             objective_value = f_obj(suggestion.candidate)
             optimizer.observe(suggestion.candidate, objective_value)
@@ -247,15 +280,20 @@ if __name__ == "__main__":
     parser.add_argument("--n-iterations", type=int, default=20)
     parser.add_argument("--population-size", type=int, default=100)
     parser.add_argument("--evo-generations", type=int, default=100)
+    parser.add_argument("--epochs", type=int, default=DEFAULT_EPOCHS,
+                        help="Training epochs per candidate; the target is built to match.")
+    parser.add_argument("--structure-length", type=int, default=DEFAULT_STRUCTURE_LENGTH,
+                        help="Number of sequential components in the searched structure.")
     parser.add_argument("--data-dir", type=str, default=DATA_DIR)
     parser.add_argument("--csv-path", type=str, default=None,
-                        help="Defaults to results/usps_experiment_<unix timestamp>.csv")
+                        help="Defaults to results/cifar_experiment_<unix timestamp>.csv")
     args = parser.parse_args()
 
     csv_path = args.csv_path
     if csv_path is None:
         os.makedirs("results", exist_ok=True)
-        csv_path = f"results/usps_experiment_{int(time.time())}.csv"
+        csv_path = f"results/cifar_experiment_{int(time.time())}.csv"
 
     run_experiment(args.n_pre_samples, args.n_iterations, args.population_size, args.evo_generations,
-                   csv_path, data_dir=args.data_dir)
+                   csv_path, epochs=args.epochs, structure_length=args.structure_length,
+                   data_dir=args.data_dir)

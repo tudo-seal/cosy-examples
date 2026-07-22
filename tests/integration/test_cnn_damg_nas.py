@@ -129,6 +129,69 @@ def test_simple_combinator_interprets(case):
 
 
 # ---------------------------------------------------------------------------
+# 1b. Partially concrete structure literals.
+#
+# Every leaf combinator declares seven structure variants para1..para7 - (l,i,o), (l,i,None),
+# (l,None,o), (None,i,o), (l,None,None), (None,None,o), (None,i,None) - so a target may pin only
+# part of a component and leave the rest open. That only works because ParaTuples.__contains__
+# delegates membership to the Para *group*: Para.__iter__ never yields a triple containing None, so
+# testing against the materialized enumeration instead (as the legacy damg_repo.py does) silently
+# rejects all six partial forms, producing 0 terms with no diagnostic. These tests pin that down.
+# ---------------------------------------------------------------------------
+
+_LIN_16_8 = CNNrepository.Linear(in_features=16, out_features=8, bias=True)
+
+# (id, triple) - all must synthesize for the target input=16, output=8
+_PARTIAL_TRIPLE_CASES = [
+    ("para1_l_i_o", (_LIN_16_8, 16, 8)),
+    ("para2_l_i_None", (_LIN_16_8, 16, None)),
+    ("para3_l_None_o", (_LIN_16_8, None, 8)),
+    ("para4_None_i_o", (None, 16, 8)),
+    ("para5_l_None_None", (_LIN_16_8, None, None)),
+    ("para6_None_None_o", (None, None, 8)),
+    ("para7_None_i_None", (None, 16, None)),
+]
+
+
+@pytest.mark.parametrize("case", _PARTIAL_TRIPLE_CASES, ids=lambda c: c[0])
+def test_partially_concrete_triples_synthesize(case):
+    _, triple = case
+    repo = _small_repo()
+    target = _concrete_target(repo, 16, 8, ((triple,),))
+    tree = _synthesize_one(repo, target)
+
+    model = tree.interpret(pytorch_model_algebra())
+    y = model(torch.randn(3, 16))
+    assert y.shape == (3, 8)
+
+
+def test_partial_triple_still_enforces_pinned_dimensions():
+    """The relaxation must not make the dimension constraints toothless: a partial triple whose
+    pinned dimensions contradict the target's input/output must still yield nothing."""
+    repo = _small_repo()
+    spec = repo.specification()
+    # target says 16 -> 8, but the triple demands an output of 16
+    target = _concrete_target(repo, 16, 8, (((None, 16, 16),),))
+    search_space = Synthesizer(spec, {}).construct_solution_space(target).prune()
+    assert list(search_space.enumerate_trees(target, max_count=1)) == []
+
+
+def test_all_none_triple_is_not_expressible():
+    """`(None, None, None)` is deliberately NOT one of the seven declared variants - a fully
+    unconstrained component is expressed as the element `None` itself, not as an all-None triple."""
+    repo = _small_repo()
+    spec = repo.specification()
+    target = _concrete_target(repo, 16, 8, (((None, None, None),),))
+    search_space = Synthesizer(spec, {}).construct_solution_space(target).prune()
+    assert list(search_space.enumerate_trees(target, max_count=1)) == []
+
+    # ... whereas the element-level wildcard does synthesize
+    wildcard_target = _concrete_target(repo, 16, 8, ((None,),))
+    wildcard_space = Synthesizer(spec, {}).construct_solution_space(wildcard_target).prune()
+    assert list(wildcard_space.enumerate_trees(wildcard_target, max_count=1))
+
+
+# ---------------------------------------------------------------------------
 # 2. beside_cons: a genuine parallel (not just sequential-singleton) composition
 #    of two distinct components at one position.
 # ---------------------------------------------------------------------------
@@ -371,3 +434,96 @@ def test_cifar10_tutorial_architecture_trains_locally_as_cpu_baseline():
           f"test loss={test_loss:.4f}")
 
     assert torch.isfinite(torch.tensor(test_loss))
+
+
+# ---------------------------------------------------------------------------
+# 7. Deliberate-variance targets (make_variance_target).
+#
+#    A search target should constrain a position only where there is a reason to: the classifier
+#    head fixes the interface to the label space and bounds the network size, while the feature
+#    extractor stays free - that is what is being searched for. These tests pin down the three
+#    position descriptors (free / pinned out-degree / pinned dimensions) and the property that
+#    matters for the CIFAR-10 experiment: with max_lin_layer_dim below the input feature, no linear
+#    layer can consume the raw image, so the free part must begin convolutionally.
+# ---------------------------------------------------------------------------
+
+def _cnn_share(trees):
+    pretty = [t.interpret(pretty_term_algebra()) for t in trees]
+    return sum(1 for p in pretty if "Conv2d(" in p or "MaxPool2d(" in p), len(pretty)
+
+
+def test_variance_target_position_descriptors_build_expected_structure():
+    from bayesian_optimization.examples.cnn_damg_nas.cnn_damg_targets import make_variance_target
+
+    target = make_variance_target(16, [None, 2, (8, 4)], epochs=1, n_out=4)
+    # dig the structure literal back out of the constructed type
+    rendered = str(target)
+    assert "(None, (None, None), ((None, 8, 4),))" in rendered, rendered
+
+
+def test_variance_target_rejects_unsupported_descriptors():
+    from bayesian_optimization.examples.cnn_damg_nas.cnn_damg_targets import make_variance_target
+
+    with pytest.raises(ValueError):
+        make_variance_target(16, [0], epochs=1)          # out-degree must be >= 1
+    with pytest.raises(ValueError):
+        make_variance_target(16, ["nonsense"], epochs=1)  # unknown descriptor
+
+
+def test_free_front_with_pinned_dimension_head_synthesizes():
+    """The head positions use (i, o) descriptors, i.e. partially concrete triples - the form the
+    legacy damg_repo silently rejects. Everything before them stays fully free."""
+    from bayesian_optimization.examples.cnn_damg_nas.cnn_damg_targets import make_variance_target
+
+    repo = _small_repo()
+    target = make_variance_target(16, [None, (8, 4)], epochs=1, n_out=4)
+    search_space = Synthesizer(repo.specification(), {}).construct_solution_space(target).prune()
+    trees = list(search_space.enumerate_trees(target, max_count=20))
+    assert trees, "free front + pinned-dimension head should synthesize"
+
+    model = trees[0].interpret(pytorch_model_algebra())
+    assert model(torch.randn(3, 16)).shape == (3, 4)
+
+
+def test_pinned_out_degree_position_is_honoured():
+    """A position given as an int k must yield exactly k parallel components at that position."""
+    from bayesian_optimization.examples.cnn_damg_nas.cnn_damg_targets import make_variance_target
+
+    repo = _small_repo()
+    target = make_variance_target(16, [2, (8, 4)], epochs=1, n_out=4)
+    search_space = Synthesizer(repo.specification(), {}).construct_solution_space(target).prune()
+    trees = list(search_space.enumerate_trees(target, max_count=20))
+    assert trees, "an out-degree-2 position should be satisfiable for a 16-feature input"
+
+    for tree in trees[:5]:
+        model_line = tree.interpret(pretty_term_algebra()).split("model= (")[1].split("\n")[1]
+        first_position = model_line.split(" ; ")[0]
+        assert first_position.count("||") == 1, f"expected exactly 2 parallel branches: {first_position}"
+
+
+@pytest.mark.slow
+def test_cifar_head_target_forces_convolutional_front_end():
+    """With max_lin_layer_dim below the 3072-feature input, no linear layer can consume the raw
+    image, so every candidate must start with a convolution or pooling layer."""
+    from bayesian_optimization.examples.cnn_damg_nas.cnn_damg_targets import make_cifar_head_target
+    from bayesian_optimization.examples.cnn_damg_nas import cnn_damg_cifar_experiment as experiment
+
+    repo = CNNrepository(
+        linear_feature_dimensions=experiment.LINEAR_FEATURE_DIMENSIONS,
+        constant_values=experiment.CONSTANT_VALUES,
+        learning_rate_values=experiment.LEARNING_RATE_VALUES,
+        n_epoch_values=[20],
+        channel_dimensions=experiment.CHANNEL_DIMENSIONS,
+        height_width_dimensions=experiment.HEIGHT_WIDTH_DIMENSIONS,
+        kernel_dimensions=experiment.KERNEL_DIMENSIONS,
+        stride_values=experiment.STRIDE_VALUES,
+        padding_values=experiment.PADDING_VALUES,
+        max_parallel_width=experiment.MAX_PARALLEL_WIDTH,
+        max_lin_layer_dim=1600,
+    )
+    target = make_cifar_head_target(epochs=20)
+    search_space = Synthesizer(repo.specification(), {}).construct_solution_space(target).prune()
+    trees = list(search_space.enumerate_trees(target, max_count=30))
+    assert trees, "the CIFAR head target should synthesize"
+    cnn_count, total = _cnn_share(trees)
+    assert cnn_count == total, f"expected every candidate to be convolutional, got {cnn_count}/{total}"

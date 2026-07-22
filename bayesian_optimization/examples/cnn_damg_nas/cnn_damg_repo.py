@@ -150,11 +150,20 @@ class CNNrepository:
                  n_epoch_values: list[int],
                  channel_dimensions: list[int], height_width_dimensions: list[tuple[int, int]],
                  kernel_dimensions: list[tuple[int, int]], stride_values: list[int], padding_values: list[int],
-                 max_parallel_width: int = 2):
+                 max_parallel_width: int = 2, max_lin_layer_dim: int | None = None):
         # Conv2d/MaxPool2d are treated like Linear: pure scalar-int R^n -> R^m functions. The flattened
         # feature size channels*h*w is the only thing the type system ever sees; (un)flatten is folded
         # into the nn.Module interpretation (see cnn_damg_repo_algebras.SynthConv2d/SynthMaxPool2d).
+        #
+        # `max_lin_layer_dim` caps both the in- and out-features a linear_layer may use (see
+        # Label.iter_linear). Its purpose is size control: a Linear label costs in_f*out_f weights,
+        # so with large flattened conv features present in F a single linear layer can dwarf every
+        # convolution in the search space (measured: 22M vs. 6.4k parameters). Capping it below the
+        # input feature also has a structural effect - no linear layer can consume the raw input any
+        # more, so the first component is forced to be a convolution or a pooling layer.
+        # `None` disables the cap, which keeps the plain DNN behaviour of damg_repo unchanged.
         self.linear_feature_dimensions = linear_feature_dimensions
+        self.max_lin_layer_dim = max_lin_layer_dim
         self.learning_rate_values = learning_rate_values
         self.n_epoch_values = n_epoch_values
         self.constant_values = (constant_values if 1 in constant_values and 0 in constant_values
@@ -260,7 +269,8 @@ class CNNrepository:
         def __init__(self, dimensions,
                      linear_feature_dimensions, constant_values,
                      channel_dimensions=(), height_width_dimensions=(),
-                     kernel_dimensions=(), stride_values=(), padding_values=()):
+                     kernel_dimensions=(), stride_values=(), padding_values=(),
+                     max_lin_layer_dim=None):
             self.dimensions = tuple(dimensions)
             self.dimension_set = set(self.dimensions)
             self.linear_feature_dimensions = tuple(linear_feature_dimensions)
@@ -272,7 +282,13 @@ class CNNrepository:
             self.kernel_dimensions = tuple(kernel_dimensions)
             self.stride_values = tuple(stride_values)
             self.padding_values = tuple(padding_values)
+            self.max_lin_layer_dim = max_lin_layer_dim
             self._iter_cache = None
+
+        def _linear_dim_allowed(self, feature: int) -> bool:
+            # Size cap for linear layers only - conv/maxpool labels are unaffected (see the
+            # max_lin_layer_dim note in CNNrepository.__init__).
+            return self.max_lin_layer_dim is None or feature <= self.max_lin_layer_dim
 
         @staticmethod
         def _conv_output_size(in_size, kernel, stride, padding):
@@ -336,7 +352,11 @@ class CNNrepository:
 
         def iter_linear(self):
             for in_f in self.linear_feature_dimensions:
+                if not self._linear_dim_allowed(in_f):
+                    continue
                 for out_f in self.linear_feature_dimensions:
+                    if not self._linear_dim_allowed(out_f):
+                        continue
                     yield CNNrepository.Linear(in_features=in_f, out_features=out_f, bias=True)
                     yield CNNrepository.Linear(in_features=in_f, out_features=out_f, bias=False)
 
@@ -378,6 +398,8 @@ class CNNrepository:
             if isinstance(item, CNNrepository.Linear):
                 return ((item.in_features in self.linear_feature_dimension_set) and
                         (item.out_features in self.linear_feature_dimension_set) and
+                        self._linear_dim_allowed(item.in_features) and
+                        self._linear_dim_allowed(item.out_features) and
                         (isinstance(item.bias, bool)))
             elif isinstance(item, CNNrepository.Sigmoid):
                 return True
@@ -552,6 +574,19 @@ class CNNrepository:
         name = "ParaTuples"
 
         def __init__(self, para, max_length=3):
+            # `para_group` keeps the Para *group* itself, `para` materializes its enumeration.
+            # The two are NOT interchangeable: Para.__iter__ only ever yields fully concrete triples
+            # (plus swaps and None as a whole element), while Para.__contains__ additionally accepts
+            # the partially concrete triples - (None,i,o), (l,i,None), (l,None,o), ... - that every
+            # leaf combinator declares as its para1..para7 structure variants.
+            #
+            # Membership therefore has to go through the group (see __contains__). Testing against
+            # the materialized tuple instead - as damg_repo.py:380/:399 does - silently rejects every
+            # partially concrete structure literal: such a literal is inferred from the target rather
+            # than enumerated, so it is validated exclusively via __contains__, and the rejection
+            # happens in Synthesizer._enumerate_substitutions (cosy/core/synthesizer.py:183) on the
+            # `learner` combinator's `request` parameter, yielding 0 terms with no diagnostic.
+            self.para_group = para
             self.para = tuple(para)
             self.max_length = max_length
             self._iter_cache = None
@@ -571,7 +606,8 @@ class CNNrepository:
             yield from self._iter_cache
 
         def __contains__(self, value):
-            return value is None or (isinstance(value, tuple) and all(True if v is None else v in self.para for v in value))
+            return value is None or (isinstance(value, tuple)
+                                     and all(True if v is None else v in self.para_group for v in value))
 
         # As ParaTuples defines all possible parallel compositions of components as literals, we can ensure normalforms
         # on the literal-level by normalizing them.
@@ -1183,7 +1219,8 @@ class CNNrepository:
     def specification(self):
         labels = self.Label(self.dimensions, self.linear_feature_dimensions, self.constant_values,
                              self.channel_dimensions, self.height_width_dimensions,
-                             self.kernel_dimensions, self.stride_values, self.padding_values)
+                             self.kernel_dimensions, self.stride_values, self.padding_values,
+                             self.max_lin_layer_dim)
         para_labels = self.Para(labels, self.dimensions)
         #print("linear" in para_labels)
         # max_length bounds how many components may be juxtaposed (beside) in parallel - a component

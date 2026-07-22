@@ -12,7 +12,6 @@ from cosy.core.tree import Tree
 from cosy.core.types import Constructor, Literal
 
 import numpy as np
-import math
 
 
 # Interpretations of terms are algebras in my language
@@ -559,24 +558,17 @@ class CopyModule(nn.Module):
         return x.expand(*x.shape[:-1], self.o).clone()
 
 
-# Sinnvoller Strafwert: groß genug, um als "schlecht" erkennbar zu sein,
-# klein genug, um Skalierungen (log1p, MinMax) nicht zu sprengen.
-_NON_FINITE_LOSS_PENALTY = 1e6
-
-
-def _sanitize_loss(value: float) -> float:
-    """Map non-finite losses (NaN/Inf) to a finite penalty value.
-
-    Reasons NaN/Inf can occur for nn.MSELoss:
-      * Gradient explosion (e.g. ProductModule, high lr, deep nets)
-      * NaN propagating through parameters after a single Inf gradient step
-      * float32 overflow when predictions diverge
-    Returning a non-finite value would break downstream consumers
-    (sklearn GP-fit raises 'Input y contains infinity').
-    """
-    if not math.isfinite(value):
-        return _NON_FINITE_LOSS_PENALTY
-    return value
+# No loss sanitization here on purpose. Synthesis already guarantees that every candidate is a
+# well-formed, correctly composed network, so the objective must report what training actually
+# measured rather than substituting a default value for an inconvenient one. A non-finite loss is
+# therefore left to propagate: it means the *numerics* diverged (a different failure class from an
+# invalid architecture) and should surface loudly - downstream, sklearn's GP fit rejects non-finite
+# observations - instead of being silently folded into the search as an arbitrary large number.
+#
+# Measured: across every USPS and CIFAR-10 run so far, all objective values were finite. The one
+# construct that can overflow is ProductModule, whose torch.prod over all features explodes for
+# |constant| > 1; with the configured constant_values [0, 1, -1] the product underflows to 0
+# instead, so it stays finite.
 
 
 # Default mini-batch size for the training loop below. Not part of the type-level specification
@@ -616,9 +608,9 @@ def learner(i, open_model, loss_fn, optim, n_epochs, x, y, x_test, y_test, batch
                 else:
                     loss = loss_fn(model(x_batch).ravel().reshape_as(y_batch), y_batch)
                 if not torch.isfinite(loss):
-                    # Training has diverged; stop early to keep params usable
-                    # for the test-time evaluation below (which will then likely
-                    # also produce a non-finite loss and trigger the sanitizer).
+                    # The numerics have diverged. Stop early - continuing would only burn time on a
+                    # model whose parameters are already NaN/Inf. The test-time evaluation below
+                    # still runs and reports whatever it measures, unmodified.
                     diverged = True
                     break
                 loss.backward()
@@ -631,7 +623,7 @@ def learner(i, open_model, loss_fn, optim, n_epochs, x, y, x_test, y_test, batch
             loss = loss_fn(model(x_test), y_test)
         else:
             loss = loss_fn(model(x_test).ravel().reshape_as(y_test), y_test)
-        return _sanitize_loss(loss.item())
+        return loss.item()
 
     # Having interpreted each combinator as its corresponding pytorch nn.module above allows the
     # pytorch_function_algebra to interpret a Tree directly as a callable learning pipeline for the
@@ -754,6 +746,26 @@ def pytorch_model_algebra():
         "learner": (
             lambda i, o, r, ls, e, l, opt, loss, optimizer, model: model),
     }
+
+
+def pytorch_components_algebra():
+    """Like pytorch_model_algebra, but returns the learner's *parts* instead of just the model.
+
+    `pytorch_function_algebra` hands back a ready-made training closure that builds and trains its
+    model internally, so the caller never gets a handle on the trained nn.Module - which makes it
+    impossible to measure anything about it afterwards (accuracy, parameter count). Interpreting the
+    same term twice would not help either: each interpretation constructs freshly initialized
+    modules, so the model you inspect would not be the model that was trained.
+
+    This algebra is identical to pytorch_model_algebra except for the `learner` entry, which yields
+    `(model, loss_fn, optimizer_factory, n_epochs)`. The caller can then train that exact model via
+    `learner(...)` and keep inspecting it afterwards.
+    """
+    algebra = pytorch_model_algebra()
+    algebra["learner"] = (
+        lambda i, o, r, ls, e, l, opt, loss, optimizer, model: (model, loss, optimizer, e))
+    return algebra
+
 
 def hierarchy_algebra(level: int):
     # Currently only level 0, 1, 2 and 3 exists. So if the level isn't 1, 2 or 3, level 0 is assumed.
