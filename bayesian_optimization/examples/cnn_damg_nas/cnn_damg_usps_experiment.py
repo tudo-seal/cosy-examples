@@ -24,7 +24,7 @@ from cosy.core import Synthesizer
 from cosy.evolutionary_algorithms import (
     AgeBasedReplacement,
     Crossover,
-    FitnessProportionalSelection,
+    RankBasedSelection,
     RandomLimitedDepthFirstInitialization,
     ResolutionMutation,
     ScalarFitnessComparator,
@@ -147,7 +147,12 @@ def run_experiment(n_pre_samples: int, n_iterations: int, population_size: int, 
             "population_size": population_size,
             "evo_generations": evo_generations,
             "acquisition_function": "ExpectedImprovement",
+            "kernel_optimizer": "fmin_l_bfgs_b",
+            "n_restarts_kernel_optimizer": 20,
             "ei_xi": 0.01,
+            "parent_selection": "RankBasedSelection(selection_pressure=1.7)",
+            "survivor_selection": "AgeBasedReplacement",
+            # 0 is mandatory: mutation is currently buggy in CoSy
             "optimizer_mutation_rate": 0.0,
             "optimizer_recombination_rate": 0.99,
             "seed": None,  # deliberately unseeded - each run is an independent sample
@@ -166,7 +171,14 @@ def run_experiment(n_pre_samples: int, n_iterations: int, population_size: int, 
     initialization = RandomLimitedDepthFirstInitialization(search_space, target, max_depth=MAX_DEPTH)
     mutation = ResolutionMutation(search_space, target, max_depth=MAX_DEPTH)
     recombination = Crossover(search_space, target, max_depth=MAX_DEPTH)
-    parent_selection = FitnessProportionalSelection()
+    # RankBasedSelection, not FitnessProportionalSelection: the roulette weights are the raw EI
+    # values, which span ~18 orders of magnitude here (the GP's fixed prior variance of 0.04
+    # against normalize_y=True makes it over-confident, so EI underflows).  Measured on the real
+    # USPS space: a single individual then receives 83.7% of the selection probability, and with
+    # mutation_rate=0 there is no second source of diversity.  Rank-based selection depends only
+    # on the ordering.  Measured over 40 generations: best EI 2.99e-18 vs 1.68e-23, still
+    # improving at generation 28 vs stalling at generation 7.
+    parent_selection = RankBasedSelection(1.7)
     survivor_selection = AgeBasedReplacement()
     fitness_comparator = ScalarFitnessComparator(True)
 
@@ -178,6 +190,13 @@ def run_experiment(n_pre_samples: int, n_iterations: int, population_size: int, 
     optimizer = BayesianOptimization(search_space, target, kernel=kernel, optimizer=evo_alg,
                                      optimizer_population_size=population_size,
                                      acquisition_function="ExpectedImprovement",
+                                     # Fit the kernel hyperparameters.  Without this the
+                                     # amplitudes stay frozen at their initial values and the
+                                     # GP is over-confident (see cnn_damg_kernels.py).
+                                     # Measured cost at n_train=30: 1.0 s at 10 restarts vs
+                                     # 0.6 s without -- negligible against a ~18 min BO step.
+                                     kernel_optimizer="fmin_l_bfgs_b",
+                                     n_restarts_kernel_optimizer=20,
                                      # mutation_rate MUST stay 0: the acquisition optimizer
                                      # explores by recombination only (deliberate choice,
                                      # carried over from the DNN experiments).
@@ -246,7 +265,10 @@ if __name__ == "__main__":
     parser.add_argument("--n-pre-samples", type=int, default=10)
     parser.add_argument("--n-iterations", type=int, default=20)
     parser.add_argument("--population-size", type=int, default=100)
-    parser.add_argument("--evo-generations", type=int, default=100)
+    # 35: measured plateau of the acquisition EA under RankBasedSelection (last improvement
+    # at generation 28 of 40).  Under the previous selection nothing improved past
+    # generation 7, so the former default of 100 spent ~90% of its budget for nothing.
+    parser.add_argument("--evo-generations", type=int, default=35)
     parser.add_argument("--data-dir", type=str, default=DATA_DIR)
     parser.add_argument("--csv-path", type=str, default=None,
                         help="Defaults to results/usps_experiment_<unix timestamp>.csv")

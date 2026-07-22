@@ -19,6 +19,28 @@ from bayesian_optimization.utils import to_grakel_graph, to_indexed_nx_digraph
 
 # ============================================================================
 # Kernel Setup
+#
+# Amplitude and noise scale, and why they are what they are
+# ---------------------------------------------------------
+# The GP is fitted with normalize_y=True, so the targets it sees have unit variance.  The kernel's
+# total prior variance must therefore be of order 1.  Each WeisfeilerLehman kernel below is built
+# with normalize=True and hence has diagonal exactly 1.0, so the ConstantKernel factors ARE that
+# prior variance: three of them at 0.3 plus a WhiteKernel at 0.1 sum to ~1.0.
+#
+# They used to start at 0.01 each with bounds (1e-10, 1e10), giving a total prior variance of 0.04
+# against unit-variance data -- a ~25x mismatch that made the GP badly over-confident.  Measured
+# consequence: sigma ~0.02-0.04, z-scores around -30, and Expected Improvement underflowing to
+# ~1e-25..1e-47.  Since FitnessProportionalSelection used those raw EI values as roulette weights,
+# a single individual received ~80% of the selection probability (see cnn_damg_usps_experiment.py,
+# where the selection was changed to RankBasedSelection for the same reason).
+#
+# The bounds are now (1e-4, 1e2) instead of (1e-10, 1e10).  Restarts of the hyperparameter
+# optimizer are drawn log-uniformly from the bounds, so 20 orders of magnitude meant almost every
+# restart began somewhere absurd.  The narrower range still lets a hierarchy switch off (lower
+# bound) or dominate (upper bound); fitted values observed in testing were 0.03-2.3.
+#
+# NOTE: these values only matter as a starting point when the hyperparameter optimizer runs.  The
+# experiments pass kernel_optimizer="fmin_l_bfgs_b"; with kernel_optimizer=None they are frozen.
 # ============================================================================
 
 def as_DAMG(t: Tree, verbose=False):
@@ -68,9 +90,9 @@ tree_kernel_1 = OrderedRootedSubtreeKernel(tree_transformation=hierarchical_tree
 tree_kernel_2 = OrderedRootedSubtreeKernel(tree_transformation=hierarchical_tree(2))
 tree_kernel_3 = OrderedRootedSubtreeKernel(tree_transformation=hierarchical_tree(3))
 
-weighted_tree_kernel_1 = Product(ConstantKernel(0.01, constant_value_bounds=(1e-10, 1e10)), tree_kernel_1)
-weighted_tree_kernel_2 = Product(ConstantKernel(0.01, constant_value_bounds=(1e-10, 1e10)), tree_kernel_2)
-weighted_tree_kernel_3 = Product(ConstantKernel(0.01, constant_value_bounds=(1e-10, 1e10)), tree_kernel_3)
+weighted_tree_kernel_1 = Product(ConstantKernel(0.3, constant_value_bounds=(1e-4, 1e2)), tree_kernel_1)
+weighted_tree_kernel_2 = Product(ConstantKernel(0.3, constant_value_bounds=(1e-4, 1e2)), tree_kernel_2)
+weighted_tree_kernel_3 = Product(ConstantKernel(0.3, constant_value_bounds=(1e-4, 1e2)), tree_kernel_3)
 
 hierarchical_tree_kernel = Sum(weighted_tree_kernel_1, Sum(weighted_tree_kernel_2, weighted_tree_kernel_3))
 
@@ -81,22 +103,22 @@ hierarchical_tree_kernel_12 = Sum(weighted_tree_kernel_1, weighted_tree_kernel_2
 hierarchical_tree_kernel_13 = Sum(weighted_tree_kernel_1, weighted_tree_kernel_3)
 
 # We will only consider noisy hierarchical kernels, as training neural networks is always a "noisy" process...
-noisy_hierarchical_tree_kernel = Sum(hierarchical_tree_kernel, WhiteKernel(noise_level=1e-2, noise_level_bounds=(1e-12, 1e2)))
+noisy_hierarchical_tree_kernel = Sum(hierarchical_tree_kernel, WhiteKernel(noise_level=0.1, noise_level_bounds=(1e-6, 1e1)))
 
-noisy_hierarchical_tree_kernel_23 = Sum(hierarchical_tree_kernel_23, WhiteKernel(noise_level=1e-2, noise_level_bounds=(1e-12, 1e2)))
+noisy_hierarchical_tree_kernel_23 = Sum(hierarchical_tree_kernel_23, WhiteKernel(noise_level=0.1, noise_level_bounds=(1e-6, 1e1)))
 
-noisy_hierarchical_tree_kernel_12 = Sum(hierarchical_tree_kernel_12, WhiteKernel(noise_level=1e-2, noise_level_bounds=(1e-12, 1e2)))
+noisy_hierarchical_tree_kernel_12 = Sum(hierarchical_tree_kernel_12, WhiteKernel(noise_level=0.1, noise_level_bounds=(1e-6, 1e1)))
 
-noisy_hierarchical_tree_kernel_13 = Sum(hierarchical_tree_kernel_13, WhiteKernel(noise_level=1e-2, noise_level_bounds=(1e-12, 1e2)))
+noisy_hierarchical_tree_kernel_13 = Sum(hierarchical_tree_kernel_13, WhiteKernel(noise_level=0.1, noise_level_bounds=(1e-6, 1e1)))
 
 
 wl_kernel_1 = WeisfeilerLehmanKernel(n_iter=1.0, normalize=True,to_grakel_graph=as_hierarchical_tree_graph(1))
 wl_kernel_2 = WeisfeilerLehmanKernel(n_iter=1.0, normalize=True, to_grakel_graph=as_hierarchical_tree_graph(2))
 wl_kernel_3 = WeisfeilerLehmanKernel(n_iter=1.0, normalize=True, to_grakel_graph=as_hierarchical_tree_graph(3))
 
-weighted_wl_kernel_1 = Product(ConstantKernel(0.01, constant_value_bounds=(1e-10, 1e10)), wl_kernel_1)
-weighted_wl_kernel_2 = Product(ConstantKernel(0.01, constant_value_bounds=(1e-10, 1e10)), wl_kernel_2)
-weighted_wl_kernel_3 = Product(ConstantKernel(0.01, constant_value_bounds=(1e-10, 1e10)), wl_kernel_3)
+weighted_wl_kernel_1 = Product(ConstantKernel(0.3, constant_value_bounds=(1e-4, 1e2)), wl_kernel_1)
+weighted_wl_kernel_2 = Product(ConstantKernel(0.3, constant_value_bounds=(1e-4, 1e2)), wl_kernel_2)
+weighted_wl_kernel_3 = Product(ConstantKernel(0.3, constant_value_bounds=(1e-4, 1e2)), wl_kernel_3)
 
 hierarchical_wl_kernel = Sum(weighted_wl_kernel_1, Sum(weighted_wl_kernel_2, weighted_wl_kernel_3))
 
@@ -107,13 +129,13 @@ hierarchical_wl_kernel_12 = Sum(weighted_wl_kernel_1, weighted_wl_kernel_2)
 hierarchical_wl_kernel_13 = Sum(weighted_wl_kernel_1, weighted_wl_kernel_3)
 
 # We will only consider noisy hierarchical kernels, as training neural networks is always a "noisy" process...
-noisy_hierarchical_wl_kernel = Sum(hierarchical_wl_kernel, WhiteKernel(noise_level=1e-2, noise_level_bounds=(1e-12, 1e2)))
+noisy_hierarchical_wl_kernel = Sum(hierarchical_wl_kernel, WhiteKernel(noise_level=0.1, noise_level_bounds=(1e-6, 1e1)))
 
-noisy_hierarchical_wl_kernel_23 = Sum(hierarchical_wl_kernel_23, WhiteKernel(noise_level=1e-2, noise_level_bounds=(1e-12, 1e2)))
+noisy_hierarchical_wl_kernel_23 = Sum(hierarchical_wl_kernel_23, WhiteKernel(noise_level=0.1, noise_level_bounds=(1e-6, 1e1)))
 
-noisy_hierarchical_wl_kernel_12 = Sum(hierarchical_wl_kernel_12, WhiteKernel(noise_level=1e-2, noise_level_bounds=(1e-12, 1e2)))
+noisy_hierarchical_wl_kernel_12 = Sum(hierarchical_wl_kernel_12, WhiteKernel(noise_level=0.1, noise_level_bounds=(1e-6, 1e1)))
 
-noisy_hierarchical_wl_kernel_13 = Sum(hierarchical_wl_kernel_13, WhiteKernel(noise_level=1e-2, noise_level_bounds=(1e-12, 1e2)))
+noisy_hierarchical_wl_kernel_13 = Sum(hierarchical_wl_kernel_13, WhiteKernel(noise_level=0.1, noise_level_bounds=(1e-6, 1e1)))
 
 """
 Hierarchy 1 and 2 are basically just relabelings for DAMGs. Therefore, we don't consider the combination of 1 and 2 as
@@ -123,11 +145,11 @@ damg_kernel_1 = WeisfeilerLehmanKernel(n_iter=1.0, normalize=True,to_grakel_grap
 damg_kernel_2 = WeisfeilerLehmanKernel(n_iter=1.0, normalize=True, to_grakel_graph=as_hierarchical_damg(2))
 damg_kernel_3 = WeisfeilerLehmanKernel(n_iter=1.0, normalize=True, to_grakel_graph=as_hierarchical_damg(3))
 
-weighted_damg_kernel_1 = Product(ConstantKernel(0.01, constant_value_bounds=(1e-10, 1e10)),
+weighted_damg_kernel_1 = Product(ConstantKernel(0.3, constant_value_bounds=(1e-4, 1e2)),
                                  damg_kernel_1)
-weighted_damg_kernel_2 = Product(ConstantKernel(0.01, constant_value_bounds=(1e-10, 1e10)),
+weighted_damg_kernel_2 = Product(ConstantKernel(0.3, constant_value_bounds=(1e-4, 1e2)),
                                  damg_kernel_2)
-weighted_damg_kernel_3 = Product(ConstantKernel(0.01, constant_value_bounds=(1e-10, 1e10)),
+weighted_damg_kernel_3 = Product(ConstantKernel(0.3, constant_value_bounds=(1e-4, 1e2)),
                                  damg_kernel_3)
 
 hierarchical_damg_kernel = Sum(weighted_damg_kernel_1, Sum(weighted_damg_kernel_2, weighted_damg_kernel_3))
@@ -137,11 +159,11 @@ hierarchical_damg_kernel_23 = Sum(weighted_damg_kernel_2, weighted_damg_kernel_3
 hierarchical_damg_kernel_13 = Sum(weighted_damg_kernel_1, weighted_damg_kernel_3)
 
 # We will only consider noisy hierarchical kernels, as training neural networks is always a "noisy" process...
-noisy_hierarchical_damg_kernel = Sum(hierarchical_damg_kernel, WhiteKernel(noise_level=1e-2, noise_level_bounds=(1e-12, 1e2)))
+noisy_hierarchical_damg_kernel = Sum(hierarchical_damg_kernel, WhiteKernel(noise_level=0.1, noise_level_bounds=(1e-6, 1e1)))
 
-noisy_hierarchical_damg_kernel_23 = Sum(hierarchical_damg_kernel_23, WhiteKernel(noise_level=1e-2, noise_level_bounds=(1e-12, 1e2)))
+noisy_hierarchical_damg_kernel_23 = Sum(hierarchical_damg_kernel_23, WhiteKernel(noise_level=0.1, noise_level_bounds=(1e-6, 1e1)))
 
-noisy_hierarchical_damg_kernel_13 = Sum(hierarchical_damg_kernel_13, WhiteKernel(noise_level=1e-2, noise_level_bounds=(1e-12, 1e2)))
+noisy_hierarchical_damg_kernel_13 = Sum(hierarchical_damg_kernel_13, WhiteKernel(noise_level=0.1, noise_level_bounds=(1e-6, 1e1)))
 
 """
 Combining the different Tree-WL and DAMG-WL Kernel should be a good idea, right?
@@ -150,4 +172,4 @@ Combining the different Tree-WL and DAMG-WL Kernel should be a good idea, right?
 # If this proves to behave good, we should test more combined kernels
 combined_hierarchical_kernel = Sum(hierarchical_damg_kernel_13, hierarchical_wl_kernel)
 
-noisy_combined_hierarchical_kernel = Sum(combined_hierarchical_kernel, WhiteKernel(noise_level=1e-2, noise_level_bounds=(1e-12, 1e2)))
+noisy_combined_hierarchical_kernel = Sum(combined_hierarchical_kernel, WhiteKernel(noise_level=0.1, noise_level_bounds=(1e-6, 1e1)))

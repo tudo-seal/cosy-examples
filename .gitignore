@@ -221,5 +221,11 @@ __marimo__/
 .claude/
 CLAUDE.local.md
 
+# Notizen zu cosy-Framework-Verbesserungen (lokal, nicht Teil dieses Repos)
+cosy-improvements.txt
+
+# Experiment-Ergebnisse (CSV + <run>_config.json), bleiben auf der jeweiligen Maschine
+/results/
+
 # Streamlit
 .streamlit/secrets.toml

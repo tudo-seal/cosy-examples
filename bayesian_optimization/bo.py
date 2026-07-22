@@ -29,6 +29,7 @@ from .kernels.kernel_base import StructuredKernelBase
 from .kernels.tree_kernel import OrderedRootedSubtreeKernel
 from .state import BOState, Diagnostics, Suggestion
 from .transforms import IdentityTransform, Log1pTransform, YTransform
+from .utils import canonical_tree
 
 NT = TypeVar("NT", bound=Hashable)
 T = TypeVar("T", bound=Hashable)
@@ -368,6 +369,11 @@ class BayesianOptimization(Generic[NT, T, G]):
         if candidate is None:
             raise RuntimeError("Optimizer did not return a candidate.")
 
+        # Candidates from crossover carry a stale ``size``/``_hash`` (see canonical_tree), which
+        # would make the duplicate check below miss an architecture that was already evaluated --
+        # and train it a second time.  Canonicalise before it reaches ``_x_set``.
+        candidate = canonical_tree(candidate)
+
         # --- Fallback deduplication with hard limit (F18) ---------------------
         fallback_attempts = 0
         while candidate in self._x_set:
@@ -376,7 +382,7 @@ class BayesianOptimization(Generic[NT, T, G]):
                     f"Fallback deduplication failed: could not find a novel candidate "
                     f"after {self._max_duplicate_fallbacks} attempts."
                 )
-            candidate = _sample_fallback_tree(self._initializer, self._x_set)
+            candidate = canonical_tree(_sample_fallback_tree(self._initializer, self._x_set))
             fallback_attempts += 1
 
         acq_value = float(af(candidate))
