@@ -39,7 +39,7 @@ from cosy.evolutionary_algorithms import (
     SimpleGeneticProgramming,
 )
 
-from bayesian_optimization import BayesianOptimization
+from bayesian_optimization import BayesianOptimization, IdentityTransform, Log1pTransform
 from bayesian_optimization.examples.cnn_damg_nas.cnn_damg_repo import CNNrepository
 from bayesian_optimization.examples.cnn_damg_nas.cnn_damg_repo_algebras import pretty_term_algebra
 from bayesian_optimization.examples.cnn_damg_nas.cnn_damg_kernels import noisy_hierarchical_damg_kernel
@@ -109,7 +109,14 @@ def dataset_to_tensors(dataset, device):
 def run_experiment(n_pre_samples: int, n_iterations: int, population_size: int, evo_generations: int,
                     csv_path: str, epochs: int = DEFAULT_EPOCHS,
                     structure_length: int = DEFAULT_STRUCTURE_LENGTH,
+                    objective: str = "accuracy", max_lin_layer_dim: int | None = None,
                     data_dir: str = DATA_DIR, verbose: bool = True):
+    # objective="accuracy" maximizes test accuracy; "loss" minimizes test cross-entropy (the former
+    # default). They diverge sharply here (a 49% net had loss 17.9), so the direction is a real
+    # choice - accuracy is what matters and is measured anyway in evaluate_candidate.
+    if objective not in ("accuracy", "loss"):
+        raise ValueError(f"objective must be 'accuracy' or 'loss', got {objective!r}")
+    greater_is_better = objective == "accuracy"
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
     if device.type == "cuda":
@@ -131,6 +138,9 @@ def run_experiment(n_pre_samples: int, n_iterations: int, population_size: int, 
         stride_values=STRIDE_VALUES,
         padding_values=PADDING_VALUES,
         max_parallel_width=MAX_PARALLEL_WIDTH,
+        # When set below the 3072-feature raw image, no Linear label can consume the image, which
+        # structurally forces a convolutional front end (see cnn_damg_repo; None = unconstrained).
+        max_lin_layer_dim=max_lin_layer_dim,
     )
     target = make_cifar_experiment_target(epochs=epochs, length=structure_length)
 
@@ -142,7 +152,8 @@ def run_experiment(n_pre_samples: int, n_iterations: int, population_size: int, 
     def f_obj(t):
         metrics = evaluate_candidate(t, x, y, x_test, y_test, BATCH_SIZE)
         metrics_by_tree[t] = metrics
-        return metrics["objective_value"]
+        # Both metrics are always recorded to the CSV; only which one the BO optimizes changes.
+        return metrics["accuracy"] if objective == "accuracy" else metrics["objective_value"]
 
     print(f"Using target: {target}")
 
@@ -170,6 +181,7 @@ def run_experiment(n_pre_samples: int, n_iterations: int, population_size: int, 
             "stride_values": STRIDE_VALUES,
             "padding_values": PADDING_VALUES,
             "max_parallel_width": MAX_PARALLEL_WIDTH,
+            "max_lin_layer_dim": max_lin_layer_dim,
             "constant_values": CONSTANT_VALUES,
             "learning_rate_values": LEARNING_RATE_VALUES,
             "num_feature_dimensions": len(repo.feature_dimensions),
@@ -179,6 +191,9 @@ def run_experiment(n_pre_samples: int, n_iterations: int, population_size: int, 
             "n_iterations": n_iterations,
             "population_size": population_size,
             "evo_generations": evo_generations,
+            "objective_metric": objective,          # "accuracy" (maximized) or "loss" (minimized)
+            "greater_is_better": greater_is_better,
+            "y_transform": "identity" if greater_is_better else "log1p",
             "acquisition_function": "ExpectedImprovement",
             "kernel_optimizer": "fmin_l_bfgs_b",
             "n_restarts_kernel_optimizer": 20,
@@ -222,6 +237,10 @@ def run_experiment(n_pre_samples: int, n_iterations: int, population_size: int, 
 
     optimizer = BayesianOptimization(search_space, target, kernel=kernel, optimizer=evo_alg,
                                      optimizer_population_size=population_size,
+                                     # Accuracy in [0,1] has no skew to correct, and Identity keeps
+                                     # incumbent_raw directly readable as accuracy. Log1p (the
+                                     # default) stays for the loss objective.
+                                     y_transform=IdentityTransform() if greater_is_better else Log1pTransform(),
                                      acquisition_function="ExpectedImprovement",
                                      # Fit the kernel hyperparameters.  Without this the
                                      # amplitudes stay frozen at their initial values and the
@@ -245,7 +264,8 @@ def run_experiment(n_pre_samples: int, n_iterations: int, population_size: int, 
         # Ask/Tell interface (not the bayesian_optimisation() convenience wrapper): lets us log
         # every evaluated structure - pre-samples and BO steps alike - as we go, so results survive
         # a crash/interruption instead of only being available after a successful finalize().
-        optimizer.initialize(obj_fun=f_obj, n_pre_samples=n_pre_samples, greater_is_better=False)
+        optimizer.initialize(obj_fun=f_obj, n_pre_samples=n_pre_samples,
+                             greater_is_better=greater_is_better)
         snapshot = optimizer.get_state_snapshot()
         for idx, (tree, value) in enumerate(zip(snapshot["x_list"], snapshot["y_list"])):
             metrics = metrics_by_tree.get(tree, {"objective_value": value})
@@ -275,9 +295,12 @@ def run_experiment(n_pre_samples: int, n_iterations: int, population_size: int, 
     best_metrics = metrics_by_tree.get(result["best_tree"], {})
     print(f"Bayesian Optimization took {bo_time:.2f}s ({n_evaluations} network evaluations, "
           f"{bo_time / max(n_evaluations, 1):.2f}s per evaluation on average)")
-    print(f"Best test loss: {result['best_y']:.5f}")
+    # result['best_y'] is the optimized objective on its raw scale: accuracy (maximized) or loss.
+    print(f"Best {objective} ({'max' if greater_is_better else 'min'}): {result['best_y']:.5f}")
     if "accuracy" in best_metrics:
         print(f"Best tree's test accuracy: {best_metrics['accuracy'] * 100:.2f}%")
+    if "objective_value" in best_metrics:
+        print(f"Best tree's test loss: {best_metrics['objective_value']:.5f}")
     print(f"Best tree:\n{result['best_tree'].interpret(pretty_term_algebra())}")
 
     metadata.update({
@@ -306,6 +329,11 @@ if __name__ == "__main__":
                         help="Training epochs per candidate; the target is built to match.")
     parser.add_argument("--structure-length", type=int, default=DEFAULT_STRUCTURE_LENGTH,
                         help="Number of sequential components in the searched structure.")
+    parser.add_argument("--objective", choices=["accuracy", "loss"], default="accuracy",
+                        help="BO target: maximize test accuracy (default) or minimize test loss.")
+    parser.add_argument("--max-lin-layer-dim", type=int, default=None,
+                        help="Cap on Linear layer feature size. Below 3072 it forces a "
+                             "convolutional front end (1600 is the tested value). None = off.")
     parser.add_argument("--data-dir", type=str, default=DATA_DIR)
     parser.add_argument("--csv-path", type=str, default=None,
                         help="Defaults to results/cifar_experiment_<unix timestamp>.csv")
@@ -318,4 +346,5 @@ if __name__ == "__main__":
 
     run_experiment(args.n_pre_samples, args.n_iterations, args.population_size, args.evo_generations,
                    csv_path, epochs=args.epochs, structure_length=args.structure_length,
+                   objective=args.objective, max_lin_layer_dim=args.max_lin_layer_dim,
                    data_dir=args.data_dir)

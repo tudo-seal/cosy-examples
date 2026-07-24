@@ -173,3 +173,71 @@ def test_bo_incumbent_raw_non_increasing_for_minimization():
 
     for i in range(1, len(incumbent_raws)):
         assert incumbent_raws[i] <= incumbent_raws[i - 1] + 1e-10
+
+
+# ---------------------------------------------------------------------------
+# Maximization: the greater_is_better=True path, previously untested end to end.
+# Objective is still tree depth, but now HIGHER is better, so the BO must climb.
+# Not marked `slow`: no network training, runs in ~1 s, so it runs in the -m "not slow" suite.
+# ---------------------------------------------------------------------------
+
+@pytest.mark.integration
+def test_bo_converges_on_toy_problem_maximization():
+    """With greater_is_better=True the BO must climb toward the DEEPEST tree (objective = depth)."""
+    from bayesian_optimization.bo import BayesianOptimization
+
+    pool = _build_pool()
+    # search_space=None means there is no fallback sampler, so a re-suggested duplicate would raise;
+    # this seed drives the stub down a path that keeps suggesting novel candidates (like the
+    # minimization test's fixed seed).
+    optimizer = StubEvolutionary(pool, seed=0)
+
+    bo = BayesianOptimization(
+        search_space=None,
+        request=None,
+        optimizer=optimizer,
+        acquisition_function="ExpectedImprovement",
+        seed=42,
+        n_restarts_kernel_optimizer=0,
+    )
+    # Start without the depth-2 trees, so the optimum has to be discovered by the search.
+    x0 = [t for t in pool if _tree_depth(t) <= 1][:4]
+    y0 = [_toy_objective(t) for t in x0]
+    bo.initialize(x0=x0, y0=y0, greater_is_better=True)
+
+    for _ in range(6):
+        s = bo.suggest()
+        bo.observe(s.candidate, _toy_objective(s.candidate))
+
+    _, best_y = bo.best()
+    assert best_y >= 2.0, f"Expected convergence to depth>=2 under maximization, got {best_y}"
+
+
+@pytest.mark.integration
+def test_bo_incumbent_raw_non_decreasing_for_maximization():
+    """Mirror of the minimization monotonicity test: for maximization incumbent_raw must not fall."""
+    from bayesian_optimization.bo import BayesianOptimization
+
+    pool = _build_pool()
+    optimizer = StubEvolutionary(pool, seed=99)
+
+    bo = BayesianOptimization(
+        search_space=None,
+        request=None,
+        optimizer=optimizer,
+        seed=42,
+        n_restarts_kernel_optimizer=0,
+    )
+    # Start from the shallowest trees so the incumbent has room to rise.
+    x0 = [t for t in pool if _tree_depth(t) <= 0][:3]
+    y0 = [_toy_objective(t) for t in x0]
+    bo.initialize(x0=x0, y0=y0, greater_is_better=True)
+
+    incumbent_raws = []
+    for _ in range(5):
+        s = bo.suggest()
+        incumbent_raws.append(s.diagnostics["incumbent_raw"])
+        bo.observe(s.candidate, _toy_objective(s.candidate))
+
+    for i in range(1, len(incumbent_raws)):
+        assert incumbent_raws[i] >= incumbent_raws[i - 1] - 1e-10

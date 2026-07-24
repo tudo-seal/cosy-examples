@@ -71,6 +71,27 @@ def test_ei_uses_provided_incumbent(fitted_gp, tree_corpus):
     assert ei_bad_incumbent(novel) >= ei_good_incumbent(novel)
 
 
+def test_ei_maximization_incumbent_direction(fitted_gp):
+    """For maximization the incumbent relation flips: a LOW incumbent (easy to beat) must give a
+    higher EI than a HIGH one (hard to beat).  This is the direct sign-flip test for
+    greater_is_better=True, a path no other test exercises."""
+    from bayesian_optimization.acquisition_function import ExpectedImprovement
+
+    novel = Tree("max_incumbent_test", (Tree("x"),))
+    # greater_is_better=True: improvement = mu - incumbent - xi.
+    # Low incumbent (bad current best) → lots of room above → high EI.
+    # High incumbent (great current best) → almost nothing beats it → EI ≈ 0.
+    ei_low_incumbent = ExpectedImprovement(gp=fitted_gp, xi=0.0, greater_is_better=True,
+                                           incumbent=-1000.0)
+    ei_high_incumbent = ExpectedImprovement(gp=fitted_gp, xi=0.0, greater_is_better=True,
+                                            incumbent=1000.0)
+    assert ei_low_incumbent(novel) >= 0.0
+    assert ei_high_incumbent(novel) >= 0.0
+    assert ei_low_incumbent(novel) >= ei_high_incumbent(novel)
+    # And the high-incumbent (unbeatable) case must be (near) zero, unlike the low one.
+    assert ei_high_incumbent(novel) <= ei_low_incumbent(novel)
+
+
 def test_ei_xi_monotonicity_under_flat_predictions(fitted_gp):
     """Higher xi → more exploration → possibly lower EI for candidates near incumbent."""
     from bayesian_optimization.acquisition_function import ExpectedImprovement
