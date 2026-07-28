@@ -20,7 +20,7 @@ from .acquisition_function import (
     UpperConfidenceBound,
 )
 from .acquisition_optimizer import AcquisitionOptimizer
-from .diagnostics import get_logger, log_iteration
+from .diagnostics import enable_verbose_logging, get_logger, log_iteration, log_suggestion
 from .initial_sampling import (
     _generate_unique_initial_samples,
     _sample_fallback_tree,
@@ -297,6 +297,9 @@ class BayesianOptimization(Generic[NT, T, G]):
                 "An optimizer is required.  Pass an Evolutionary instance to the constructor."
             )
 
+        if verbose:
+            enable_verbose_logging()
+
         # --- Transform y and fit GP -------------------------------------------
         yp_transformed = self._y_transform.forward(
             np.array(self._y_list, dtype=float)
@@ -382,6 +385,15 @@ class BayesianOptimization(Generic[NT, T, G]):
                     f"Fallback deduplication failed: could not find a novel candidate "
                     f"after {self._max_duplicate_fallbacks} attempts."
                 )
+            _LOG.warning(
+                "iteration %d: the acquisition optimizer returned an already evaluated candidate; "
+                "replacing it with a random fallback sample (attempt %d/%d).  The suggestion's "
+                "acquisition_value then describes the replacement, not the optimizer's result -- "
+                "a run in which this fires every iteration is random search, not BO.",
+                self._iteration,
+                fallback_attempts + 1,
+                self._max_duplicate_fallbacks,
+            )
             candidate = canonical_tree(_sample_fallback_tree(self._initializer, self._x_set))
             fallback_attempts += 1
 
@@ -408,6 +420,7 @@ class BayesianOptimization(Generic[NT, T, G]):
         )
         self._last_suggestion = suggestion
         self._bo_state = BOState.SUGGESTED
+        log_suggestion(_LOG, suggestion)
         return suggestion
 
     def observe(self, candidate: Any, y: float) -> None:
@@ -551,7 +564,7 @@ class BayesianOptimization(Generic[NT, T, G]):
         dict from :meth:`finalize`.
         """
         if verbose:
-            logging.getLogger("bayesian_optimization").setLevel(logging.INFO)
+            enable_verbose_logging()
 
         # F1: pass real x0/y0 to initialize()
         self.initialize(
