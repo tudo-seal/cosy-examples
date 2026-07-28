@@ -272,18 +272,14 @@ def test_no_suggestion_is_structurally_already_known(space):
 
 
 @pytest.mark.integration
-@pytest.mark.xfail(
-    strict=True,
-    reason="COSY-3: new_goals is a set[Goal] and Goal defines neither __eq__ nor __hash__, so its "
-    "iteration order follows object identity -- sample_tree shuffles a differently ordered list "
-    "each run and no seed can make a run reproducible",
-)
 def test_same_seed_yields_the_same_trajectory(space):
     """The same seed must produce the same run.
 
-    The pre-samples are part of the compared trajectory deliberately: the divergence appears at the
-    very first one, before a single EA generation, which points straight at the enumeration order
-    rather than at the EA.
+    Until COSY-3 this was impossible: the resolution engine collected its goals in a ``set[Goal]``
+    whose element type defines neither ``__eq__`` nor ``__hash__``, so the enumeration order
+    followed object addresses and the seeded shuffle in ``sample_tree`` operated on a differently
+    ordered list every time.  The divergence showed up at the very first pre-sample, before a
+    single EA generation -- which is why the pre-samples stay part of the compared trajectory here.
     """
 
     def run() -> list[str]:
