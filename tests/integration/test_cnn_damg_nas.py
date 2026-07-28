@@ -530,14 +530,11 @@ def test_cifar_head_target_forces_convolutional_front_end():
 
 
 # ---------------------------------------------------------------------------
-# Regression guards for the two performance/correctness fixes.
+# Regression guard for the interpretation-cost fix.
 #
-# 1. The edgelist algebra must evaluate each continuation exactly once.  Writing the composition
-#    inline calls x and y once per tuple component, which makes interpretation cost
-#    3^(nesting depth) -- measured 698 s vs 4.4 s over 789 conversions of real terms.
-# 2. canonical_tree must repair the stale size/_hash left behind by cosy's replace_subtree_at,
-#    otherwise BayesianOptimization._x_set cannot recognise an already-evaluated architecture
-#    and would train it twice.
+# The edgelist algebra must evaluate each continuation exactly once.  Writing the composition
+# inline calls x and y once per tuple component, which makes interpretation cost
+# 3^(nesting depth) -- measured 698 s vs 4.4 s over 789 conversions of real terms.
 # ---------------------------------------------------------------------------
 
 def test_edgelist_algebra_evaluates_each_continuation_once():
@@ -562,27 +559,3 @@ def test_edgelist_algebra_evaluates_each_continuation_once():
     calls["x"] = calls["y"] = 0
     _before_edgelists(x, (y, 1), (0.0, 0.0), ["i0"])
     assert calls == {"x": 1, "y": 1}, f"before must call each continuation once, got {calls}"
-
-
-def test_canonical_tree_repairs_stale_hash_from_replace_subtree_at():
-    """cosy's replace_subtree_at mutates children in place, leaving size/_hash stale on every
-    ancestor; Tree.__eq__ compares size first, so the tree compares unequal to the same structure
-    built directly.  canonical_tree must restore the hash/eq contract without changing structure."""
-    from cosy.core.tree import Tree
-
-    from bayesian_optimization.utils import canonical_tree
-
-    replacement = Tree("h", (Tree("p"), Tree("q"), Tree("r")))
-    original = Tree("f", (Tree("g", (Tree("x"), Tree("y"))), Tree("z")))
-    mutated = original.replace_subtree_at((0,), replacement)
-    direct = Tree("f", (replacement, Tree("z")))
-
-    # the defect itself -- if this ever starts passing, cosy was fixed and the workaround can go
-    assert mutated != direct, "cosy's replace_subtree_at defect appears to be fixed upstream"
-
-    canonical_mutated, canonical_direct = canonical_tree(mutated), canonical_tree(direct)
-    assert canonical_mutated == canonical_direct
-    assert hash(canonical_mutated) == hash(canonical_direct)
-    assert canonical_mutated.size == canonical_direct.size
-    assert canonical_mutated in {canonical_direct}
-    assert str(canonical_mutated) == str(mutated), "canonicalisation must not change structure"

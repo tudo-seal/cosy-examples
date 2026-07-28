@@ -142,11 +142,6 @@ def _observed(bo) -> list[Tree[str]]:
 
 
 @pytest.mark.integration
-@pytest.mark.xfail(
-    strict=True,
-    reason="COSY-1: replace_subtree_at mutates in place, so crossover offspring carry a stale "
-    "size and _hash and no set of trees recognises them",
-)
 def test_crossover_offspring_satisfies_the_hash_contract(space):
     """An offspring must be indistinguishable from the same structure built directly.
 
@@ -258,24 +253,22 @@ def test_ucb_never_prefers_a_known_point_over_a_novel_one(space):
 def test_no_suggestion_is_structurally_already_known(space):
     """A suggestion must never repeat a point that has already been evaluated.
 
-    **This one passes today, and it is not a proof of a defect.**  It passes only because
-    ``suggest()`` canonicalises the candidate before the duplicate check -- the ``canonical_tree``
-    workaround that BO-2 removes.  It is kept as the regression guard for that removal: once the
-    workaround is gone, this is the assertion that has to be carried by the cosy fix instead, and
-    it is exactly the assertion that would have caught the defect had it existed earlier.
+    This assertion used to be carried by the ``canonical_tree`` workaround, which rebuilt every
+    candidate before the duplicate check.  BO-2 removed it, so what holds this up now is COSY-1:
+    a crossover offspring hashes like the structurally identical tree, and the plain ``in`` test
+    finds it.  No rebuilding anywhere -- if this ever fails again, the cached fields are stale
+    again.
     """
-    from bayesian_optimization.utils import canonical_tree
-
     bo = _make_bo(space, "ExpectedImprovement")
     bo.initialize(obj_fun=_objective, n_pre_samples=5, greater_is_better=False)
 
-    seen = {canonical_tree(tree) for tree in _observed(bo)}
+    seen = set(_observed(bo))
     for _ in range(10):
         suggestion = bo.suggest()
-        candidate = canonical_tree(suggestion.candidate)
+        candidate = suggestion.candidate
         assert candidate not in seen, f"re-suggested an already evaluated term: {candidate}"
         seen.add(candidate)
-        bo.observe(suggestion.candidate, _objective(suggestion.candidate))
+        bo.observe(candidate, _objective(candidate))
 
 
 @pytest.mark.integration
