@@ -246,10 +246,14 @@ def run_experiment(n_pre_samples: int, n_iterations: int, population_size: int, 
             optimizer.observe(suggestion.candidate, objective_value)
             iteration = suggestion.diagnostics["iteration"] if suggestion.diagnostics else None
             metrics = metrics_by_tree[suggestion.candidate]
-            logger.log("bo_step", iteration, suggestion.candidate, metrics)
+            logger.log("bo_step", iteration, suggestion.candidate, metrics, suggestion=suggestion)
+            # `fallback` decides how this line reads: after a fallback the candidate is a random
+            # sample, not the acquisition optimizer's choice. Seeing it live is the difference
+            # between noticing a degraded run and reading it out of the CSV a day later.
+            fallback = (suggestion.diagnostics or {}).get("fallback_used", "?")
             print(f"  bo_step[{iteration}]: objective={objective_value:.5f} "
                   f"accuracy={metrics['accuracy']:.4f} params={metrics['n_params']} "
-                  f"train={metrics['train_seconds']:.1f}s", flush=True)
+                  f"train={metrics['train_seconds']:.1f}s fallback={fallback}", flush=True)
 
         result = optimizer.finalize()
     bo_time = time.time() - t0

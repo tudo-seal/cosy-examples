@@ -35,6 +35,14 @@ CSV_COLUMNS = [
                         # correlate 1:1 - a lower loss can come with a lower accuracy)
     "n_params",         # trainable parameter count, to see whether BO drifts towards large nets
     "train_seconds",    # wall-clock training time, the basis for the CPU vs. A30 comparison
+    # The three columns below decide how the row may be read at all. When `suggest()` cannot find a
+    # novel candidate it replaces the optimizer's result with a random fallback sample, and
+    # `acquisition_value` then describes that replacement. A run whose bo_step rows all say
+    # fallback_used=True was random search; without these columns that is indistinguishable from BO
+    # in the finished file. Empty for pre_sample rows, which have no acquisition step.
+    "acquisition_value",
+    "fallback_used",
+    "fallback_attempts",
     "timestamp",
 ]
 
@@ -77,11 +85,18 @@ class ExperimentCSVLogger:
         self._writer.writerow(CSV_COLUMNS)
         self._file.flush()
 
-    def log(self, phase, index, tree, metrics):
+    def log(self, phase, index, tree, metrics, suggestion=None):
         """Append one evaluation. `metrics` is an `evaluate_candidate` result dict; missing keys are
         written as empty cells rather than failing, so a partially instrumented run still records
-        its structures and objective values."""
+        its structures and objective values.
+
+        `suggestion` is the `Suggestion` that produced this candidate, and carries the acquisition
+        value and the fallback state. Pre-sample rows have none, and their cells stay empty: an
+        empty cell says "there was no acquisition step here", whereas writing False would claim a
+        fallback was ruled out that was never evaluated.
+        """
         structure = tree.interpret(self._pretty_algebra())
+        diagnostics = (suggestion.diagnostics or {}) if suggestion is not None else {}
         self._writer.writerow([
             phase,
             index,
@@ -90,6 +105,9 @@ class ExperimentCSVLogger:
             metrics.get("accuracy", ""),
             metrics.get("n_params", ""),
             metrics.get("train_seconds", ""),
+            "" if suggestion is None else suggestion.acquisition_value,
+            diagnostics.get("fallback_used", ""),
+            diagnostics.get("fallback_attempts", ""),
             time.time(),
         ])
         self._file.flush()  # persist immediately - a crash mid-run must not lose completed rows
