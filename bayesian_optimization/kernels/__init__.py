@@ -1,11 +1,13 @@
 """Structured kernel implementations used by Bayesian Optimization."""
 
-from .graph_kernel import WeisfeilerLehmanKernel
+from .graph_kernel import HierarchicalWLKernel, WeisfeilerLehmanKernel
 from .kernel_base import StructuredKernelBase
-from .tree_kernel import OrderedRootedSubtreeKernel
+from .tree_kernel import OrderedRootedSubtreeKernel, SubsetTreeKernel
 
 __all__ = [
-    "StructuredKernelBase",
+    "HierarchicalWLKernel",
     "OrderedRootedSubtreeKernel",
+    "StructuredKernelBase",
+    "SubsetTreeKernel",
     "WeisfeilerLehmanKernel",
 ]

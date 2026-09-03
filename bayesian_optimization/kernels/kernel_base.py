@@ -5,10 +5,8 @@ from collections.abc import Hashable, Sequence
 from typing import Any, Generic, TypeVar
 
 import numpy as np
-from sklearn.base import clone
 from sklearn.gaussian_process.kernels import (
     GenericKernelMixin,
-    Hyperparameter,
     Kernel,
     NormalizedKernelMixin,
 )
@@ -68,7 +66,7 @@ class StructuredKernelBase(GenericKernelMixin, NormalizedKernelMixin, Kernel, AB
     def _kernel_matrix(
         self, X_prepared: Sequence[Any], Y_prepared: Sequence[Any]
     ) -> np.ndarray:
-        """Compute the (n_x × n_y) kernel matrix for prepared inputs."""
+        """Compute the (n_x x n_y) kernel matrix for prepared inputs."""
 
     def __call__(self, X: Any, Y: Any = None, eval_gradient: bool = False) -> Any:
         X_prepared = self._prepare_inputs(X)
@@ -82,12 +80,27 @@ class StructuredKernelBase(GenericKernelMixin, NormalizedKernelMixin, Kernel, AB
             return K, np.empty((K.shape[0], K.shape[1], 0))
 
         def f(theta: np.ndarray) -> np.ndarray:
-            return self.clone_with_theta(theta)(X, Y)
+            return np.asarray(self.clone_with_theta(theta)(X, Y), dtype=float)
 
         grad = _approx_fprime(self.theta, f, self.epsilon)
         return K, grad
 
     def diag(self, X: Any) -> np.ndarray:
+        """Return the self-similarities, by the only route a base class has.
+
+        This builds the full ``n x n`` matrix and throws all but the diagonal away.  Every
+        concrete kernel here overrides it with an ``O(n)`` path, because under normalization
+        the diagonal is known without computing anything, and this fallback is what a new
+        subclass gets until it does the same.  It is correct, and it is quadratic.  sklearn
+        calls ``diag`` on every ``predict`` with ``return_std=True``, which is every
+        acquisition evaluation.
+
+        Args:
+            X: The structured inputs.
+
+        Returns:
+            np.ndarray: One value per element of ``X``.
+        """
         return np.diag(self(X))
 
     def is_stationary(self) -> bool:

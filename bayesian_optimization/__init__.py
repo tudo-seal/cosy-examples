@@ -8,9 +8,9 @@ from .acquisition_function import (
     UpperConfidenceBound,
 )
 from .acquisition_optimizer import AcquisitionOptimizer
-from .kernels.graph_kernel import WeisfeilerLehmanKernel
+from .kernels.graph_kernel import HierarchicalWLKernel, WeisfeilerLehmanKernel
 from .kernels.kernel_base import StructuredKernelBase
-from .kernels.tree_kernel import OrderedRootedSubtreeKernel
+from .kernels.tree_kernel import OrderedRootedSubtreeKernel, SubsetTreeKernel
 from .state import BOState, Diagnostics, Suggestion
 
 __all__ = [
@@ -24,5 +24,7 @@ __all__ = [
     "AcquisitionOptimizer",
     "StructuredKernelBase",
     "OrderedRootedSubtreeKernel",
+    "SubsetTreeKernel",
     "WeisfeilerLehmanKernel",
+    "HierarchicalWLKernel",
 ]
