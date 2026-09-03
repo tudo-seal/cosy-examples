@@ -168,9 +168,11 @@ def warn_if_exploitation_stalls(
         "value, so no candidate promises an improvement over the incumbent.  This is the "
         "overconfidence chain: posterior deviations too small, the acquisition flat at its floor, "
         "the loop exploiting and the best observed value stalling.  Read the standardized "
-        "leave-one-out residuals (read_calibration): a spread far above one confirms it, and "
-        "marginal-likelihood model selection is the repair.  On a finite space, exhaustion "
-        "produces the same reading and is a legitimate end state.",
+        "leave-one-out residuals (read_calibration): a spread far above one confirms it.  The "
+        "repair is a kernel that carries its own scale together with a kernel_optimizer to fit "
+        "it, because kernel_optimizer alone has nothing to move on a kernel that declares no "
+        "hyperparameters.  On a finite space, exhaustion produces the same reading and is a "
+        "legitimate end state.",
         iteration,
         acquisition_name,
         acquisition_value,

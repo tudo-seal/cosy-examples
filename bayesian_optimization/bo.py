@@ -213,16 +213,47 @@ class BayesianOptimization(Generic[NT, T, G]):
         the only margin among the three scores, and expected improvement has none.
     kernel:
         sklearn kernel for the GP.  Defaults to ``OrderedRootedSubtreeKernel()``.
+
+        Three of the four kernels this package ships, ``OrderedRootedSubtreeKernel``,
+        ``SubsetTreeKernel`` and ``WeisfeilerLehmanKernel``, declare no hyperparameter at all and
+        normalize their Gram matrix, so their similarity carries the shape of a term and not its
+        scale, and there is nothing for a kernel optimizer to fit.  Normalization puts
+        ``k(t, t)`` at one wherever the unnormalized self-similarity is positive, and there is one
+        term where it is not: ``SubsetTreeKernel`` scores a single node at zero, because a single
+        node roots no subset tree.  ``HierarchicalWLKernel`` is the exception on both counts: it
+        declares one weight per granularity level and sums one normalized kernel per level, so
+        its diagonal is the sum of those weights, and model selection moves that sum along with
+        them.
+
+        A kernel whose diagonal is one fixes the prior variance of the GP at one.  Without a scale
+        fitted to the observations the posterior deviation stays near what that leaves behind,
+        and expected improvement, which lives on that deviation, is small for every candidate.  A
+        caller who wants the scale fitted multiplies a ``ConstantKernel`` onto the kernel and
+        passes ``kernel_optimizer`` along with it.  ``HierarchicalWLKernel`` needs no such factor,
+        because its weights already are the scale.
+
+        Two things to watch when model selection is on.  While every observed value is still the
+        same, which is the state an initial design on a plateau of the objective leaves behind,
+        the marginal likelihood has nothing to explain, and it drives the amplitude to the lower
+        bound of the ``ConstantKernel`` instead of reading a scale off the data.  sklearn reports
+        that as a ``ConvergenceWarning`` naming ``constant_value``.  And a ``WhiteKernel`` added
+        to the sum gives the likelihood a way to call the whole spread observation noise, so the
+        fit that results predicts a constant and can carry the higher likelihood of the two.  Read
+        the standardized leave-one-out residuals
+        (:func:`~bayesian_optimization.read_calibration`) before trusting a fitted kernel.
     kernel_optimizer:
         sklearn kernel hyperparameter optimizer.  Fixing a kernel's parameters by maximizing the
         marginal likelihood, the probability the model assigns to the observed values, is the
-        standard model selection for a surrogate, so it is on by default.  Pass ``None`` to freeze
-        the kernel's hyperparameters at the values it was constructed with.
+        standard model selection for a surrogate.  It is off by default here because the default
+        kernel has nothing to select.  sklearn takes an optimizer for such a kernel and then
+        skips its optimization step *without saying so*, which is a run spent on a surrogate
+        whose scale never moved.  Pass ``"fmin_l_bfgs_b"`` together with a kernel that declares
+        hyperparameters to switch model selection on.
 
-        A kernel with no declared hyperparameters has nothing to fit, and sklearn ignores the
-        optimizer for it *without saying so*.  That is how a run can spend its whole budget on an
-        over-confident GP whose amplitudes never moved.  This class says so instead, once per
-        run, when an optimizer is set and the kernel's ``theta`` is empty.
+        Both mismatches are said out loud, once per run.  An optimizer over a kernel whose
+        ``theta`` is empty is the one, and a kernel that declares hyperparameters while this is
+        ``None`` is the other, because that one freezes parameters the marginal likelihood could
+        have fitted.
     n_restarts_kernel_optimizer:
         Number of random restarts for kernel optimization (never decremented).
     optimizer:
@@ -307,7 +338,7 @@ class BayesianOptimization(Generic[NT, T, G]):
         ucb_beta: float = 2.0,
         pi_margin: float = 0.0,
         kernel: Kernel | None = None,
-        kernel_optimizer: str | None = "fmin_l_bfgs_b",
+        kernel_optimizer: str | None = None,
         n_restarts_kernel_optimizer: int = 20,
         optimizer: EvolutionarySearch[NT, T, G] | None = None,
         initializer: Initializer[NT, T, G] | None = None,
@@ -347,6 +378,7 @@ class BayesianOptimization(Generic[NT, T, G]):
         self._last_optimized_kernel: Kernel | None = None
         self._iteration: int = 0
         self._warned_about_model_selection: bool = False
+        self._warned_about_frozen_hyperparameters: bool = False
         self._warned_about_exploitation: bool = False
         self._logger: logging.Logger = _LOG
         self._trace: list[TraceRecord] = []
@@ -834,6 +866,7 @@ class BayesianOptimization(Generic[NT, T, G]):
         gp_kwargs.setdefault("random_state", self.seed)
 
         self._warn_if_nothing_to_fit(gp_kwargs)
+        self._warn_if_hyperparameters_go_unfitted(gp_kwargs)
 
         model = GaussianProcessRegressor(**gp_kwargs)
         model.fit(
@@ -953,12 +986,13 @@ class BayesianOptimization(Generic[NT, T, G]):
     def _warn_if_nothing_to_fit(self, gp_kwargs: dict[str, Any]) -> None:
         """Say so when model selection is asked for and the kernel has nothing to select.
 
-        sklearn takes an ``optimizer`` and a kernel whose ``theta`` is empty without complaining:
-        it maximizes the marginal likelihood over zero parameters, which is to say it does
-        nothing, and the amplitudes stay wherever they were constructed.  On a counting kernel
-        that is the difference between a calibrated GP and one whose sigma is an order of
-        magnitude too small, and the symptom, an acquisition that underflows and a search that
-        stops exploring, shows up nowhere near the cause.
+        sklearn takes an ``optimizer`` and a kernel whose ``theta`` is empty without complaining.
+        It guards its whole optimization step with ``self.kernel_.n_dims > 0`` and skips it, so
+        the amplitudes stay wherever they were constructed and the fit is bit for bit the one an
+        unset optimizer would have produced.  On a counting kernel that is the difference between
+        a calibrated GP and one whose sigma is an order of magnitude too small, and the symptom,
+        an acquisition that underflows and a search that stops exploring, shows up nowhere near
+        the cause.
 
         Args:
             gp_kwargs: The arguments the regressor is about to be built with.
@@ -970,11 +1004,39 @@ class BayesianOptimization(Generic[NT, T, G]):
             self._warned_about_model_selection = True
             _LOG.warning(
                 "kernel_optimizer=%r is set, but %s declares no hyperparameters, so there is "
-                "nothing for the marginal likelihood to fit and sklearn will run the optimizer "
-                "over an empty parameter vector.  The kernel's scales stay at their constructed "
-                "values for the whole run.",
+                "nothing for the marginal likelihood to fit and sklearn skips its optimization "
+                "step without a word.  The kernel's scales stay at their constructed values for "
+                "the whole run.",
                 gp_kwargs.get("optimizer"),
                 type(kernel).__name__,
+            )
+
+    def _warn_if_hyperparameters_go_unfitted(self, gp_kwargs: dict[str, Any]) -> None:
+        """Say so when a kernel declares hyperparameters and no optimizer was set to fit them.
+
+        This is the other half of the silence :meth:`_warn_if_nothing_to_fit` covers.  Model
+        selection is off by default here because the kernel it defaults to declares nothing to
+        select, so a caller who hands in one that does declare something gets it frozen at its
+        constructed values unless they hand in an optimizer as well.  The symptom is the same as
+        in the opposite case, a surrogate whose scale never moves, but the cause sits in the
+        argument the caller left out rather than in the one they passed.
+
+        Args:
+            gp_kwargs: The arguments the regressor is about to be built with.
+        """
+        if self._warned_about_frozen_hyperparameters or gp_kwargs.get("optimizer") is not None:
+            return
+        kernel = gp_kwargs.get("kernel")
+        theta = getattr(kernel, "theta", np.empty(0))
+        if kernel is not None and theta.size > 0:
+            self._warned_about_frozen_hyperparameters = True
+            _LOG.warning(
+                "kernel_optimizer is None, but %s declares hyperparameters (theta has %d "
+                "entries), so the marginal likelihood never sees them and they stay at the values "
+                "the kernel was constructed with for the whole run.  Pass "
+                "kernel_optimizer='fmin_l_bfgs_b' to fit them.",
+                type(kernel).__name__,
+                theta.size,
             )
 
     def observe(self, candidate: Any, y: float) -> None:
@@ -1117,9 +1179,10 @@ class BayesianOptimization(Generic[NT, T, G]):
         self._initializer = None
         self._trace = []
         self._warned_about_exploitation = False
-        # The older flag of the same shape.  A second run is a second run: it fits a second
-        # surrogate, and if that one has nothing to fit the caller has to be told again.
+        # A second run fits a second surrogate, and a caller whose kernel and optimizer still do
+        # not match has to be told a second time.  Both model selection flags go back with it.
         self._warned_about_model_selection = False
+        self._warned_about_frozen_hyperparameters = False
         self.last_acquisition_run = None
 
     def best(self) -> tuple[Any, float]:

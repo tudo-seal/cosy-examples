@@ -41,6 +41,20 @@ class StructuredKernelBase(GenericKernelMixin, NormalizedKernelMixin, Kernel, AB
     Subclasses must implement ``_prepare_inputs`` and ``_kernel_matrix``.
     Gradient computation falls back to numerical finite differences via the
     vendored ``_approx_fprime``.
+
+    A normalized kernel carries the shape of a similarity and not its scale.  Dividing every
+    entry by the two self-similarities puts ``k(t, t)`` at one wherever that self-similarity is
+    positive, which is what the subclasses do
+    by default, so the prior variance of a Gaussian process built on one of them is one as well.
+    The scale has to come from outside then, either from a hyperparameter the subclass declares
+    itself or from a factor fitted around the kernel.  A subclass that declares no
+    ``hyperparameter_*`` property has an empty ``theta``, and a kernel optimizer then has
+    nothing to move.
+
+    ``HierarchicalWLKernel`` is the counterexample in this package.  It declares one weight per
+    truncation level, and it sums one normalized kernel per level, so its diagonal is the sum of
+    the weights rather than one.  Fitting the weights therefore sets the scale as well, and a
+    constant factor around that kernel would only duplicate what the weights already do.
     """
 
     # The property below covers all access paths sklearn uses.  A bare class

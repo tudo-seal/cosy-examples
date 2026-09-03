@@ -285,8 +285,10 @@ class HierarchicalWLKernel(_GrakelWeisfeilerLehmanBase, Generic[T]):
 
     ``k_hWL(t, t') = sum over l of lambda_l * k_WL^(h)(G_l, G_l')``, where ``G_l`` is the term
     graph of ``t`` truncated to granularity level ``l``.  The sum is what widens the model
-    selection's reach: instead of choosing one round count it fits a weight per level, and each
-    weight is a continuous hyperparameter the marginal likelihood can move.
+    selection's reach: instead of choosing one round count it offers a weight per level, and each
+    weight is a continuous hyperparameter the marginal likelihood can move once a caller passes a
+    ``kernel_optimizer``, which no longer happens by default.  The weights also set the scale, as
+    :meth:`diag` shows, so this kernel needs no constant factor around it.
 
     The construction starts its sum at level 2, because the graph of level 1 carries no edges and
     its relabeling rounds have nothing to propagate.  The truncation itself is a single fold, into

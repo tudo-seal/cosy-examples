@@ -73,8 +73,9 @@ class CalibrationRead:
             against them reads an uncentered surrogate.  And ``BayesianOptimization`` normalizes
             by default while its **default kernel declares no hyperparameters at all**, so on that
             configuration ``normalize_y`` is the only thing standing between the residuals and the
-            units of the objective, which is the concrete form of the warning
-            ``_warn_if_nothing_to_fit`` emits.
+            units of the objective.  Model selection is off there for the same reason: a kernel
+            that declares no hyperparameter offers an optimizer no amplitude to absorb the scale
+            with.
 
             The raw fields carry the same units caveat: where the targets were normalized,
             :attr:`residuals`, :attr:`predicted_deviations` and :attr:`log_marginal_likelihood`
