@@ -211,6 +211,61 @@ def _check_request_against_space(search_space: Any, request: Any) -> None:
     raise ValueError(msg)
 
 
+# The diagnostics keys a trace row is read from.  ``Diagnostics`` declares three more, and no
+# column of the row is built from any of them, so a row is complete without them.
+_TRACE_DIAGNOSTICS_KEYS: tuple[str, ...] = (
+    "iteration",
+    "mean_at_pick",
+    "deviation_at_pick",
+    "incumbent",
+    "fallback_used",
+)
+
+
+def _require_trace_diagnostics(suggestion: Suggestion) -> tuple[Diagnostics, float]:
+    """Return the diagnostics and the acquisition value a trace row is read from.
+
+    ``Diagnostics`` declares every key optional, so a mapping that holds none of them is a
+    well-typed one, and a row is read from it by subscript.  A check against ``None`` alone
+    therefore passes a partial mapping through to the first missing column, where it fails with a
+    ``KeyError`` that names one key and never says which ones a row needs.
+
+    Args:
+        suggestion (Suggestion): The pass a row is to be written for.
+
+    Returns:
+        tuple[Diagnostics, float]: The diagnostics, and the acquisition value at the pick.
+
+    Raises:
+        ValueError: If the suggestion carries no diagnostics, no acquisition value, or
+            diagnostics without every key a row is read from.  Every suggestion this class
+            produces carries all of them.  One that does not came from somewhere else, and a row
+            of substitute values would be a run description nobody measured.
+    """
+    diagnostics = suggestion.diagnostics
+    if diagnostics is None:
+        msg = (
+            "this suggestion carries no diagnostics, so there is nothing to write a trace row "
+            "from.  Every suggestion suggest() returns carries them."
+        )
+        raise ValueError(msg)
+    if suggestion.acquisition_value is None:
+        msg = (
+            "this suggestion carries no acquisition value, so its trace row would have no score "
+            "at the pick.  Every suggestion suggest() returns carries one."
+        )
+        raise ValueError(msg)
+    missing = [key for key in _TRACE_DIAGNOSTICS_KEYS if key not in diagnostics]
+    if missing:
+        msg = (
+            f"this suggestion's diagnostics are missing {', '.join(missing)}, so a trace row "
+            "cannot be written from them.  Every suggestion suggest() returns carries all of "
+            "them, and a row assembled around a gap would be a run description nobody measured."
+        )
+        raise ValueError(msg)
+    return diagnostics, suggestion.acquisition_value
+
+
 class BayesianOptimization(Generic[NT, T, G]):
     """Bayesian optimization over CoSy solution spaces, as a closed loop and as an ask/tell layer.
 
@@ -1155,7 +1210,8 @@ class BayesianOptimization(Generic[NT, T, G]):
         RuntimeError
             If called outside the SUGGESTED state.
         ValueError
-            If ``candidate`` does not match the last suggestion, or if ``y`` is not finite.
+            If ``candidate`` does not match the last suggestion, if ``y`` is not finite, or if
+            the last suggestion carries no diagnostics a trace row can be read from.
         """
         if self._bo_state != BOState.SUGGESTED:
             raise RuntimeError(
@@ -1174,6 +1230,11 @@ class BayesianOptimization(Generic[NT, T, G]):
         # but the observation set has to hold exactly what was suggested.
         recorded = self._last_suggestion.candidate
         value = _finite_or_raise(y, recorded)
+        # Checked before the dataset grows, because the row is written after it has.  A suggestion
+        # no row can be read from would otherwise leave a term and a value behind that no trace
+        # row and no iteration count mention, and the state stays at SUGGESTED, so the very same
+        # call is accepted again and appends them a second time.
+        _require_trace_diagnostics(self._last_suggestion)
         self._x_list.append(recorded)
         self._x_set.add(recorded)
         self._y_list.append(value)
@@ -1204,20 +1265,15 @@ class BayesianOptimization(Generic[NT, T, G]):
             TraceRecord: The row.
 
         Raises:
-            ValueError: If the suggestion carries no diagnostics.  Every suggestion this class
-                produces does.  One that does not came from somewhere else, and a row of
-                substitute values would be a run description nobody measured.
+            ValueError: If no row can be read from the suggestion, as
+                :func:`_require_trace_diagnostics` decides it.  ``observe()`` asks the same
+                question before it records anything, so the answer here is a second reading of
+                the values the row is then built from.
         """
-        diagnostics = suggestion.diagnostics
-        if diagnostics is None or suggestion.acquisition_value is None:
-            msg = (
-                "this suggestion carries no diagnostics, so there is nothing to write a trace row "
-                "from.  Every suggestion suggest() returns carries them."
-            )
-            raise ValueError(msg)
+        diagnostics, acquisition = _require_trace_diagnostics(suggestion)
         return TraceRecord(
             iteration=diagnostics["iteration"],
-            acquisition=suggestion.acquisition_value,
+            acquisition=acquisition,
             mean=diagnostics["mean_at_pick"],
             deviation=diagnostics["deviation_at_pick"],
             incumbent=diagnostics["incumbent"],

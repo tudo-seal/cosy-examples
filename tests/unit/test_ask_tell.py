@@ -262,6 +262,116 @@ def test_observe_records_the_candidate_the_optimizer_produced(bo_factory, tree_c
     assert suggestion.candidate in bo._x_set
 
 
+def test_observe_records_nothing_for_a_suggestion_it_cannot_trace(bo_factory, tree_corpus):
+    """A pass no trace row can be written for must leave the dataset as it was.
+
+    The row is built after the term and the value are appended, so a check inside it runs too
+    late.  The term and the value stay in the dataset, no row and no iteration count mention
+    them, the state is still SUGGESTED, and the same call is accepted again and appends them a
+    second time.  ``finalize()`` then answers with an optimum the trace has never seen.
+    """
+    bo = bo_factory()
+    bo.initialize(x0=tree_corpus[:3], y0=[1.0, 5.0, 2.0])
+    suggestion = bo.suggest()
+    assert suggestion.diagnostics is not None
+    suggestion.diagnostics.pop("iteration")
+
+    before = bo.get_state_snapshot()
+    with pytest.raises(ValueError, match="missing iteration"):
+        bo.observe(suggestion.candidate, 42.0)
+
+    after = bo.get_state_snapshot()
+    assert len(after["x_list"]) == len(before["x_list"])
+    assert len(after["y_list"]) == len(before["y_list"])
+    assert len(bo._x_set) == 3
+    assert after["iteration"] == before["iteration"]
+    assert after["state"] == "SUGGESTED"
+    assert bo.trace == []
+    assert bo.finalize()["best_y"] == pytest.approx(5.0)
+
+
+def test_partial_diagnostics_are_refused_by_name(bo_factory, tree_corpus):
+    """Diagnostics that hold no key a row is read from must say which keys those are.
+
+    Every key of ``Diagnostics`` is optional, so an empty mapping is a well-typed one and a check
+    against ``None`` lets it through.  What followed was a ``KeyError`` on the first column, which
+    names one key and leaves the other four to be found one rerun at a time.
+    """
+    from bayesian_optimization.state import Suggestion
+
+    bo = bo_factory()
+    bo.initialize(x0=tree_corpus[:3], y0=[1.0, 5.0, 2.0])
+
+    with pytest.raises(ValueError) as refused:
+        bo._trace_record(
+            Suggestion(candidate=Tree("t"), acquisition_value=0.25, diagnostics={}), 1.0
+        )
+
+    message = str(refused.value)
+    for key in ("iteration", "mean_at_pick", "deviation_at_pick", "incumbent", "fallback_used"):
+        assert key in message, f"the refusal does not name {key}: {message!r}"
+
+
+def test_the_checked_keys_are_the_keys_a_row_is_read_from(bo_factory, tree_corpus):
+    """Diagnostics holding nothing but the checked keys must still produce a row.
+
+    The check walks a list of names while the row is assembled by subscript, so the two can
+    disagree, and a check that has fallen behind passes exactly the mapping that then fails.  A
+    row built from the checked keys alone is what keeps them together.
+    """
+    from bayesian_optimization.bo import _TRACE_DIAGNOSTICS_KEYS
+    from bayesian_optimization.state import Suggestion
+
+    checked = {
+        "iteration": 3,
+        "mean_at_pick": 0.5,
+        "deviation_at_pick": 0.25,
+        "incumbent": 5.0,
+        "fallback_used": False,
+    }
+    assert set(checked) == set(_TRACE_DIAGNOSTICS_KEYS)
+
+    bo = bo_factory()
+    bo.initialize(x0=tree_corpus[:3], y0=[1.0, 5.0, 2.0])
+    row = bo._trace_record(
+        Suggestion(candidate=Tree("t"), acquisition_value=0.25, diagnostics=checked), 7.0
+    )
+
+    assert row.iteration == 3
+    assert row.acquisition == pytest.approx(0.25)
+    assert row.observed == pytest.approx(7.0)
+    assert row.best == pytest.approx(7.0)
+
+
+def test_a_missing_score_is_not_reported_as_missing_diagnostics(bo_factory, tree_corpus):
+    """The two halves of a row are refused under their own names.
+
+    One message covered both, so a suggestion whose diagnostics are complete and whose
+    acquisition value is absent was reported as carrying no diagnostics, which sends the reader
+    to the half that is there.
+    """
+    from bayesian_optimization.state import Suggestion
+
+    bo = bo_factory()
+    bo.initialize(x0=tree_corpus[:3], y0=[1.0, 5.0, 2.0])
+    complete = {
+        "iteration": 1,
+        "mean_at_pick": 0.5,
+        "deviation_at_pick": 0.25,
+        "incumbent": 5.0,
+        "fallback_used": False,
+    }
+
+    with pytest.raises(ValueError, match="carries no diagnostics"):
+        bo._trace_record(
+            Suggestion(candidate=Tree("t"), acquisition_value=0.25, diagnostics=None), 1.0
+        )
+    with pytest.raises(ValueError, match="carries no acquisition value"):
+        bo._trace_record(
+            Suggestion(candidate=Tree("t"), acquisition_value=None, diagnostics=complete), 1.0
+        )
+
+
 def test_the_fallback_draws_from_the_sampler_the_caller_named(bo_factory, tree_corpus):
     """One sampler serves the initial dataset and the duplicate replacement.
 
