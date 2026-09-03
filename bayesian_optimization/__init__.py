@@ -27,6 +27,11 @@ from .diagnostics import (
     trace_columns,
     trace_rows,
 )
+from .initial_sampling import (
+    KernelDiverseInitializer,
+    PiStrategy,
+    exponential_decay,
+)
 from .kernels.graph_kernel import HierarchicalWLKernel, WeisfeilerLehmanKernel
 from .kernels.kernel_base import StructuredKernelBase
 from .kernels.tree_kernel import OrderedRootedSubtreeKernel, SubsetTreeKernel
@@ -58,6 +63,9 @@ __all__ = [
     "read_trace",
     "trace_columns",
     "trace_rows",
+    "KernelDiverseInitializer",
+    "PiStrategy",
+    "exponential_decay",
     "StructuredKernelBase",
     "OrderedRootedSubtreeKernel",
     "SubsetTreeKernel",
