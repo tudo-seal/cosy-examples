@@ -63,14 +63,9 @@ Homepage = "https://github.com/tudo-seal/cosy-examples"
 Repository = "https://github.com/tudo-seal/cosy-examples.git"
 "Bug Tracker" = "https://github.com/tudo-seal/cosy-examples/issues"
 
-[tool.setuptools]
-packages = [
-    "bayesian_optimization",
-    "bayesian_optimization.kernels",
-    "bayesian_optimization.examples",
-    "bayesian_optimization.examples.damg_nas",
-    "bayesian_optimization.examples.simple_nas",
-]
+[tool.setuptools.packages.find]
+include = ["bayesian_optimization*"]
+namespaces = false
 
 [tool.setuptools.package-data]
 bayesian_optimization = ["examples/simple_nas/data/*"]
