@@ -3,8 +3,9 @@ from __future__ import annotations
 
 from .acquisition_function import (
     AcquisitionFunction,
-    DiversityUCB,
     ExpectedImprovement,
+    MarginalPosterior,
+    ProbabilityOfImprovement,
     UpperConfidenceBound,
 )
 from .acquisition_optimizer import AcquisitionOptimizer
@@ -20,7 +21,8 @@ __all__ = [
     "AcquisitionFunction",
     "ExpectedImprovement",
     "UpperConfidenceBound",
-    "DiversityUCB",
+    "ProbabilityOfImprovement",
+    "MarginalPosterior",
     "AcquisitionOptimizer",
     "StructuredKernelBase",
     "OrderedRootedSubtreeKernel",
