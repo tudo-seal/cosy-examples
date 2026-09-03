@@ -3,22 +3,79 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any, Literal
 
-from cosy.core.tree import Tree
+from .acquisition_function import AcquisitionFunction, require_term
+from .diagnostics.frontier import GenerationRecord
 
-from .acquisition_function import AcquisitionFunction
+
+def _generation_record(state: Any) -> GenerationRecord:
+    """Summarize one generation of the driver's stream.
+
+    The acquisition is a scalar, so the fitness values are floats and the summary is arithmetic.
+    A search configured with a vector-valued quality measure would need an order rather than a
+    mean, and this says so instead of averaging a tuple into a number that means nothing.
+
+    Args:
+        state (Any): The ``EAState`` the driver yielded.
+
+    Returns:
+        GenerationRecord: The record.
+
+    Raises:
+        TypeError: If a fitness is not a real number.
+    """
+    values = [state.fitness[individual] for individual in state.population]
+    for value in (*values, state.best_fitness):
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            msg = (
+                f"a generation record summarises scalar fitness values and met {value!r}; an "
+                f"acquisition is scalar, so a sequence here means the search was configured with "
+                f"a different quality measure and this summary does not apply to it"
+            )
+            raise TypeError(msg)
+    return GenerationRecord(
+        generation=state.generation,
+        best=float(state.best_fitness),
+        population_best=max(float(value) for value in values),
+        population_mean=sum(float(value) for value in values) / len(values),
+        population_worst=min(float(value) for value in values),
+        distinct_members=len(set(state.population)),
+        last_improvement=state.last_improvement,
+        offspring=len(state.offspring),
+    )
+
+
+def _known_points_of(acquisition_function: AcquisitionFunction) -> frozenset[Any]:
+    """Return the acquisition function's known points as a set that is always safe to test."""
+    known = getattr(acquisition_function, "known_points", None)
+    return frozenset(known) if known else frozenset()
 
 
 def _make_acquisition_objective_batch(
     acquisition_function: AcquisitionFunction,
 ) -> Any:
-    """Wrap an AcquisitionFunction as a batch fitness objective with caching."""
+    """Wrap an AcquisitionFunction as a batch fitness objective with caching.
+
+    Only genuine scores are cached.  The floor an already-evaluated candidate receives is not a
+    score of its own, so caching it would carry a number from one generation into a later one
+    where it no longer sits below everything, and a known point could win after all.  It is
+    recomputed instead, and for an acquisition that is unbounded below it is recomputed from a
+    running minimum over every genuine score seen so far, which keeps it consistent across the
+    whole optimization rather than per generation.
+    """
     cache: dict[Any, float] = {}
 
     def objective(sample: list[Any]) -> Mapping[Any, float]:
-        missing = [t for t in sample if isinstance(t, Tree) and t not in cache]
+        known = _known_points_of(acquisition_function)
+        # Checked before the cache is consulted: a non-term used to slip past the isinstance
+        # filter here and receive the floor, which is a number the caller cannot tell from a
+        # genuinely unpromising candidate.
+        terms = [require_term(t) for t in sample]
+        missing = [t for t in terms if t not in cache and t not in known]
         if missing:
             cache.update(acquisition_function.evaluate_batch(missing))
-        return {t: cache.get(t, 0.0) for t in sample}
+
+        floor = acquisition_function.known_point_floor(list(cache.values()))
+        return {t: (floor if t in known else cache[t]) for t in terms}
 
     return objective
 
@@ -26,18 +83,45 @@ def _make_acquisition_objective_batch(
 def _make_acquisition_objective_single(
     acquisition_function: AcquisitionFunction,
 ) -> Any:
-    """Wrap an AcquisitionFunction as a single-sample fitness objective with caching."""
+    """Wrap an AcquisitionFunction as a single-sample fitness objective with caching.
+
+    Known points are neither cached nor asked of the acquisition function: asked alone, there is
+    no genuine score of the same batch for them to sit below.  They receive the floor, and here
+    that floor has to come from the acquisition's own lower bound rather than from the scores seen
+    so far.  A running minimum is empty at the first call, so the very first known point of a run
+    would be scored at ``-1.0`` and beat every genuine candidate that scored below it.
+
+    An acquisition without a lower bound cannot be carried this way, and this says so instead of
+    scoring anyway.  Scoring an already-evaluated candidate at a floor, so that the search cannot
+    hand it back, is a deliberate departure from the plain optimization loop, which evaluates
+    whatever the run returns (see :meth:`AcquisitionFunction.known_point_floor`), and a departure
+    that silently fails to do the one thing it was taken for is worse than the duplicate it was
+    meant to prevent.
+
+    Raises:
+        ValueError: If the acquisition has known points but no lower bound.  Use ``mode="batch"``,
+            where every score of the generation is available before the floor is fixed.
+    """
+    if _known_points_of(acquisition_function) and acquisition_function.lower_bound is None:
+        msg = (
+            f"{type(acquisition_function).__name__} is unbounded below, so the score of an "
+            "already-evaluated candidate can only be placed relative to the scores of the others "
+            'in its generation.  Optimise it with mode="batch".'
+        )
+        raise ValueError(msg)
+
     cache: dict[Any, float] = {}
 
     def objective(sample: Any) -> float:
-        if isinstance(sample, Tree):
-            cached = cache.get(sample)
-            if cached is not None:
-                return cached
-            value = float(acquisition_function(sample))
-            cache[sample] = value
-            return value
-        return float(acquisition_function(sample))
+        require_term(sample)
+        if sample in _known_points_of(acquisition_function):
+            return acquisition_function.known_point_floor(())
+        cached = cache.get(sample)
+        if cached is not None:
+            return cached
+        value = float(acquisition_function(sample))
+        cache[sample] = value
+        return value
 
     return objective
 
@@ -45,65 +129,135 @@ def _make_acquisition_objective_single(
 class AcquisitionOptimizer:
     """Adapter that wraps an evolutionary optimizer to maximize an AcquisitionFunction.
 
+    The acquisition function enters the evolutionary search as a **fitness function**, not as a
+    compositional measure folded over the term: it scores a candidate against every candidate
+    evaluated before, so its value does not compose out of the values of the subterms.
+
+    Its codomain is the reals, totally ordered, so any two fitness values are comparable and the
+    selection methods of the field apply without adaptation.  One of them asks for more than an
+    order: a proportional draw reads numbers, and it reads them through a scalarization into the
+    *positive* reals.  ``ExpScalarization`` is that map, since ``exp`` is positive everywhere and
+    preserves the order, and cosy's ``FitnessProportionalSelection`` takes it as a constructor
+    argument, so a search configured with proportional selection already carries one.  Two
+    consequences for acquisition values in particular: they are unbounded below, so no lift or
+    shift makes them weights, and they can sit far enough below zero for ``exp`` to underflow,
+    which is what the ``scale`` parameter of that scalarization is for.
+
+    Population size and the two rates are no longer arguments here.  They are parameters of the
+    search, fixed on the ``EvolutionarySearch`` before the run, together with its
+    component choices.  A single run takes the search space and the quality measure and nothing
+    else, so passing the parameters per call was the inversion the previous driver carried.
+
     Parameters
     ----------
     evolutionary:
-        Object with an ``evolutionary_best(objective, population_size, ...)`` method.
-    population_size:
-        EA population size.
-    mutation_rate:
-        EA mutation rate.
-    recombination_rate:
-        EA recombination rate.
+        Object with an ``evolutionary_best(query, objective, mode)`` method, and, for
+        :meth:`maximize_with_population`, an ``evolutionary_stream`` of the same signature.
     """
 
-    def __init__(
-        self,
-        evolutionary: Any,
-        *,
-        population_size: int = 100,
-        mutation_rate: float = 0.02,
-        recombination_rate: float = 0.95,
-    ) -> None:
+    def __init__(self, evolutionary: Any) -> None:
         self.evolutionary = evolutionary
-        self.population_size = population_size
-        self.mutation_rate = mutation_rate
-        self.recombination_rate = recombination_rate
 
     def maximize(
         self,
         acquisition_fn: AcquisitionFunction,
+        query: Any,
         *,
         mode: Literal["single", "batch"] = "batch",
-        verbose: bool = False,
     ) -> Any:
-        """Run the EA to maximise ``acquisition_fn`` and return the best candidate.
+        """Run the EA to maximize ``acquisition_fn`` and return the best candidate.
 
         Parameters
         ----------
         acquisition_fn:
-            The acquisition function to maximise.
+            The acquisition function to maximize.
+        query:
+            The generator query naming the search space and the requested type.
         mode:
             Whether to evaluate the EA population in ``"batch"`` or
             ``"single"`` mode.
-        verbose:
-            Whether to pass verbosity flag to the evolutionary algorithm.
 
         Returns
         -------
         Any
-            Best candidate found, or ``None`` if the optimizer returned nothing.
+            The fittest candidate encountered over the whole run, not the best of the final
+            generation, which is what the previous driver returned.
+        """
+        return self.evolutionary.evolutionary_best(
+            query, self._objective(acquisition_fn, mode), mode
+        )
+
+    def maximize_with_population(
+        self,
+        acquisition_fn: AcquisitionFunction,
+        query: Any,
+        *,
+        mode: Literal["single", "batch"] = "batch",
+    ) -> tuple[Any, list[Any], list[GenerationRecord]]:
+        """Maximize, and keep both the population that produced the answer and how it got there.
+
+        The frontier read places the candidates in the plane of posterior mean and posterior
+        deviation and asks whether the returned term sits on the upper right frontier of its final
+        generation, which is where a score rising in both coordinates has to put it.  A
+        maximization that answers with the term alone cannot be read that way, because the
+        population exists during the run and is dropped at the end of it.  The driver already
+        yields it: ``evolutionary_best`` is the same stream with everything but the last ``best``
+        thrown away.
+
+        Keeping it costs a list of at most ``population_size`` references, and it is what makes
+        the frontier check runnable on a real run rather than only on a fixture.  It is a
+        separate method rather than the way :meth:`maximize` works, because it asks more of the
+        optimizer: ``evolutionary_best`` is the whole of what a maximization needs, and a caller
+        who does not read the frontier should not have to supply a stream to get one.
+
+        Parameters
+        ----------
+        acquisition_fn:
+            The acquisition function to maximize.
+        query:
+            The generator query naming the search space and the requested type.
+        mode:
+            Whether to evaluate the EA population in ``"batch"`` or ``"single"`` mode.
+
+        Returns
+        -------
+        tuple[Any, list[Any], list[GenerationRecord]]
+            The fittest candidate of the whole run, the final population, and one record per
+            generation.  The third is what says whether the run *improved*: the frontier read
+            places the answer among the population it ended with, which is a statement about one
+            generation and cannot distinguish a search that climbed from one that never moved.
+            It is read off the states the stream already yields, so it costs nothing but the
+            records themselves.
+        """
+        final = None
+        generations: list[GenerationRecord] = []
+        for state in self.evolutionary.evolutionary_stream(
+            query, self._objective(acquisition_fn, mode), mode
+        ):
+            final = state
+            generations.append(_generation_record(state))
+        if final is None:
+            msg = (
+                f"{type(self.evolutionary).__name__} yielded no generation at all; a run that "
+                f"initialises its population yields at least the zeroth"
+            )
+            raise RuntimeError(msg)
+        return final.best, list(final.population), generations
+
+    @staticmethod
+    def _objective(
+        acquisition_fn: AcquisitionFunction, mode: Literal["single", "batch"]
+    ) -> Any:
+        """Wrap the acquisition as the fitness function the driver calls.
+
+        Args:
+            acquisition_fn (AcquisitionFunction): The acquisition to maximize.
+            mode (Literal["single", "batch"]): How the driver will call it.
+
+        Returns:
+            Any: The fitness function, with the caching and the known-point floor of the two
+                wrappers above.
         """
         if mode == "batch":
-            objective = _make_acquisition_objective_batch(acquisition_fn)
-        else:
-            objective = _make_acquisition_objective_single(acquisition_fn)
-
-        return self.evolutionary.evolutionary_best(
-            objective,
-            self.population_size,
-            mutation_rate=self.mutation_rate,
-            recombination_rate=self.recombination_rate,
-            verbose=verbose,
-            fitness_function_mode=mode,
-        )
+            return _make_acquisition_objective_batch(acquisition_fn)
+        return _make_acquisition_objective_single(acquisition_fn)
