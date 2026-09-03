@@ -136,6 +136,41 @@ def _distinct_dataset(drawn, sampler, query, count):
     return kept, repeats
 
 
+def _check_request_against_space(search_space: Any, request: Any) -> None:
+    """Refuse a request the search space has no rules for, before a query is built from the pair.
+
+    A space queried at a non-terminal it has no rules for answers with the empty stream, and each
+    consumer downstream then reports what it can see, which is the sampler.  The initial design
+    and the evolutionary run both say that fewer inhabitants than were asked for lie inside the
+    sampler's bound and offer to widen it, the duplicate fallback says the bounded space is
+    exhausted, and the ``query`` property says nothing at all and hands back a query whose every
+    draw is empty.  Widening the bound is the one repair those messages name, and it is the one
+    that cannot help.
+
+    Membership, not a test against ``None``.  A non-terminal of some other space, a mistyped
+    target for instance, fails through those same messages, and a non-terminal is anything
+    hashable, so a space whose non-terminal is ``None`` is queried at ``None`` and draws terms.
+    The test is a lookup in the space's own rule table, ``SolutionSpace.__contains__``.
+
+    Args:
+        search_space (Any): The space, or None where there is none to query.
+        request (Any): The non-terminal the space would be queried at.
+
+    Raises:
+        ValueError: If the space has no rules for the request.
+    """
+    if search_space is None or request in search_space:
+        return
+    msg = (
+        f"the search space has no rules for the request {request}, so nothing can be drawn from "
+        "it.  The request is the non-terminal the space is queried at, and every term the loop "
+        "draws is an inhabitant of it: pass the non-terminal the space was synthesized for.  The "
+        "default None belongs to the ask/tell engine, which runs with search_space=None and poses "
+        "no query at all."
+    )
+    raise ValueError(msg)
+
+
 class BayesianOptimization(Generic[NT, T, G]):
     """Bayesian optimization over CoSy solution spaces, as a closed loop and as an ask/tell layer.
 
@@ -197,7 +232,11 @@ class BayesianOptimization(Generic[NT, T, G]):
         CoSy solution space.  May be ``None`` when ``x0`` is always supplied
         explicitly (e.g. in tests).
     request:
-        The non-terminal root request for the solution space.
+        The non-terminal the search space is queried at, and the root of the one query the loop
+        poses.  Every term the loop draws is an inhabitant of it, so it has to be a non-terminal
+        the space has rules for, usually the target the space was synthesized for.  A pair that
+        has none is refused, here and again where the query is built.  Its default ``None`` is
+        the setting for ``search_space=None``, where there is no query to pose.
     acquisition_function:
         Which of the three standard acquisition scores to maximize.
     ucb_beta:
@@ -346,6 +385,13 @@ class BayesianOptimization(Generic[NT, T, G]):
         sampler: Sampler | None = None,
         gp_normalize_y: bool = True,
     ) -> None:
+        # The pair is refused where the caller writes it down, so a mistyped target costs no
+        # evaluation of the objective.  ``optimize`` refuses a negative budget in the same way and
+        # for the same reason.  This reads the arguments, so it is not the guarantee on its own:
+        # both attributes are public, and the pair is checked again in ``_query``, where it
+        # becomes a query.
+        _check_request_against_space(search_space, request)
+
         self.search_space = search_space
         self.request = request
         self.acquisition_function = acquisition_function
@@ -412,9 +458,9 @@ class BayesianOptimization(Generic[NT, T, G]):
         space checks for one before reaching this, and says so.
 
         **One object, and it is not a micro-optimization.**  The query is determined by the
-        search space and the request, both fixed at construction, so a second object would denote
-        the same SLAD-tree, but ``SizeUniformSampler`` keys its counting construction by query
-        *identity*, precisely because comparing a partial-term query structurally would cost more
+        search space and the request, and the first call freezes that pair, so a second object would
+        denote the same SLAD-tree, but ``SizeUniformSampler`` keys its counting construction by
+        query *identity*, precisely because comparing a partial-term query structurally costs more
         than the lookup saves.  Minting a fresh query per call therefore made every caller pay the
         counting again: measured on the determinized CNN search space of the CIFAR-10 experiment
         at ``D = 200``, that is 93 s for the initial dataset and another 93 s for each duplicate
@@ -423,10 +469,18 @@ class BayesianOptimization(Generic[NT, T, G]):
 
         Returns:
             Any: The generator query, or None if this optimizer has no search space.
+
+        Raises:
+            ValueError: If the search space has no rules for the request.
         """
         if self.search_space is None:
             return None
         if self._generator_query is None:
+            # The pair the constructor read is not necessarily the pair the query is built from,
+            # because both attributes are public and writable.  Checking again at the one place
+            # the two are turned into a query is what makes the refusal hold for every query this
+            # class hands out, and it is what makes the silent path loud.
+            _check_request_against_space(self.search_space, self.request)
             self._generator_query = generator_query(self.search_space, self.request)
         return self._generator_query
 
@@ -915,6 +969,10 @@ class BayesianOptimization(Generic[NT, T, G]):
 
         Returns:
             Any: The query, or None.
+
+        Raises:
+            ValueError: If the search space has no rules for the request.  This is the path that
+                used to report nothing and hand back a query every draw from which is empty.
         """
         return self._query()
 

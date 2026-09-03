@@ -451,3 +451,102 @@ def test_surrogate_over_refuses_the_three_ways_it_can_be_asked_wrong(bo_factory,
         bo.surrogate_over([], [])
     with pytest.raises(ValueError, match="repeat"):
         bo.surrogate_over([tree_corpus[0], tree_corpus[0]], [1.0, 2.0])
+
+
+def test_a_search_space_the_request_does_not_name_is_refused():
+    """A broken pair of space and request blames the sampler, so it is refused where it is given.
+
+    The query is built from the two together, and a non-terminal the space has no rules for gives
+    a query that is answered with the empty stream.  What the caller then sees is the initializer
+    reporting fewer inhabitants than it asked for inside the bound of the sampler, which sends
+    them to widen a bound that is not the problem.  The two ways to break the pair, the default
+    ``None`` and a non-terminal of another space, fail through that same message, so the check is
+    a membership test and catches both.
+    """
+    from cosy.core import Synthesizer
+    from cosy.core.types import Constructor
+
+    from bayesian_optimization.bo import BayesianOptimization
+
+    start = Constructor("A")
+    space = Synthesizer(
+        {"a": start, "h": Constructor("A") ** start}, {}
+    ).construct_solution_space(start).prune()
+
+    with pytest.raises(ValueError, match="no rules for the request"):
+        BayesianOptimization(space)
+    with pytest.raises(ValueError, match="no rules for the request"):
+        BayesianOptimization(space, Constructor("B"))
+
+
+def test_the_request_is_checked_against_the_space_and_not_against_none():
+    """Four configurations a check on the request has to leave standing.
+
+    The ordinary one is a space together with the non-terminal it was synthesized for.  Without a
+    search space the loop poses no query at all, so ``None`` is the setting there, and a request
+    handed in beside no space is merely unused.  The fourth is the one that decides the shape of
+    the check: a non-terminal is anything hashable, so a space whose non-terminal *is* ``None`` is
+    queried at ``None`` and draws terms, and a check written as ``request is None`` would refuse
+    it.
+    """
+    import random
+    from collections import deque
+    from itertools import islice
+
+    from cosy.core import Synthesizer
+    from cosy.core.solution_space import RHSRule, SolutionSpace
+    from cosy.core.types import Constructor
+
+    from bayesian_optimization.bo import BayesianOptimization
+
+    start = Constructor("A")
+    space = Synthesizer(
+        {"a": start, "h": Constructor("A") ** start}, {}
+    ).construct_solution_space(start).prune()
+
+    assert BayesianOptimization(space, start).request is start
+    assert BayesianOptimization(None).request is None
+    assert BayesianOptimization(None, start).request is start
+
+    queried_at_none = SolutionSpace(
+        {None: deque([RHSRule(arguments=(), predicates=(), terminal="a")])}
+    )
+    bo = BayesianOptimization(queried_at_none, None)
+    assert bo.query.start is None
+    drawn = list(islice(SizeUniformSampler(3, random.Random(0)).sample(bo.query), 1))
+    assert drawn, "the query names a non-terminal of the space and has to be live"
+
+
+def test_a_space_assigned_after_construction_is_still_checked():
+    """A search space and a request are checked again where they are turned into a query.
+
+    Both are public attributes, so the pair the constructor read is not necessarily the pair the
+    query is built from, and a check that only reads the constructor arguments is a courtesy
+    and not a guarantee.  Assigning a real space to a loop that was built without one is the path
+    that used to hand back a query naming no non-terminal, from which every draw is empty, and
+    report nothing.  The repaired pair is pinned beside it, because a check placed here must let
+    a query through once the two agree.
+    """
+    import random
+    from itertools import islice
+
+    from cosy.core import Synthesizer
+    from cosy.core.types import Constructor
+
+    from bayesian_optimization.bo import BayesianOptimization
+
+    start = Constructor("A")
+    space = (
+        Synthesizer({"a": start, "h": Constructor("A") ** start}, {})
+        .construct_solution_space(start)
+        .prune()
+    )
+
+    bo = BayesianOptimization(None)
+    bo.search_space = space
+    with pytest.raises(ValueError, match="no rules for the request"):
+        _ = bo.query
+
+    bo.request = start
+    drawn = list(islice(SizeUniformSampler(3, random.Random(0)).sample(bo.query), 1))
+    assert drawn, "the pair agrees now, and the query has to be live"
