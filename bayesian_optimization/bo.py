@@ -23,8 +23,10 @@ from .acquisition_function import (
     ExpectedImprovement,
     ProbabilityOfImprovement,
     UpperConfidenceBound,
+    require_beta,
+    require_margin,
 )
-from .acquisition_optimizer import AcquisitionOptimizer
+from .acquisition_optimizer import AcquisitionOptimizer, unbounded_below_message
 from .diagnostics import (
     AcquisitionRun,
     TraceRecord,
@@ -56,6 +58,42 @@ _LOG = get_logger("bo")
 # measure, a training run for instance, is the other case: that one adds a noise term to the
 # diagonal, and it is spelled with a ``WhiteKernel`` in the kernel rather than with this constant.
 _JITTER = 1e-6
+
+# The three acquisitions this loop maximizes, under the names ``acquisition_function`` takes.
+# One list rather than one written out per site: the check a run passes before it spends anything
+# reads it, and so does the message that names the admitted values, so the message cannot name a
+# set the check does not admit.  What it does not bind is the construction inside a pass, which
+# builds each of the three from arguments of its own and names them again there.  A fourth entry
+# added here alone is therefore admitted by the check and refused by the pass, after the design
+# has been spent.  The value is the class, which is what tells whether a score can be given to an
+# evolutionary run one candidate at a time.
+_ACQUISITIONS: dict[str, type[AcquisitionFunction]] = {
+    "ExpectedImprovement": ExpectedImprovement,
+    "ProbabilityOfImprovement": ProbabilityOfImprovement,
+    "UpperConfidenceBound": UpperConfidenceBound,
+}
+
+# An evolutionary algorithm is what a pass hands its acquisition to, so a run without one cannot
+# make a pass.  Said once so that the check a run passes before it spends anything and the pass
+# itself refuse its absence in the same words.
+_NO_OPTIMIZER = "An optimizer is required.  Pass a EvolutionarySearch to the constructor."
+
+
+def _unknown_acquisition(name: Any) -> str:
+    """Return the message for an acquisition this loop does not know, naming the ones it does.
+
+    The names come out of the table, so the message admits what the table admits.  A count written
+    into the sentence by hand would be the one part of it that a fourth entry could contradict.
+
+    Args:
+        name (Any): The name that was configured.  Anything at all, since the caller this answers
+            wrote down something that is not one of the names.
+
+    Returns:
+        str: The message.
+    """
+    known = ", ".join(repr(candidate) for candidate in _ACQUISITIONS)
+    return f"Unknown acquisition_function {name!r}.  It has to be one of {known}."
 
 
 def _finite_or_raise(value: Any, candidate: Any) -> float:
@@ -672,10 +710,7 @@ class BayesianOptimization(Generic[NT, T, G]):
                 f"suggest() is not allowed in state {self._bo_state.value}."
             )
         if self.optimizer is None:
-            raise RuntimeError(
-                "An optimizer is required.  Pass a EvolutionarySearch to the "
-                "constructor."
-            )
+            raise RuntimeError(_NO_OPTIMIZER)
 
         if verbose:
             enable_verbose_logging()
@@ -737,11 +772,7 @@ class BayesianOptimization(Generic[NT, T, G]):
                 known_points=known_points,
             )
         else:
-            raise ValueError(
-                f"Unknown acquisition_function '{self.acquisition_function}'. "
-                "There are exactly three: 'ExpectedImprovement', "
-                "'ProbabilityOfImprovement', 'UpperConfidenceBound'."
-            )
+            raise ValueError(_unknown_acquisition(self.acquisition_function))
 
         # --- Optimize acquisition function ------------------------------------
         acq_opt = AcquisitionOptimizer(self.optimizer)
@@ -1318,6 +1349,69 @@ class BayesianOptimization(Generic[NT, T, G]):
     # The closed loop
     # -------------------------------------------------------------------------
 
+    def _check_pass_configuration(
+        self, acquisition_fitness_mode: Literal["single", "batch"]
+    ) -> None:
+        """Refuse a configuration no pass of this run could use, before the design is drawn.
+
+        A pass conditions the surrogate, builds one of the three acquisitions and hands it to the
+        evolutionary algorithm, and what those steps read is fixed before the run starts.  Left to
+        the pass, a name that is not one of the three, a parameter outside the range its
+        acquisition admits, a missing evolutionary algorithm and a score that algorithm cannot be
+        given one candidate at a time all surface after the initial design has been drawn and
+        evaluated.  Those evaluations are what a run pays its budget for, and on the search this
+        framework is built for one of them trains a network.  The budget itself is checked ahead
+        of the design for that same reason.
+
+        The acquisition and the algorithm are checked, and nothing else.  The parameter of an
+        acquisition this run will not build is not this run's parameter, so the exploration
+        parameter is read only under an upper confidence bound and the margin only under a
+        probability of improvement.  The arguments this class forwards to
+        ``GaussianProcessRegressor`` keep scikit-learn's rules and its messages rather than a copy
+        of them here, which leaves the cost in place for them: a wrong ``alpha`` or a wrong entry
+        in ``gp_params`` still surfaces at the first fit, with the design drawn and evaluated
+        already.  ``kernel_optimizer`` is besides a default that ``gp_params`` overrides at the
+        fit, so the value the constructor was given need not be the one a run uses.
+
+        The checks inside :meth:`suggest` and inside the acquisitions themselves stay where they
+        are.  Every value read here is a public attribute, and one assigned after construction
+        reaches a pass without ever passing this.  A caller who reaches a pass through
+        :meth:`initialize` and :meth:`suggest` rather than through :meth:`optimize` passes nothing
+        here either, and pays the whole design as before.
+
+        Args:
+            acquisition_fitness_mode (Literal["single", "batch"]): How the evolutionary algorithm
+                will be asked to score its population.
+
+        Raises:
+            RuntimeError: If no evolutionary algorithm was configured.
+            ValueError: If the acquisition is not one of the three, if the parameter of the
+                acquisition this run would build lies outside its range, or if that acquisition
+                cannot be scored the way ``acquisition_fitness_mode`` asks.
+        """
+        if self.optimizer is None:
+            raise RuntimeError(_NO_OPTIMIZER)
+
+        # Only a string can name one of the three.  Looking a name up in the table before saying
+        # so answers a list or a dict with a TypeError about hashing, where the caller was
+        # promised a ValueError about the name.
+        name = self.acquisition_function
+        acquisition = _ACQUISITIONS.get(name) if isinstance(name, str) else None
+        if acquisition is None:
+            raise ValueError(_unknown_acquisition(name))
+
+        if name == "UpperConfidenceBound":
+            require_beta(self.ucb_beta)
+        elif name == "ProbabilityOfImprovement":
+            require_margin(self.pi_margin)
+
+        # AcquisitionOptimizer._objective takes the batch path for the string "batch" and scores
+        # everything else one candidate at a time.  So the mode is read here as that same
+        # question, batch or not batch: asked the other way round, a mode of "Batch" or of "" or
+        # of None would pass here and be scored one candidate at a time all the same.
+        if acquisition_fitness_mode != "batch" and acquisition.lower_bound is None:
+            raise ValueError(unbounded_below_message(name, "acquisition_fitness_mode"))
+
     def optimize(
         self,
         objective: Callable[[Any], float],
@@ -1384,17 +1478,26 @@ class BayesianOptimization(Generic[NT, T, G]):
         Raises
         ------
         ValueError
-            If ``budget`` is negative, which is checked before the initial design is drawn, so
-            that a typo costs no evaluation of the objective.  Also for the dataset conditions of
-            :meth:`initialize`.
+            If ``budget`` is negative, or, where the run has passes to run, if the acquisition
+            those passes would maximize is not one of the three, carries a parameter outside its
+            range, or cannot be scored the way ``acquisition_fitness_mode`` asks.  All of these
+            are checked before the initial design is drawn, so that a typo costs no evaluation of
+            the objective.  Also for the dataset conditions of :meth:`initialize`.
         RuntimeError
             If this instance has already run.  One instance runs one loop, and a second run needs
             :meth:`reset` in between, which is also what restarts the default initializer's
-            stream.
+            stream.  Also where the run has passes to run and no evolutionary algorithm was
+            configured, checked ahead of the design as above.
         """
         if budget < 0:
             msg = f"a budget is a count of evaluations and cannot be negative: {budget}"
             raise ValueError(msg)
+
+        # A run of no passes conditions nothing and maximizes nothing, so what a pass would have
+        # read is not this run's configuration to refuse.  A zero budget is the initial design on
+        # its own and stays that.
+        if budget > 0:
+            self._check_pass_configuration(acquisition_fitness_mode)
 
         if verbose:
             enable_verbose_logging()

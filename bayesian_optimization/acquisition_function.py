@@ -285,6 +285,57 @@ def _require_finite(name: str, value: float) -> float:
     return number
 
 
+def require_margin(margin: float) -> float:
+    """Return the margin of a probability of improvement, or say why it is not one.
+
+    Shared with the loop, which checks the parameter of the acquisition it is configured for
+    before it draws an initial design, so that the same value is refused in the same words
+    wherever a caller writes it down.
+
+    Args:
+        margin (float): How far above the incumbent the threshold sits.
+
+    Returns:
+        float: The margin.
+
+    Raises:
+        ValueError: If it is not finite, or if it is negative.
+    """
+    number = _require_finite("the margin", margin)
+    if number < 0.0:
+        msg = (
+            "the threshold sits at the incumbent or slightly above it, so the margin cannot "
+            f"be negative: {margin}"
+        )
+        raise ValueError(msg)
+    return number
+
+
+def require_beta(beta: float) -> float:
+    """Return the exploration parameter of an upper confidence bound, or say why it is not one.
+
+    Shared with the loop for the same reason as :func:`require_margin`.
+
+    Args:
+        beta (float): The exploration parameter.
+
+    Returns:
+        float: The parameter.
+
+    Raises:
+        ValueError: If it is not finite, or if it is not strictly positive.
+    """
+    number = _require_finite("beta", beta)
+    if number <= 0.0:
+        msg = (
+            "the exploration parameter beta must be strictly positive: at zero the score "
+            "stops being an optimistic estimate, and below it the bound points the wrong "
+            f"way: {beta}"
+        )
+        raise ValueError(msg)
+    return number
+
+
 class ExpectedImprovement(AcquisitionFunction):
     """Expected improvement: the expected gain over the incumbent, ``E[max(g(t) - y*, 0) | D]``.
 
@@ -377,13 +428,7 @@ class ProbabilityOfImprovement(AcquisitionFunction):
     ) -> None:
         super().__init__(gp, known_points=known_points)
         self.incumbent = _require_finite("the incumbent", incumbent)
-        self.margin = _require_finite("the margin", margin)
-        if self.margin < 0.0:
-            msg = (
-                "the threshold sits at the incumbent or slightly above it, so the margin cannot "
-                f"be negative: {margin}"
-            )
-            raise ValueError(msg)
+        self.margin = require_margin(margin)
 
     @property
     def threshold(self) -> float:
@@ -436,14 +481,7 @@ class UpperConfidenceBound(AcquisitionFunction):
         known_points: set[Any] | None = None,
     ) -> None:
         super().__init__(gp, known_points=known_points)
-        self.beta = _require_finite("beta", beta)
-        if self.beta <= 0.0:
-            msg = (
-                "the exploration parameter beta must be strictly positive: at zero the score "
-                "stops being an optimistic estimate, and below it the bound points the wrong "
-                f"way: {beta}"
-            )
-            raise ValueError(msg)
+        self.beta = require_beta(beta)
 
     def score(self, mean: np.ndarray, deviation: np.ndarray) -> np.ndarray:
         """Return the upper confidence bound.

@@ -243,6 +243,119 @@ def test_optimize_refuses_a_negative_budget_before_it_evaluates_anything(bo_fact
     assert calls == [], "the objective was called before the budget was checked"
 
 
+@pytest.mark.parametrize(
+    ("configuration", "run_arguments", "raised", "message"),
+    [
+        ({"acquisition_function": "ei"}, {}, ValueError, "ei"),
+        (
+            {"acquisition_function": "UpperConfidenceBound", "ucb_beta": 0.0},
+            {},
+            ValueError,
+            "beta",
+        ),
+        (
+            {"acquisition_function": "UpperConfidenceBound", "ucb_beta": math.nan},
+            {},
+            ValueError,
+            "finite",
+        ),
+        (
+            {"acquisition_function": "ProbabilityOfImprovement", "pi_margin": -1.0},
+            {},
+            ValueError,
+            "margin",
+        ),
+        ({"optimizer": None}, {}, RuntimeError, "optimizer"),
+        (
+            {"acquisition_function": "UpperConfidenceBound"},
+            {"acquisition_fitness_mode": "single"},
+            ValueError,
+            "batch",
+        ),
+        (
+            {"acquisition_function": "UpperConfidenceBound"},
+            {"acquisition_fitness_mode": "Batch"},
+            ValueError,
+            "batch",
+        ),
+        ({"acquisition_function": ["ExpectedImprovement"]}, {}, ValueError, "one of"),
+    ],
+)
+def test_optimize_refuses_a_configuration_no_pass_could_use_before_it_evaluates_anything(
+    bo_factory, tree_corpus, configuration, run_arguments, raised, message
+):
+    """Every pass reads the same acquisition, so a run can be refused before it draws a design.
+
+    A misspelled acquisition, a parameter outside the range its acquisition admits, a missing
+    evolutionary algorithm and a score that algorithm cannot be given one candidate at a time are
+    all fixed before the first evaluation.  Found by the pass instead, each of them costs the whole
+    initial design in evaluations of the quality measure first, which on the search this framework
+    is built for means training that many networks and then aborting.  That is the reason the
+    budget is checked here, and it does not stop at the budget.
+
+    Two of the cases are near misses rather than plain typos.  ``"Batch"`` is not the batch mode,
+    and the adapter scores every mode that is not ``"batch"`` one candidate at a time, so an upper
+    confidence bound under it has to be refused exactly as under ``"single"``.  A name that is not
+    even a string is refused for being an unknown name, not for being unhashable.
+    """
+    bo = bo_factory(**configuration)
+    calls: list[Any] = []
+
+    def counted(tree: Tree) -> float:
+        """Count how often the objective was reached.
+
+        Args:
+            tree (Tree): The term to score.
+
+        Returns:
+            float: Its node count.
+        """
+        calls.append(tree)
+        return _objective_by_size(tree)
+
+    with pytest.raises(raised, match=message):
+        bo.optimize(objective=counted, budget=2, x0=tree_corpus[:3], **run_arguments)
+
+    assert calls == [], "the objective was called before the configuration was checked"
+
+
+def test_a_zero_budget_runs_under_any_acquisition_setting(bo_factory, tree_corpus):
+    """A run of no passes builds no acquisition, so an acquisition it never reads cannot fail it.
+
+    The check above asks what the run will use, not what the object carries.  A budget of zero is
+    the initial design on its own, and it answers from that design under any acquisition setting
+    whatsoever, as it did before there was a check.
+    """
+    bo = bo_factory(acquisition_function="ei", ucb_beta=0.0, pi_margin=-1.0)
+
+    result = bo.optimize(
+        objective=_objective_by_size,
+        budget=0,
+        x0=tree_corpus[:3],
+        y0=[1.0, 2.0, 0.5],
+    )
+
+    assert result["iterations"] == 0
+    assert result["best_y"] == 2.0
+
+
+def test_a_pass_still_refuses_an_acquisition_assigned_after_the_run_started(
+    bo_factory, tree_corpus
+):
+    """The acquisition is a public attribute, so the pass keeps its own check.
+
+    Read once at the start of the run, the configuration is only the configuration the run started
+    with.  A caller who writes a new name onto the object afterwards reaches the pass without
+    passing anything, and the pass has to be the one that says so.
+    """
+    bo = bo_factory()
+    bo.initialize(x0=tree_corpus[:3], y0=[1.0, 2.0, 0.5])
+    bo.acquisition_function = "ei"
+
+    with pytest.raises(ValueError, match="ei"):
+        bo.suggest()
+
+
 def test_optimize_passes_gp_params_through(bo_factory, tree_corpus):
     """A parameter of the public signature that reaches nothing is a parameter that lies."""
     bo = bo_factory()

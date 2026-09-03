@@ -80,6 +80,28 @@ def _make_acquisition_objective_batch(
     return objective
 
 
+def unbounded_below_message(acquisition_name: str, mode_parameter: str) -> str:
+    """Return the refusal an acquisition without a lower bound earns from single-sample scoring.
+
+    The loop refuses the same pairing before it draws an initial design, and reads this text for
+    it, so the early answer and the late one are one sentence and cannot drift apart.  Only the
+    name of the parameter differs, because the two callers spell it differently.
+
+    Args:
+        acquisition_name (str): The acquisition that is unbounded below.
+        mode_parameter (str): What the caller's own parameter for the mode is called.
+
+    Returns:
+        str: The message.
+    """
+    return (
+        f"{acquisition_name} is unbounded below, so the score of an already-evaluated candidate "
+        "can only be placed relative to the scores of the others in its generation.  Run it with "
+        f'{mode_parameter}="batch", where every score of a generation is available before that '
+        "floor is fixed."
+    )
+
+
 def _make_acquisition_objective_single(
     acquisition_function: AcquisitionFunction,
 ) -> Any:
@@ -103,12 +125,7 @@ def _make_acquisition_objective_single(
             where every score of the generation is available before the floor is fixed.
     """
     if _known_points_of(acquisition_function) and acquisition_function.lower_bound is None:
-        msg = (
-            f"{type(acquisition_function).__name__} is unbounded below, so the score of an "
-            "already-evaluated candidate can only be placed relative to the scores of the others "
-            'in its generation.  Optimise it with mode="batch".'
-        )
-        raise ValueError(msg)
+        raise ValueError(unbounded_below_message(type(acquisition_function).__name__, "mode"))
 
     cache: dict[Any, float] = {}
 
