@@ -9,6 +9,24 @@ from .acquisition_function import (
     UpperConfidenceBound,
 )
 from .acquisition_optimizer import AcquisitionOptimizer
+from .diagnostics import (
+    AcquisitionRun,
+    CalibrationRead,
+    FitRead,
+    FrontierRead,
+    GenerationRecord,
+    GramRead,
+    TraceRead,
+    TraceRecord,
+    kernel_objective_alignment,
+    read_calibration,
+    read_fit,
+    read_frontier,
+    read_gram,
+    read_trace,
+    trace_columns,
+    trace_rows,
+)
 from .kernels.graph_kernel import HierarchicalWLKernel, WeisfeilerLehmanKernel
 from .kernels.kernel_base import StructuredKernelBase
 from .kernels.tree_kernel import OrderedRootedSubtreeKernel, SubsetTreeKernel
@@ -24,6 +42,22 @@ __all__ = [
     "ProbabilityOfImprovement",
     "MarginalPosterior",
     "AcquisitionOptimizer",
+    "AcquisitionRun",
+    "CalibrationRead",
+    "FitRead",
+    "FrontierRead",
+    "GenerationRecord",
+    "GramRead",
+    "TraceRead",
+    "TraceRecord",
+    "kernel_objective_alignment",
+    "read_calibration",
+    "read_fit",
+    "read_frontier",
+    "read_gram",
+    "read_trace",
+    "trace_columns",
+    "trace_rows",
     "StructuredKernelBase",
     "OrderedRootedSubtreeKernel",
     "SubsetTreeKernel",
