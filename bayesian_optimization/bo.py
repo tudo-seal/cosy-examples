@@ -129,7 +129,9 @@ def _finite_or_raise(value: Any, candidate: Any) -> float:
     return observed
 
 
-def _distinct_dataset(drawn, sampler, query, count):
+def _distinct_dataset(
+    drawn: Sequence[Any], sampler: Sampler, query: Any, count: int
+) -> tuple[list[Any], int]:
     """Make an initial design pairwise distinct, keeping what the initializer chose.
 
     Deduplicates in place rather than redrawing the whole design, because the initializer's terms
@@ -143,13 +145,13 @@ def _distinct_dataset(drawn, sampler, query, count):
     term identity.  See :func:`~bayesian_optimization.initial_sampling.distinct_prefix`.
 
     Args:
-        drawn (list): What the initializer returned.
-        sampler: The loop's sampler, for the replacements.
-        query: The generator query.
+        drawn (Sequence[Any]): What the initializer returned.
+        sampler (Sampler): The loop's sampler, for the replacements.
+        query (Any): The generator query.
         count (int): The design size that was asked for.
 
     Returns:
-        tuple[list, int]: The distinct design, and how many repeats were replaced.
+        tuple[list[Any], int]: The distinct design, and how many repeats were replaced.
 
     Raises:
         RuntimeError: If a replacement cannot be drawn.  ``_sample_fallback_tree`` raises on an
@@ -452,6 +454,7 @@ class BayesianOptimization(Generic[NT, T, G]):
         self._x_list: list[Any] = []
         self._y_list: list[float] = []
         self._x_set: set[Any] = set()
+        self._initial_repeats_rejected: int = 0
         self._last_suggestion: Suggestion | None = None
         self._model: GaussianProcessRegressor | None = None
         self._alpha: float = _JITTER
@@ -588,6 +591,7 @@ class BayesianOptimization(Generic[NT, T, G]):
                     "initialize() without x0 requires a real search_space."
                 )
             assert self._initializer is not None
+            assert self._sampler is not None
             # The previous code drew a pool a hundred times the size and thinned it with a
             # greedy determinantal point process, which is related work rather than either of the
             # initializers this loop admits, and it warned and came back short where the stream
@@ -609,7 +613,6 @@ class BayesianOptimization(Generic[NT, T, G]):
             x0_list, repeats = _distinct_dataset(
                 x0_list, self._sampler, self._query(), initial_size
             )
-            self._initial_repeats_rejected = repeats
             if repeats:
                 self._logger.info(
                     "the initializer returned %d repeated term(s) in an initial design of %d.  "
@@ -620,6 +623,9 @@ class BayesianOptimization(Generic[NT, T, G]):
                 )
         else:
             x0_list = list(x0)
+            # A design the caller hands over was not drawn here, so this loop redrew nothing in
+            # it.  The count is about the repair, not about the design.
+            repeats = 0
 
         # Resolve y0.  The lengths are compared before a single value is read, so that a mismatch
         # is reported as such rather than truncating the longer of the two.
@@ -652,6 +658,12 @@ class BayesianOptimization(Generic[NT, T, G]):
         # it is handed over, and the first suggest() is far from the caller who assembled it.
         self._distinct_pairs()
         self._x_set = set(self._x_list)
+        # The count is stored with the dataset it describes and not where it is computed.
+        # Everything between the draw and the last line of this method can raise, the objective
+        # above all, and a failure there leaves the state UNINITIALIZED, which permits a second
+        # initialize().  Storing the count at the draw would carry the count of the abandoned
+        # design into whatever design the caller supplies next.
+        self._initial_repeats_rejected = repeats
         self._last_suggestion = None
         self._alpha = alpha
         self._gp_params = gp_params
@@ -1237,8 +1249,11 @@ class BayesianOptimization(Generic[NT, T, G]):
         rather than absorbed: a run whose initial design needed redrawing is a run whose sampler
         does not supply what its dataset needs, and the record has to be able to say so.
 
+        A design the caller hands to ``initialize()`` reports 0 whatever it contains, because the
+        number counts what this loop redrew and it redrew nothing there.
+
         Returns:
-            int: The count, or 0 before ``initialize()``.
+            int: The count, 0 before ``initialize()`` and 0 again after ``reset()``.
         """
         return self._initial_repeats_rejected
 

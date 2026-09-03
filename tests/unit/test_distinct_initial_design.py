@@ -13,16 +13,22 @@ is a constructor parameter, so the guarantee held only until someone used it. Th
 configuration uses exactly that sampler, because its determinization is unaffordable.
 
 These tests pin the repaired shape: the rejection runs whatever the sampler is, and the count it
-reports is a check where the guarantee applies and the repair where it does not.
+reports is a check where the guarantee applies and the repair where it does not. They also pin
+that the count can be read at all, in every state a run passes through, because it belongs in the
+run record and a record is written when the run ends rather than where the design is drawn.
 """
 
 from __future__ import annotations
 
+import random
+
 import pytest
 from cosy.core.tree import Tree
+from cosy.search import DepthBoundedRandomSampler
 
-from bayesian_optimization.bo import _distinct_dataset
+from bayesian_optimization.bo import BayesianOptimization, _distinct_dataset
 from bayesian_optimization.initial_sampling import distinct_prefix
+from tests.spaces import EXPR, expression_space
 
 
 class _ScriptedSampler:
@@ -133,3 +139,101 @@ def test_a_design_without_repeats_is_returned_untouched():
     assert repeats == 0
     assert kept == chosen
     assert sampler.streams == 0
+
+
+# --- the count the run reports ----------------------------------------------------------------
+def _drawing_loop():
+    """A loop over the expression space whose sampler repeats terms.
+
+    Depth-bounded random sampling draws independently, so a design of 8 costs a few redraws here.
+    Seeded, so the tests below can pin an exact number instead of a nonzero one.
+    """
+    return BayesianOptimization(
+        search_space=expression_space(),
+        request=EXPR,
+        sampler=DepthBoundedRandomSampler(4, random.Random(0)),
+        seed=0,
+    )
+
+
+def _term_length(term):
+    """A stand-in objective: how long the term prints.
+
+    Cheap and finite, which is all these tests ask of an objective. They read the count the loop
+    keeps about its initial design and never the values, and a value shared by two different terms
+    is admissible anyway: the dataset refuses one term with two values, not one value on two terms.
+    """
+    return float(len(str(term)))
+
+
+def test_the_count_answers_from_construction_through_a_finished_run(bo_factory, tree_corpus):
+    """Every state of a run can be asked how many repeats the initial design cost.
+
+    The count is what a run record reports about its own initial design, and a record is written
+    at the end of a run, not at the initializer. So the answer has to exist wherever the caller
+    stands, and before initialize() there is one: nothing was drawn, so nothing was redrawn.
+    """
+    bo = bo_factory()
+    assert bo.initial_repeats_rejected == 0
+
+    bo.initialize(x0=tree_corpus[:3], y0=[1.0, 2.0, 0.5])
+    assert bo.initial_repeats_rejected == 0
+
+    suggestion = bo.suggest()
+    assert bo.initial_repeats_rejected == 0
+
+    bo.observe(suggestion.candidate, 0.3)
+    assert bo.initial_repeats_rejected == 0
+
+    bo.finalize()
+    assert bo.initial_repeats_rejected == 0
+
+
+def test_a_closed_run_over_a_supplied_design_reports_no_repeats(bo_factory, tree_corpus):
+    """A design the caller hands over was not drawn here, so this loop redrew nothing in it.
+
+    This is the state the run record is written from, and the one the closed loop leaves behind.
+    """
+    bo = bo_factory()
+    bo.optimize(objective=_term_length, budget=2, x0=tree_corpus[:3], y0=[1.0, 2.0, 0.5])
+    assert bo.initial_repeats_rejected == 0
+
+
+def test_a_drawn_design_reports_the_repeats_it_cost():
+    """The count is a measurement and not a placeholder: under a repeating sampler it is nonzero.
+
+    Pinned on the exact number rather than on nonzero, so that a change in what the sampler draws
+    is visible here rather than absorbed. The design is distinct all the same.
+    """
+    bo = _drawing_loop()
+    bo.initialize(objective=_term_length, initial_size=8)
+    x_list = bo.get_state_snapshot()["x_list"]
+    assert bo.initial_repeats_rejected == 3
+    assert len(set(x_list)) == 8
+
+
+def test_a_reset_puts_the_count_back_to_zero():
+    """A second run reports its own initial design and not the one before it."""
+    bo = _drawing_loop()
+    bo.initialize(objective=_term_length, initial_size=8)
+    assert bo.initial_repeats_rejected == 3
+    bo.reset()
+    assert bo.initial_repeats_rejected == 0
+
+
+def test_an_abandoned_design_does_not_leave_its_count_behind(tree_corpus):
+    """An initialization that fails after the draw leaves no count for the next one to report.
+
+    The objective is evaluated after the design is repaired and the state becomes INITIALIZED only
+    at the end, so a failing evaluation leaves the loop uninitialized and a second initialize() is
+    allowed. The design the caller then supplies is a different design, and reporting the redraws
+    of the abandoned one against it would be a number about nothing.
+    """
+    bo = _drawing_loop()
+    with pytest.raises(ValueError, match="cannot be observed"):
+        bo.initialize(objective=lambda _term: float("nan"), initial_size=8)
+    assert bo.get_state_snapshot()["state"] == "UNINITIALIZED"
+    assert bo.initial_repeats_rejected == 0
+
+    bo.initialize(x0=tree_corpus[:3], y0=[1.0, 2.0, 0.5])
+    assert bo.initial_repeats_rejected == 0
