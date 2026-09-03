@@ -202,6 +202,8 @@ def test_finalize_returns_complete_result_dict(bo_factory, tree_corpus):
     assert "y" in result
     assert "gp_model" in result
     assert "iterations" in result
+    assert "trace" in result
+    assert "dropped_suggestion" in result
     assert result["iterations"] == 1
 
 

@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import logging
+
 import pytest
 from cosy.core.tree import Tree
+
+LOGGER_NAME = "bayesian_optimization"
 
 
 def test_suggest_before_initialize_raises_runtime_error(bo_factory):
@@ -110,3 +114,136 @@ def test_initialize_with_unhashable_candidate_raises_type_error(bo_factory):
     bo = bo_factory()
     with pytest.raises(TypeError):
         bo.initialize(x0=[[1, 2, 3], [4, 5]], y0=[1.0, 2.0])
+
+
+def _drop_warnings(caplog):
+    """The warnings finalize() emits about a suggestion it gave up on, and no others."""
+    return [
+        record.getMessage()
+        for record in caplog.records
+        if record.levelno >= logging.WARNING and "dropped_suggestion" in record.getMessage()
+    ]
+
+
+def test_finalize_from_suggested_names_the_dropped_candidate(bo_factory, tree_corpus, caplog):
+    """A run that finalizes with a suggestion still open gives that term up, and has to name it.
+
+    An evaluation of the ask/tell layer may live outside this process, so a caller may hold a
+    value for the outstanding term that only observe() can put into the dataset.  Finalizing
+    stays allowed, because a run that was aborted still has to report what it collected, but the
+    term it gives up on is named in the result and in the log rather than left to be noticed.
+    """
+    bo = bo_factory()
+    bo.initialize(x0=tree_corpus[:3], y0=[1.0, 2.0, 0.5])
+    first = bo.suggest()
+    bo.observe(first.candidate, 0.3)
+    outstanding = bo.suggest()
+
+    with caplog.at_level(logging.WARNING, logger=LOGGER_NAME):
+        result = bo.finalize()
+
+    assert result["dropped_suggestion"] == outstanding.candidate
+    assert result["iterations"] == 1, "a suggestion without a value closes no pass"
+    assert all(term != outstanding.candidate for term in result["x"]), (
+        "the outstanding term has no value, so it cannot be in the dataset"
+    )
+    assert any(
+        str(outstanding.candidate) in message for message in _drop_warnings(caplog)
+    ), "finalize() gave the outstanding suggestion up without naming it in the log"
+
+    snapshot = bo.get_state_snapshot()
+    assert snapshot["state"] == "FINALIZED"
+    assert snapshot["last_suggestion"] is None, "a finalized run still held a suggestion open"
+
+
+def test_finalize_from_observed_drops_nothing(bo_factory, tree_corpus, caplog):
+    """A run that observed its last suggestion before finalizing gives nothing up.
+
+    Nothing is reported under ``dropped_suggestion`` and nothing is logged, so the report of the
+    documented route stays quiet about a case that did not arise.
+    """
+    bo = bo_factory()
+    bo.initialize(x0=tree_corpus[:3], y0=[1.0, 2.0, 0.5])
+    s = bo.suggest()
+    bo.observe(s.candidate, 0.3)
+
+    with caplog.at_level(logging.WARNING, logger=LOGGER_NAME):
+        result = bo.finalize()
+
+    assert result["dropped_suggestion"] is None
+    assert _drop_warnings(caplog) == []
+    assert bo.get_state_snapshot()["last_suggestion"] is None
+
+
+def test_finalize_keeps_a_value_an_interrupted_observe_already_recorded(
+    monkeypatch, bo_factory, tree_corpus, caplog
+):
+    """A term whose value the dataset already holds is not a dropped suggestion.
+
+    observe() writes the term and its value before it moves the state, and an interrupt in
+    between, which is what a stop signal during a run looks like, leaves the state at SUGGESTED
+    with the value already recorded.  Reporting that term as given up would contradict the same
+    result, which answers with it as the optimum of the run.
+    """
+    bo = bo_factory()
+    bo.initialize(x0=tree_corpus[:3], y0=[1.0, 2.0, 0.5])
+    outstanding = bo.suggest()
+
+    def interrupted(*_args, **_kwargs):
+        raise KeyboardInterrupt("stopped between the append and the state change")
+
+    monkeypatch.setattr(bo, "_trace_record", interrupted)
+    with pytest.raises(KeyboardInterrupt):
+        bo.observe(outstanding.candidate, 42.0)
+
+    snapshot = bo.get_state_snapshot()
+    assert snapshot["state"] == "SUGGESTED"
+    assert snapshot["y_list"][-1] == pytest.approx(42.0)
+
+    with caplog.at_level(logging.WARNING, logger=LOGGER_NAME):
+        result = bo.finalize()
+
+    assert result["dropped_suggestion"] is None
+    assert _drop_warnings(caplog) == []
+    assert result["best_tree"] == outstanding.candidate
+    assert result["best_y"] == pytest.approx(42.0)
+
+
+def test_finalize_reports_a_term_the_dataset_never_paired_with_a_value(
+    monkeypatch, bo_factory, tree_corpus, caplog
+):
+    """A term listed without a value beside it is still a dropped suggestion.
+
+    observe() records the term in the duplicate index before it appends the value, so an
+    interrupt in between leaves the index claiming a pass that never got one.  The report
+    follows the pairing of the two dataset lists and not that index, which would otherwise let
+    a half written record pass for a completed pass.
+    """
+
+    class _RefusingList(list):
+        def append(self, item):
+            raise KeyboardInterrupt("stopped before the value was appended")
+
+    bo = bo_factory()
+    bo.initialize(x0=tree_corpus[:3], y0=[1.0, 2.0, 0.5])
+    outstanding = bo.suggest()
+
+    monkeypatch.setattr(bo, "_y_list", _RefusingList(bo.get_state_snapshot()["y_list"]))
+    with pytest.raises(KeyboardInterrupt):
+        bo.observe(outstanding.candidate, 42.0)
+
+    snapshot = bo.get_state_snapshot()
+    assert snapshot["state"] == "SUGGESTED"
+    assert snapshot["x_list"][-1] == outstanding.candidate
+    assert len(snapshot["y_list"]) == len(snapshot["x_list"]) - 1
+
+    with caplog.at_level(logging.WARNING, logger=LOGGER_NAME):
+        result = bo.finalize()
+
+    assert result["dropped_suggestion"] == outstanding.candidate
+    assert result["best_tree"] != outstanding.candidate, (
+        "a term without a value cannot be the optimum the same result reports"
+    )
+    assert any(
+        str(outstanding.candidate) in message for message in _drop_warnings(caplog)
+    ), "the term the dataset never valued was given up without a word"

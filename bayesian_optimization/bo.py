@@ -975,12 +975,12 @@ class BayesianOptimization(Generic[NT, T, G]):
     def surrogate_over_dataset(self) -> GaussianProcessRegressor:
         """Return a surrogate conditioned on the **whole** dataset, the final pair included.
 
-        The model :meth:`finalize` reports is the one of the last :meth:`suggest`, and the loop
-        fits nothing after appending the last pair, so that model has never seen the evaluation
-        the run ended on.  For the loop that is right: the fit exists to choose the next term, and
-        after the last pass there is no next term.  For a diagnostic it is wrong,
-        because the fit and the calibration reads of the acceptance checks are statements about
-        the data the run collected, and one of the pairs would be missing from them.
+        The model :meth:`finalize` reports is the one of the last :meth:`suggest`, and nothing is
+        fitted after it, so that model has never seen what the run appended afterwards.  For the
+        loop that is right: the fit exists to choose the next term, and after the last pass there
+        is no next term.  For a diagnostic it is wrong, because the fit and the calibration reads
+        of the acceptance checks are statements about the data the run collected, and one of the
+        pairs would be missing from them.
 
         This conditions one on all of it, with the same configuration, and refits the kernel
         hyperparameters as any other pass would.
@@ -1310,13 +1310,39 @@ class BayesianOptimization(Generic[NT, T, G]):
         Returns
         -------
         dict with keys:
-            ``best_tree``, ``best_y``, ``x``, ``y``, ``gp_model``, ``iterations``, ``trace``.
+            ``best_tree``, ``best_y``, ``x``, ``y``, ``gp_model``, ``iterations``, ``trace``,
+            ``dropped_suggestion``.
 
-            ``gp_model`` is the surrogate of the **last** :meth:`suggest`, so it is conditioned on
-            every observation *except the final one*: the loop ends by appending a pair and fits
-            nothing after that.  A diagnostic that wants a surrogate over the whole dataset, as
-            the fit scatter and the leave-one-out calibration of the acceptance checks do, asks
-            :meth:`surrogate_over_dataset` for one rather than reading this.
+            ``gp_model`` is the surrogate the **last** :meth:`suggest` fitted, and nothing is
+            fitted after it, so the model has seen nothing the run appended since.  A run that
+            ends on an observation reports a model that never saw the pair it ended on.  A run
+            that ends on an outstanding suggestion reports the model of that pass, which saw
+            every pair the dataset held, because that pass appended none of its own.  Either way
+            the fit is over the *distinct* pairs of what it was handed, which is fewer than the
+            dataset holds whenever a term repeats in it.  A diagnostic that wants a surrogate
+            over the whole dataset, as the fit scatter and the leave-one-out calibration of the
+            acceptance checks do, asks :meth:`surrogate_over_dataset` for one rather than reading
+            this.
+
+            :attr:`last_acquisition_run` is left standing too, but it describes that same pass
+            only where that :meth:`suggest` was asked to record a population.  Where it was not,
+            the attribute still holds the most recent pass that was asked, which is an earlier
+            one, or ``None`` if no pass was ever asked.
+
+            ``iterations`` counts the passes :meth:`observe` closed.  A suggestion that never got
+            a value is not one of them, and it is not a row of ``trace`` either.
+
+            ``dropped_suggestion`` is the candidate of a suggestion that no value ever reached.
+            It is ``None`` where no suggestion was open, and also where an open one already had
+            its value in the dataset.  Finalizing with a suggestion open is allowed, and it is how
+            an aborted run closes: a failing evaluation raises out of :meth:`optimize` between
+            :meth:`suggest` and :meth:`observe`, and this call is what puts such a run into
+            ``FINALIZED`` and names in one answer what it collected and which candidate it gave
+            up on.  What such a candidate must not do is vanish.  An evaluation of the ask/tell
+            layer may live outside this process and may already have been paid for, and
+            :meth:`observe` is the only way to get it into the dataset, so the term is named
+            here and logged instead.  The suggestion itself is
+            cleared on every path, so a snapshot taken after this reports none outstanding.
 
             ``trace`` is the per-pass table of the trace readings.  See :attr:`trace`.
 
@@ -1336,6 +1362,33 @@ class BayesianOptimization(Generic[NT, T, G]):
 
         best_tree, best_y = self.best()
 
+        # A suggestion was dropped when the dataset holds no value for its term.  The state does
+        # not answer that question: observe() writes the term and its value before it moves the
+        # state, so a run interrupted in between sits in SUGGESTED with the value already
+        # recorded, and calling that term dropped would state the reverse of the truth.  The
+        # dataset answers it exactly, because the two lists are appended in step and read by
+        # position everywhere else, so a term has a value if and only if a y entry stands beside
+        # it.  Membership in the duplicate index is not the same test: the index is written
+        # between the two appends, so an interrupt there leaves it claiming a value the dataset
+        # does not hold.  A suggestion cannot turn up paired here by accident either, because
+        # suggest() replaces or refuses any candidate the observed set already holds.
+        valued_terms = self._x_list[: len(self._y_list)]
+        outstanding = self._last_suggestion
+        dropped = None
+        if outstanding is not None and outstanding.candidate not in valued_terms:
+            dropped = outstanding.candidate
+            _LOG.warning(
+                "the run is finalized with the suggestion %s still outstanding.  No value ever "
+                "reached that pass, so the dataset holds none for the term and the pass is not "
+                "among the %d this result counts.  An evaluation that fails leaves the "
+                "closed loop in exactly this state, and a caller who did measure the term hands "
+                "it to observe() before finalizing.  The result names it under "
+                "dropped_suggestion.",
+                dropped,
+                self._iteration,
+            )
+        self._last_suggestion = None
+
         self._bo_state = BOState.FINALIZED
         return {
             "best_tree": best_tree,
@@ -1345,6 +1398,7 @@ class BayesianOptimization(Generic[NT, T, G]):
             "gp_model": self._model,
             "iterations": self._iteration,
             "trace": self.trace,
+            "dropped_suggestion": dropped,
         }
 
     def get_state_snapshot(self) -> dict[str, Any]:
@@ -1488,7 +1542,9 @@ class BayesianOptimization(Generic[NT, T, G]):
         -------
         dict from :meth:`finalize`.  ``best_tree`` is the term the algorithm returns.  The rest,
         the dataset, the fitted surrogate, the pass count and the trace, is what a caller needs to
-        report on the run and has no counterpart in the algorithm either.
+        report on the run and has no counterpart in the algorithm either.  Its
+        ``dropped_suggestion`` is always ``None`` here, because this loop observes every term it
+        suggests and an evaluation that fails raises out of this call instead of finalizing.
 
         Raises
         ------
