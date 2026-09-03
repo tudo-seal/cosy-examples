@@ -4,10 +4,9 @@ from collections.abc import Sequence
 from typing import Any
 
 import numpy as np
+from cosy.core.tree import Tree
 from scipy.stats import norm
 from sklearn.gaussian_process import GaussianProcessRegressor
-
-from cosy.core.tree import Tree
 
 
 class AcquisitionFunction:

@@ -86,11 +86,27 @@ warn_unused_configs = true
 disallow_untyped_defs = false
 ignore_missing_imports = true
 
-[tool.black]
+[tool.ruff]
 line-length = 100
-target-version = ["py311"]
 
-[tool.isort]
-profile = "black"
-line_length = 100
+[tool.ruff.lint]
+# The selection covers syntax errors, import placement, the pyflakes checks and the
+# import order. The remaining pycodestyle rules stay out until the examples are
+# rewritten, because they flag long lines and ambiguous names that only the rewrite
+# can settle.
+select = ["E4", "E9", "F", "I"]
+ignore = [
+    # Unused imports and unused local variables are left standing for the rewrite of
+    # the modules that carry them. Neither rule can be applied in bulk without risk.
+    # Deleting an unused import can drop a name that another module imports from that
+    # file, and deleting an unused assignment can drop a call that was made for its
+    # effect.
+    "F401",
+    "F841",
+]
 
+[tool.ruff.lint.per-file-ignores]
+# The example inserts the repository root into sys.path so that it runs from a plain
+# checkout. The imports that follow that insertion are what this rule flags, and the
+# one that needs it is the import of the package itself.
+"bayesian_optimization/examples/simple_nas/simple_nas.py" = ["E402"]

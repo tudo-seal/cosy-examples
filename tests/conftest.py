@@ -8,7 +8,6 @@ import pytest
 from cosy.core.tree import Tree
 from sklearn.gaussian_process import GaussianProcessRegressor
 
-
 # ---------------------------------------------------------------------------
 # Shared Tree corpus
 # ---------------------------------------------------------------------------

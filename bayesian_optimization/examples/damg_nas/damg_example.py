@@ -4,7 +4,6 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import tqdm
-
 from cosy.core import Synthesizer
 from cosy.evolutionary_algorithms import (
     AgeBasedReplacement,
@@ -17,12 +16,12 @@ from cosy.evolutionary_algorithms import (
 )
 
 from bayesian_optimization import BayesianOptimization
+from bayesian_optimization.examples.damg_nas.damg_kernels import noisy_hierarchical_damg_kernel
 from bayesian_optimization.examples.damg_nas.damg_repo import DAMGrepository
 from bayesian_optimization.examples.damg_nas.damg_repo_algebras import (
     pretty_term_algebra,
     pytorch_function_algebra,
 )
-from bayesian_optimization.examples.damg_nas.damg_kernels import noisy_hierarchical_damg_kernel
 from bayesian_optimization.examples.damg_nas.damg_targets import target_len_3
 
 

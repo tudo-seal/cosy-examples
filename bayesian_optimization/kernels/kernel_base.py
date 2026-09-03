@@ -8,9 +8,9 @@ import numpy as np
 from sklearn.base import clone
 from sklearn.gaussian_process.kernels import (
     GenericKernelMixin,
+    Hyperparameter,
     Kernel,
     NormalizedKernelMixin,
-    Hyperparameter,
 )
 
 T = TypeVar("T", bound=Hashable)

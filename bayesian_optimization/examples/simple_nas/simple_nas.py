@@ -1,8 +1,8 @@
-import pandas as pd
-import numpy as np
-from pathlib import Path
 import sys
+from pathlib import Path
 
+import numpy as np
+import pandas as pd
 import torch
 from torch import nn
 
@@ -10,11 +10,17 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from cosy.core.types import DataGroup, Constructor, Var, Literal
 from cosy.core import SpecificationBuilder, Synthesizer
-from cosy.evolutionary_algorithms import (SimpleGeneticProgramming, RandomLimitedDepthFirstInitialization,
-                                          ResolutionMutation, Crossover, ScalarFitnessComparator,
-                                          FitnessProportionalSelection, AgeBasedReplacement)
+from cosy.core.types import Constructor, DataGroup, Literal, Var
+from cosy.evolutionary_algorithms import (
+    AgeBasedReplacement,
+    Crossover,
+    FitnessProportionalSelection,
+    RandomLimitedDepthFirstInitialization,
+    ResolutionMutation,
+    ScalarFitnessComparator,
+    SimpleGeneticProgramming,
+)
 
 from bayesian_optimization import BayesianOptimization, WeisfeilerLehmanKernel
 

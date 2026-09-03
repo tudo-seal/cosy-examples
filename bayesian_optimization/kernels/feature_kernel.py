@@ -4,9 +4,8 @@ from collections.abc import Hashable, Sequence
 from typing import Any, Generic, TypeVar
 
 import numpy as np
-from sklearn.gaussian_process.kernels import RBF, Hyperparameter
-
 from cosy.core.tree import Tree
+from sklearn.gaussian_process.kernels import RBF, Hyperparameter
 
 from .kernel_base import StructuredKernelBase
 

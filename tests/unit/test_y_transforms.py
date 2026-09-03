@@ -95,11 +95,11 @@ def test_standardize_inverse_before_forward_is_identity():
 def test_transform_protocol_runtime_check():
     """All four transforms must satisfy the YTransform Protocol."""
     from bayesian_optimization.transforms import (
-        YTransform,
         IdentityTransform,
         Log1pTransform,
         SignedLogTransform,
         StandardizeTransform,
+        YTransform,
     )
     for cls in [IdentityTransform, Log1pTransform, SignedLogTransform, StandardizeTransform]:
         instance = cls()

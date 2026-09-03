@@ -1,4 +1,5 @@
 from cosy.core.types import Constructor, Literal
+
 from bayesian_optimization.examples.damg_nas.damg_repo import DAMGrepository
 
 # Note that the literal value in Constructor("epochs", Literal(10000)) is current not allowed to be None!

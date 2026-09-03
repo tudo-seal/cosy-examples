@@ -1,17 +1,16 @@
 from __future__ import annotations
 
-from cosy.core.tree import Tree
-from cosy.core.solution_space import RHSRule, NonTerminalArgument, SolutionSpace
-
-from collections.abc import Hashable
-from typing import Generic, TypeVar, Union
-import typing
 import random
-import networkx as nx
-import grakel
-from grakel.utils import graph_from_networkx
-
+import typing
+from collections.abc import Hashable
 from copy import copy
+from typing import Generic, TypeVar, Union
+
+import grakel
+import networkx as nx
+from cosy.core.solution_space import NonTerminalArgument, RHSRule, SolutionSpace
+from cosy.core.tree import Tree
+from grakel.utils import graph_from_networkx
 
 T = TypeVar("T", bound=Hashable) # type of terminals
 

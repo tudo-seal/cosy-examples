@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 from typing import Any
+
 import numpy as np
 import pytest
 from cosy.core.tree import Tree
-
 
 # ---------------------------------------------------------------------------
 # Top-level imports tests
@@ -12,8 +12,11 @@ from cosy.core.tree import Tree
 
 
 def test_new_top_level_imports_work():
-    from bayesian_optimization import BayesianOptimization  # noqa: F401
-    from bayesian_optimization import Log1pTransform, IdentityTransform  # noqa: F401
+    from bayesian_optimization import (  # noqa: F401
+        BayesianOptimization,  # noqa: F401
+        IdentityTransform,
+        Log1pTransform,
+    )
 
 
 # ---------------------------------------------------------------------------

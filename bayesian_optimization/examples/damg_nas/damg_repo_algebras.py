@@ -4,16 +4,14 @@ Algebren für ODErepository ausgelagert.
 Die Funktionen hier nehmen das `repo`-Objekt entgegen und geben die jeweiligen Algebra-Dicts zurück.
 """
 
+import math
+
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-
 from cosy.core.tree import Tree
 from cosy.core.types import Constructor, Literal
-
-import numpy as np
-import math
-
 
 # Interpretations of terms are algebras in my language
 

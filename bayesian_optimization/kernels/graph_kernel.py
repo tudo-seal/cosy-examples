@@ -5,13 +5,12 @@ from collections.abc import Callable, Hashable, Sequence
 from typing import Any, Generic, TypeVar
 
 import numpy as np
+from cosy.core.tree import Tree
 from grakel.kernels import VertexHistogram, WeisfeilerLehman
 from sklearn.gaussian_process.kernels import Hyperparameter
 
-from cosy.core.tree import Tree
-
-from .kernel_base import StructuredKernelBase
 from ..utils import to_grakel_graph as to_tree_graph
+from .kernel_base import StructuredKernelBase
 
 T = TypeVar("T", bound=Hashable)
 

@@ -6,9 +6,9 @@ from typing import Any
 from cosy.core.tree import Tree
 
 from .dpp import lazy_dpp_sample_optimized
-from .kernels.tree_kernel import OrderedRootedSubtreeKernel
-from .kernels.kernel_base import StructuredKernelBase
 from .kernels.graph_kernel import WeisfeilerLehmanKernel
+from .kernels.kernel_base import StructuredKernelBase
+from .kernels.tree_kernel import OrderedRootedSubtreeKernel
 
 
 def _dedupe_trees(samples: list[Tree[Any]]) -> tuple[list[Tree[Any]], int]:

@@ -5,9 +5,8 @@ from collections.abc import Callable, Hashable, Sequence
 from typing import Any, Generic, TypeVar
 
 import numpy as np
-from scipy import sparse
-
 from cosy.core.tree import Tree
+from scipy import sparse
 
 from .kernel_base import StructuredKernelBase
 

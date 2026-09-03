@@ -1,20 +1,18 @@
+import re
 from typing import Callable
 
-import re
-
-from grakel.utils import graph_from_networkx
 import networkx as nx
-
-from sklearn.gaussian_process.kernels import Sum, Product, ConstantKernel, WhiteKernel
-
 from cosy.core.tree import Tree
+from grakel.utils import graph_from_networkx
+from sklearn.gaussian_process.kernels import ConstantKernel, Product, Sum, WhiteKernel
 
-from bayesian_optimization.examples.damg_nas.damg_repo_algebras import (edgelist_algebra, hierarchy_algebra,
-                                                                        operator_histogram_algebra)
-
+from bayesian_optimization.examples.damg_nas.damg_repo_algebras import (
+    edgelist_algebra,
+    hierarchy_algebra,
+    operator_histogram_algebra,
+)
 from bayesian_optimization.kernels.graph_kernel import WeisfeilerLehmanKernel
 from bayesian_optimization.kernels.tree_kernel import OrderedRootedSubtreeKernel
-
 from bayesian_optimization.utils import to_grakel_graph, to_indexed_nx_digraph
 
 # ============================================================================

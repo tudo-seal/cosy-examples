@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import pytest
 import numpy as np
+import pytest
 from cosy.core.tree import Tree
 from sklearn.gaussian_process import GaussianProcessRegressor
-
 
 # ---------------------------------------------------------------------------
 # ExpectedImprovement

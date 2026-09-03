@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from hypothesis import strategies as st
 from cosy.core.tree import Tree
+from hypothesis import strategies as st
 
 _LABELS = ["A", "B", "C", "D", "E", "X", "Y", "Z"]
 

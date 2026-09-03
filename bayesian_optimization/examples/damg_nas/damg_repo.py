@@ -1,11 +1,9 @@
 
 from dataclasses import dataclass
 
-
-from cosy.core.types import DataGroup, Constructor, Var, Literal, Group
 from cosy.core import SpecificationBuilder, Synthesizer
 from cosy.core.tree import Tree
-
+from cosy.core.types import Constructor, DataGroup, Group, Literal, Var
 
 VALID_REDUCTIONS = {"mean", "sum", "none"}
 
