@@ -2,9 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Literal, NotRequired
-
-from typing_extensions import TypedDict
+from typing import Any, Literal, NotRequired, TypedDict
 
 
 class BOState(Enum):
