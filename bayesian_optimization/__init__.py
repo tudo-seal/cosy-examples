@@ -33,7 +33,11 @@ from .initial_sampling import (
     PiStrategy,
     exponential_decay,
 )
-from .kernels.graph_kernel import HierarchicalWLKernel, WeisfeilerLehmanKernel
+from .kernels.graph_kernel import (
+    HierarchicalWLKernel,
+    WeisfeilerLehmanKernel,
+    clear_kernel_caches,
+)
 from .kernels.kernel_base import StructuredKernelBase
 from .kernels.tree_kernel import OrderedRootedSubtreeKernel, SubsetTreeKernel
 from .state import BOState, Diagnostics, Suggestion
@@ -64,6 +68,7 @@ __all__ = [
     "TraceRecord",
     "UpperConfidenceBound",
     "WeisfeilerLehmanKernel",
+    "clear_kernel_caches",
     "exponential_decay",
     "kernel_objective_alignment",
     "read_calibration",

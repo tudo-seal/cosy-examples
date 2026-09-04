@@ -81,6 +81,51 @@ def test_reset_clears_all_data(bo_factory, tree_corpus):
     assert snap["y_list"] == []
 
 
+def test_reset_empties_the_shared_kernel_caches(bo_factory, tree_corpus):
+    """The graph kernels cache on their module, and reset is what reaches that far.
+
+    Their keys hold the terms, so after a run the terms of that run stay alive with nothing left
+    to read them. reset drops every observation, and this drops what the observations left
+    behind.
+    """
+    from bayesian_optimization.kernels import graph_kernel
+
+    graph_kernel.clear_kernel_caches()
+    bo = bo_factory(kernel=graph_kernel.WeisfeilerLehmanKernel(h=1))
+    bo.initialize(x0=tree_corpus[:3], y0=[1.0, 2.0, 0.5])
+    suggestion = bo.suggest()
+    bo.observe(suggestion.candidate, 0.4)
+    assert len(graph_kernel._GRAPH_CACHE) > 0
+    assert len(graph_kernel._MATRIX_CACHE) > 0
+
+    bo.reset()
+
+    assert len(graph_kernel._GRAPH_CACHE) == 0
+    assert len(graph_kernel._MATRIX_CACHE) == 0
+
+
+def test_reset_empties_caches_this_optimization_never_filled(bo_factory, tree_corpus):
+    """Emptying the shared caches reaches every entry in the process, not only this run's.
+
+    The caches carry the term and the translation an entry was built from and nothing about who
+    asked for it, so there is no narrower set to drop. A run on the default kernel, which never
+    converts a term to a graph, therefore empties what a graph kernel elsewhere put there, and
+    that kernel pays for it in conversions.
+    """
+    from bayesian_optimization.kernels import graph_kernel
+    from bayesian_optimization.kernels.tree_kernel import OrderedRootedSubtreeKernel
+
+    graph_kernel.clear_kernel_caches()
+    graph_kernel.WeisfeilerLehmanKernel(h=1)._prepare_inputs(tree_corpus)
+    assert len(graph_kernel._GRAPH_CACHE) == len(tree_corpus)
+    bo = bo_factory()
+    assert isinstance(bo.kernel, OrderedRootedSubtreeKernel)
+
+    bo.reset()
+
+    assert len(graph_kernel._GRAPH_CACHE) == 0
+
+
 def test_finalize_from_observed(bo_factory, tree_corpus):
     bo = bo_factory()
     bo.initialize(x0=tree_corpus[:3], y0=[1.0, 2.0, 0.5])

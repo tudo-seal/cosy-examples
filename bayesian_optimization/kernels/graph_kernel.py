@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import inspect
 from abc import ABC
+from collections import OrderedDict
 from collections.abc import Callable, Hashable, Sequence
 from typing import Any, Generic, NamedTuple, TypeVar
 
@@ -14,6 +15,76 @@ from ..utils import to_grakel_graph as to_tree_graph
 from .kernel_base import StructuredKernelBase
 
 T = TypeVar("T", bound=Hashable)
+V = TypeVar("V")
+
+
+class _BoundedCache(Generic[V]):
+    """A mapping of at most ``maxsize`` entries that drops the least recently used one first.
+
+    The bound is what separates a cache from a leak here.  Both keys used below hold the terms
+    themselves, so an entry keeps every term it was built from alive, and the caches sit on the
+    module, where nothing a caller drops can reach them.
+
+    Least recently used and not first in.  A pass over a batch converts the batch and the training
+    set and then asks for the matrix over the two, and the training set is what the next pass asks
+    for again.  Dropping the oldest entry would drop exactly those.
+
+    Parameters
+    ----------
+    maxsize:
+        How many entries are kept.  It has to exceed what a single pass reads, one entry per level
+        and term of the batch and of the training set together, or a pass evicts what it is about
+        to read again.
+    """
+
+    __slots__ = ("_entries", "maxsize")
+
+    def __init__(self, maxsize: int) -> None:
+        if maxsize < 1:
+            msg = f"a cache holds at least one entry, got maxsize={maxsize}"
+            raise ValueError(msg)
+        self.maxsize = maxsize
+        self._entries: OrderedDict[Any, V] = OrderedDict()
+
+    def get(self, key: Any) -> V | None:
+        """Return the entry stored under ``key`` and make it the most recently used one.
+
+        Args:
+            key: What to look up.
+
+        Returns:
+            V | None: The entry, or None if there is none.
+        """
+        entry = self._entries.get(key)
+        if entry is None:
+            return None
+        self._entries.move_to_end(key)
+        return entry
+
+    def __setitem__(self, key: Any, value: V) -> None:
+        """Store ``value`` under ``key``, dropping least recently used entries over the bound.
+
+        Args:
+            key: What to store it under.
+            value: What to store.
+        """
+        self._entries[key] = value
+        self._entries.move_to_end(key)
+        while len(self._entries) > self.maxsize:
+            self._entries.popitem(last=False)
+
+    def __len__(self) -> int:
+        """Return how many entries are held.
+
+        Returns:
+            int: The entry count, never above ``maxsize``.
+        """
+        return len(self._entries)
+
+    def clear(self) -> None:
+        """Drop every entry, and with it every term the keys keep alive."""
+        self._entries.clear()
+
 
 # Caches shared by every instance and keyed by what the value depends on, never by object
 # identity.  sklearn clones a kernel on every fit, and ``clone_with_theta`` builds a fresh object
@@ -33,8 +104,50 @@ T = TypeVar("T", bound=Hashable)
 # DAMG hierarchies 1, 2 and 3, whose Gram matrices came out identical to every decimal.  The price
 # of the fix is that the cache keeps those closures alive.  They are small, and the matrices
 # beside them are not.
-_GRAPH_CACHE: dict[tuple[Any, Any], Any] = {}
-_MATRIX_CACHE: dict[tuple[Any, ...], np.ndarray] = {}
+#
+# Both bounds are measured and not guessed.  The loop was run over the expression space of
+# ``tests/integration/test_real_ea_loop.py`` under a three-level hierarchical kernel, a population
+# of 100 over 10 generations and 15 iterations, with every lookup recorded and the recorded
+# sequence replayed under one bound after another.  The hit rates below come from that replay and
+# are exact.  The miss costs are wall clock on one machine and are given as the spread of repeated
+# runs.
+#
+# Graphs, 1024.  One pass holds a graph per level and term of the batch and of the training set at
+# once, and below that working set a pass evicts what it is about to read again.  The replay shows
+# where that edge is: 67.5 percent hits at 256 entries and 97.6 at 512 for the normalized kernel,
+# 55.5 and 98.2 for the unnormalized one, and not one hit more unbounded in either.  A miss costs
+# one conversion of a term into a grakel graph, 0.1 to 0.2 ms on that space and more on the deeper
+# terms of a real repository.
+#
+# Matrices, 1024.  An unnormalized kernel reaches ``diag`` on every prediction that asks for a
+# standard deviation, and ``diag`` asks for a 1x1 matrix per term and level, so there the cache
+# grows per term rather than per batch.  Replayed unnormalized: 5.7 percent hits at 128 entries,
+# 18.5 at 256, 86.3 at 512, and not one hit more unbounded.  Normalized it stays at 19.1 percent
+# under every bound, since those keys carry the whole training tuple and rarely repeat.  A miss
+# costs one grakel kernel over the two blocks, 0.2 to 0.6 ms for a single pair and 2.4 to 3.8 ms
+# for a batch of 100 against 49 observations.
+#
+# Bounding the count bounds the memory too.  An entry is 8 bytes per pair drawn from the two
+# blocks, so 1024 of the single-term matrices an evolutionary optimizer asks for against 50
+# observations are 400 KiB, and 1024 matrices of a batch of 100 against 50 are 39 MiB.
+_GRAPH_CACHE_MAXSIZE = 1024
+_MATRIX_CACHE_MAXSIZE = 1024
+
+_GRAPH_CACHE: _BoundedCache[Any] = _BoundedCache(_GRAPH_CACHE_MAXSIZE)
+_MATRIX_CACHE: _BoundedCache[np.ndarray] = _BoundedCache(_MATRIX_CACHE_MAXSIZE)
+
+
+def clear_kernel_caches() -> None:
+    """Empty the two caches the graph kernels share.
+
+    They live on the module, so they outlive every kernel, every model and every optimization
+    built over them, and their keys hold the terms.  A caller who wants the terms of a finished
+    run released says so here, and :meth:`BayesianOptimization.reset` does.  There is nothing
+    narrower to empty: an entry records the term and the translation it was built from, not who
+    asked for it.
+    """
+    _GRAPH_CACHE.clear()
+    _MATRIX_CACHE.clear()
 
 
 def _materialize_graph(graph_source: Any) -> Any:
@@ -164,9 +277,13 @@ class _GrakelWeisfeilerLehmanBase(StructuredKernelBase[T], ABC):
             bool(self.normalize),
             self._translation_key(),
         )
+        # Every caller gets an array of its own.  A Gaussian process adds its jitter to the
+        # diagonal of the matrix it is handed, in place, so an entry passed out directly drifts by
+        # twice that jitter on every fit that reads it, and the drift accumulates for as long as
+        # the entry lives.
         cached = _MATRIX_CACHE.get(key)
         if cached is not None:
-            return cached
+            return cached.copy()
 
         x_raw = [item.graph for item in X_graphs]
         y_raw = [item.graph for item in Y_graphs]
@@ -179,7 +296,7 @@ class _GrakelWeisfeilerLehmanBase(StructuredKernelBase[T], ABC):
             matrix = np.asarray(wl_kernel.transform(x_raw), dtype=float)
 
         _MATRIX_CACHE[key] = matrix
-        return matrix
+        return matrix.copy()
 
     def _translation_key(self) -> Any:
         """Return what distinguishes this kernel's term-to-graph translation from another's.

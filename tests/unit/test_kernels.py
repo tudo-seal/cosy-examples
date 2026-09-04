@@ -430,3 +430,102 @@ def test_two_translations_alive_at_once_do_not_share_a_matrix():
 
     assert np.allclose(collapsed, np.ones_like(collapsed))
     assert not np.allclose(kept, collapsed)
+
+
+# ---------------------------------------------------------------------------
+# The two module caches are bounded
+# ---------------------------------------------------------------------------
+
+
+def _distinct_terms(prefix: str, count: int) -> list[Tree]:
+    """Return ``count`` structurally distinct terms of one and the same shape."""
+    return [Tree(f"{prefix}{i}", (Tree("l"), Tree("r"))) for i in range(count)]
+
+
+def test_the_graph_cache_stops_growing_at_its_bound():
+    """A kernel fed one new term after another may not grow the shared cache without end.
+
+    The key of a converted graph holds the term itself, so an unbounded cache keeps every term
+    a run ever scored alive for the life of the process, and nothing a caller drops reaches that
+    far. What the bound costs when it bites is one conversion per evicted term.
+    """
+    from bayesian_optimization.kernels import graph_kernel
+
+    graph_kernel.clear_kernel_caches()
+    kernel: WeisfeilerLehmanKernel = WeisfeilerLehmanKernel(h=1)
+    bound = graph_kernel._GRAPH_CACHE_MAXSIZE
+    kernel._prepare_inputs(_distinct_terms("graph_bound_", bound + 50))
+
+    assert len(graph_kernel._GRAPH_CACHE) == bound
+
+
+def test_the_matrix_cache_stops_growing_at_its_bound():
+    """One batch after another of terms never seen before leaves a bounded number of matrices.
+
+    The matrix key holds both term tuples, so it pins the terms exactly as the graph key does,
+    and an unnormalized kernel adds one entry per term on top because ``diag`` asks for a
+    one-by-one matrix per term.
+    """
+    from bayesian_optimization.kernels import graph_kernel
+
+    graph_kernel.clear_kernel_caches()
+    kernel: WeisfeilerLehmanKernel = WeisfeilerLehmanKernel(h=1)
+    bound = graph_kernel._MATRIX_CACHE_MAXSIZE
+    for index in range(bound + 20):
+        kernel(_distinct_terms(f"matrix_bound_{index}_", 2))
+
+    assert len(graph_kernel._MATRIX_CACHE) == bound
+
+
+def test_the_entry_that_goes_is_the_one_read_longest_ago():
+    """Eviction follows the reads, not the writes.
+
+    A pass converts the batch and the training set and then asks for the matrix over the two, so
+    the training set is both the oldest entry of the pass and the one the next pass reads first.
+    Dropping the oldest written entry would drop exactly it.
+    """
+    from bayesian_optimization.kernels.graph_kernel import _BoundedCache
+
+    cache: _BoundedCache[int] = _BoundedCache(2)
+    cache["first"] = 1
+    cache["second"] = 2
+    assert cache.get("first") == 1
+
+    cache["third"] = 3
+
+    assert cache.get("first") == 1
+    assert cache.get("third") == 3
+    assert cache.get("second") is None
+
+
+def test_a_cache_of_no_entries_is_refused():
+    """A bound below one turns every write into a write and an eviction."""
+    from bayesian_optimization.kernels.graph_kernel import _BoundedCache
+
+    with pytest.raises(ValueError, match="at least one entry"):
+        _BoundedCache(0)
+
+
+def test_a_caller_writing_into_a_matrix_does_not_reach_the_cached_one():
+    """What a caller does to the matrix it is handed may not survive in the cache.
+
+    This is what a Gaussian process does to it. sklearn adds its jitter to the diagonal of the
+    matrix the kernel returns, in place, once in fit and once in the marginal likelihood that fit
+    evaluates, so a cached entry passed out directly drifts by twice the jitter on every fit and
+    keeps whatever it has drifted to. Under a bound the damage is worse than under none, because
+    whether a caller sees the drifted entry or a freshly computed one then depends on what was
+    evicted in between.
+    """
+    from bayesian_optimization.kernels import graph_kernel
+
+    terms = _distinct_terms("no_write_through_", 4)
+    kernel: WeisfeilerLehmanKernel = WeisfeilerLehmanKernel(h=1)
+
+    graph_kernel.clear_kernel_caches()
+    first = np.asarray(kernel(terms), dtype=float)
+    first[np.diag_indices_from(first)] += 1e-6
+    second = np.asarray(kernel(terms), dtype=float)
+    graph_kernel.clear_kernel_caches()
+    cold = np.asarray(kernel(terms), dtype=float)
+
+    assert np.array_equal(second, cold)

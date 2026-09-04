@@ -41,6 +41,7 @@ from .diagnostics import (
     warn_if_exploitation_stalls,
 )
 from .initial_sampling import _sample_fallback_tree
+from .kernels.graph_kernel import clear_kernel_caches
 from .kernels.tree_kernel import OrderedRootedSubtreeKernel
 from .state import BOState, Diagnostics, Suggestion
 
@@ -1389,6 +1390,13 @@ class BayesianOptimization(Generic[NT, T, G]):
         continues where the first left off, and two runs of an otherwise identical configuration
         draw different populations.  A caller who wants them to agree constructs a fresh
         initializer between runs.
+
+        Resetting empties the graph kernels' caches, and that reaches past this optimization.
+        They live on their module and their keys hold the terms, so the terms of a finished run
+        would otherwise stay alive with nothing left to read them.  Emptying takes the entries of
+        every other kernel in the process with it, whatever kernel this optimization holds.  Their
+        keys name the term and the translation and never the kernel that wrote the entry, so a
+        dropped entry costs the conversion or the kernel evaluation again and nothing else.
         """
         self._bo_state = BOState.UNINITIALIZED
         self._x_list = []
@@ -1408,6 +1416,7 @@ class BayesianOptimization(Generic[NT, T, G]):
         self._warned_about_model_selection = False
         self._warned_about_frozen_hyperparameters = False
         self.last_acquisition_run = None
+        clear_kernel_caches()
 
     def best(self) -> tuple[Any, float]:
         """Return the best observation as ``(candidate, y)``.
