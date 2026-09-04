@@ -39,16 +39,19 @@ G = TypeVar("G")
 # distribution per reference set, and the reference set is what changes from draw to draw.
 PiStrategy = Callable[[Sequence[Tree[Any]]], Callable[[float], float]]
 
-# One stream is long enough that this only ever fires on an exhausted space.  See the docstring
-# below for why it is a count of draws and not of seconds.
-_MAX_FALLBACK_DRAWS = 100
+# How many draws one term of a design is worth before its space counts as exhausted.  Both
+# functions below spend this budget per term rather than per design: the fallback looks for a
+# single term, and ``distinct_prefix`` starts counting again each time one enters the design.
+# A budget for the whole design would refuse every design larger than itself, since collecting
+# ``count`` distinct terms takes at least ``count`` draws on any space at all.
+_MAX_DRAWS_PER_TERM = 100
 
 
 def _sample_fallback_tree(
     sampler: Sampler,
     query: Any,
     seen: set[Any],
-    max_draws: int = _MAX_FALLBACK_DRAWS,
+    max_draws: int = _MAX_DRAWS_PER_TERM,
 ) -> Tree[Any]:
     """Draw the first inhabitant of ``query`` that this run has not evaluated yet.
 
@@ -93,7 +96,7 @@ def distinct_prefix(
     sampler: Sampler,
     query: Any,
     count: int,
-    max_draws: int = _MAX_FALLBACK_DRAWS,
+    max_draws_per_term: int = _MAX_DRAWS_PER_TERM,
 ) -> tuple[list[Tree[Any]], int]:
     """Take ``count`` **pairwise distinct** inhabitants from one stream of ``sampler``.
 
@@ -119,45 +122,66 @@ def distinct_prefix(
     One stream and not ``count`` calls, for the reason ``_sample_fallback_tree`` gives: each call
     re-poses the query, and on a realistic space that is what a draw costs.
 
+    **Why the budget is per term.**  A design of ``count`` terms takes at least ``count`` draws,
+    so a budget on the draws the whole design may cost refuses every design larger than the
+    budget, whatever the space holds and however faithfully the sampler serves it.  The budget
+    is spent on the term currently being collected and starts again as soon as one enters the
+    design, which makes it the budget ``_sample_fallback_tree`` gives the single term it looks
+    for.  A design therefore costs at most ``count`` times that many draws, which is what the
+    same design costs when the loop repairs it one term at a time through that function.
+
     Args:
         sampler: The sampler to draw from.
         query: The generator query naming the search space and the requested type.
         count: How many distinct inhabitants to collect.
-        max_draws: How many inhabitants to look at in total before giving up.  Only reachable for
-            samplers that draw with replacement, since the size-uniform stream ends on its own.
+        max_draws_per_term: How many draws in a row may repeat a term the design already holds
+            before this gives up.  The count restarts whenever a term enters the design, so it
+            bounds the waste and not the size of the design.  Only reachable for samplers that
+            draw with replacement, since a stream that repeats nothing never lifts the count
+            above zero.
 
     Returns:
         tuple[list[Tree[Any]], int]: The terms in stream order, and how many repeats were rejected.
 
     Raises:
         ValueError: If ``count`` is negative.
-        RuntimeError: If the stream ends or ``max_draws`` is reached before ``count`` distinct
-            inhabitants are collected.  A short design is not a design, and topping it up with
-            repeats is the thing this function exists to prevent.
+        RuntimeError: If the stream ends, or ``max_draws_per_term`` draws in a row repeat a term
+            the design already holds, before ``count`` distinct inhabitants are collected.  A
+            short design is not a design, and topping it up with repeats is the thing this
+            function exists to prevent.
     """
     if count < 0:
         msg = f"a design holds a non-negative number of terms, not {count}"
         raise ValueError(msg)
+    if count == 0:
+        # An empty design is answered before a stream is opened, the way the kernel-diverse
+        # initializer answers a population of zero.  The loop below cannot answer it: it stops
+        # where a term has just been kept, and an empty design keeps none.
+        return [], 0
     drawn: list[Tree[Any]] = []
     rejected = 0
-    for looked_at, candidate in enumerate(sampler.sample(query), start=1):
+    repeats_in_a_row = 0
+    for candidate in sampler.sample(query):
         # Structural comparison, not a set: a term hashes once when it is built and from its
         # labels alone, and nothing here requires a label to hash consistently with its equality
         # or to stay unchanged afterwards.  ``Tree.__eq__`` compares the size first, so the scan
         # short-circuits on almost every pair and the design is small either way.
         if any(candidate == kept for kept in drawn):
             rejected += 1
+            repeats_in_a_row += 1
+            if repeats_in_a_row >= max_draws_per_term:
+                msg = (
+                    f"{sampler!r} repeated a term the design already holds "
+                    f"{repeats_in_a_row} times in a row, with {len(drawn)} of the {count} "
+                    f"terms collected.  The bounded search space appears too small for this "
+                    f"design"
+                )
+                raise RuntimeError(msg)
         else:
             drawn.append(candidate)
             if len(drawn) == count:
                 return drawn, rejected
-        if looked_at >= max_draws:
-            msg = (
-                f"{sampler!r} delivered {looked_at} inhabitants, {rejected} of them repeats, and "
-                f"only {len(drawn)} distinct ones where {count} were asked for; the bounded search "
-                f"space appears too small for this design"
-            )
-            raise RuntimeError(msg)
+            repeats_in_a_row = 0
     msg = (
         f"the stream of {sampler!r} ended after {len(drawn)} distinct inhabitants "
         f"({rejected} repeats rejected) and the design asks for {count}; within its bound the "

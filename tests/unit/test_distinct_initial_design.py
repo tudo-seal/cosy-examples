@@ -92,10 +92,10 @@ def test_a_short_design_is_an_error_and_not_a_short_design():
         distinct_prefix(sampler, object(), 3)
 
 
-def test_a_sampler_that_never_ends_is_bounded_by_max_draws():
+def test_a_sampler_that_never_ends_is_bounded_per_term():
     """A depth-bounded sampler's stream ends only when a draw yields nothing.
 
-    That may never happen, so the number of draws is capped.
+    That may never happen, so a term is worth a fixed number of draws and no more.
     """
 
     class _Endless:
@@ -107,7 +107,56 @@ def test_a_sampler_that_never_ends_is_bounded_by_max_draws():
             return "_Endless"
 
     with pytest.raises(RuntimeError, match="appears too small"):
-        distinct_prefix(_Endless(), object(), 2, max_draws=25)
+        distinct_prefix(_Endless(), object(), 2, max_draws_per_term=25)
+
+
+def test_a_design_larger_than_the_draws_one_term_is_worth_is_drawable():
+    """A design used to be refused for its size alone, in the name of the search space.
+
+    The budget bounded the draws a whole design might take, and a design of ``count`` terms
+    takes at least ``count`` draws, so every design past the budget was refused whatever the
+    space held. The shipped budget is 100 and the design here is 101, on a stream that repeats
+    every term once and can still serve it.
+    """
+    script = [term for i in range(101) for term in (_tree(f"t{i}"), _tree(f"t{i}"))]
+    drawn, rejected = distinct_prefix(_ScriptedSampler(script), object(), 101)
+    assert [t.root for t in drawn] == [f"t{i}" for i in range(101)]
+    assert rejected == 100
+
+
+def test_the_budget_starts_again_with_every_term_the_design_keeps():
+    """Two terms are worth twice the budget, and the count restarts where one is kept.
+
+    Both sides of the threshold are pinned here. Three repeats in a row are affordable under a
+    budget of four and stay affordable when they occur again for the next term, while four in a
+    row are one too many. A budget counted over the whole design would stop at the fourth
+    repeat of the first case, with the design one term short.
+    """
+
+    def _script(repeats):
+        first = [_tree("a")] * (repeats + 1)
+        second = [_tree("b")] * (repeats + 1)
+        return [*first, *second, _tree("c")]
+
+    drawn, rejected = distinct_prefix(
+        _ScriptedSampler(_script(3)), object(), 3, max_draws_per_term=4
+    )
+    assert [t.root for t in drawn] == ["a", "b", "c"]
+    assert rejected == 6
+
+    with pytest.raises(RuntimeError, match="4 times in a row"):
+        distinct_prefix(_ScriptedSampler(_script(4)), object(), 3, max_draws_per_term=4)
+
+
+def test_an_empty_design_is_answered_before_a_stream_is_opened():
+    """A design of zero is complete before the first draw, and the loop cannot see that.
+
+    The loop stops where a term has just been kept, so a design of zero would run to the end of
+    the stream and, under a sampler whose stream never ends, past it.
+    """
+    sampler = _ScriptedSampler([_tree("a")])
+    assert distinct_prefix(sampler, object(), 0) == ([], 0)
+    assert sampler.streams == 0
 
 
 def test_a_negative_design_size_is_refused():
