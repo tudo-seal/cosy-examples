@@ -17,10 +17,10 @@ programs *are* the same program:
 
 Structure length 2 throughout.  It is the only length whose space both forms can be counted on,
 because the coupled form has to build the retained search tree, and removing that need is what the
-recognizable form is for.  Length 2 has one blind spot, and the witnesses below are the answer to
-it.  No law fires anywhere in this space: hand the repository four relations that admit everything
-and the determinized program comes out with the same 2605 rules, so a relation that always returned
-True would pass every other test here.
+recognizable form is for.  Length 2 has one blind spot, and the corpus of
+``tests/swap_law_witnesses.py`` is the answer to it.  No law fires anywhere in this space: hand the
+repository four relations that admit everything and the determinized program comes out with the same
+2605 rules, so a relation that always returned True would pass every other test here.
 """
 
 from __future__ import annotations
@@ -28,9 +28,6 @@ from __future__ import annotations
 import pytest
 from cosy.core import Synthesizer
 from cosy.core.recognizable import RecognizableConstraint, state_of
-from cosy.core.solution_space import NonTerminalArgument
-from cosy.core.tree import Tree
-from cosy.core.types import Abstraction, Implication
 from cosy.search import depth_first, generator_query, term_size
 from cosy.search.counting import branch_counts, branch_multiplicities, size_table
 from cosy.search.determinize import determinize, unabstracted_clauses
@@ -50,6 +47,8 @@ from bayesian_optimization.examples.cnn_damg_nas.recognizable_cnn_damg_repo impo
     check_alphabet,
 )
 from bayesian_optimization.examples.recognizable_swap_laws import TOKENS
+from tests.programs import clause_spine, shape_of
+from tests.swap_law_witnesses import WITNESSES
 
 LENGTH = 2
 EPOCHS = 50
@@ -126,61 +125,6 @@ def determinization(recognizable):
     """
     space, target = recognizable
     return determinize(space, target)
-
-
-def shape_of(space):
-    """Return the program's rules in a form that ignores the predicates.
-
-    What a subclass that goes further than restating the laws can move is a parameter set, a
-    constraint on the literals, or an argument type, all of which change which rules the synthesis
-    produces.  Rendering the rules without their predicates isolates exactly that: what remains has
-    to be identical, because the only intended difference between the two repositories is how the
-    four laws are stated.
-
-    Args:
-        space (SolutionSpace): The synthesized program.
-
-    Returns:
-        dict[str, list[tuple]]: Per non-terminal, its rules as terminal plus argument descriptors.
-    """
-    shape = {}
-    for nonterminal in space.nonterminals():
-        rules = []
-        for rule in space.get(nonterminal) or ():
-            arguments = tuple(
-                ("hole", str(argument.origin), argument.name)
-                if isinstance(argument, NonTerminalArgument)
-                else ("const", repr(argument.value), argument.name)
-                for argument in rule.arguments
-            )
-            rules.append((str(rule.terminal), arguments))
-        shape[str(nonterminal)] = sorted(rules)
-    return shape
-
-
-def clause_spine(clause):
-    """Return what a clause introduces, in order, with its predicates named by kind.
-
-    Args:
-        clause (Specification): One combinator's specification, as the builder leaves it.
-
-    Returns:
-        list: One entry per parameter and per predicate, closed by the suffix type.
-    """
-    spine = []
-    node = clause
-    while isinstance(node, (Abstraction, Implication)):
-        if isinstance(node, Abstraction):
-            spine.append(("parameter", node.parameter.name))
-        elif node.predicate.only_literals:
-            spine.append(("constraint on the literals",))
-        elif isinstance(node.predicate.constraint, RecognizableConstraint):
-            spine.append(("law", "as a relation on states", node.predicate.constraint.abstraction))
-        else:
-            spine.append(("law", "as a predicate on terms", None))
-        node = node.body
-    spine.append(("suffix", str(node)))
-    return spine
 
 
 def test_the_two_forms_differ_in_the_four_laws_and_in_nothing_else():
@@ -323,149 +267,6 @@ def test_the_relations_decide_every_realized_pair_as_the_laws_do(original):
         for name, relation in LAWS:
             law = getattr(CNNrepository, name)
             assert relation(states) == law(x, y), f"{name} disagrees with its relation"
-
-
-# ------------------------------------------------------------------------- the witness corpus
-#
-# Every pair the test above sees is a pair some law admitted, because a term is only derived once
-# every predicate on it has said True.  A relation that returned True on everything would therefore
-# pass it.  The pairs a law rejects have to be built by hand, and these are they.
-#
-# Each of the four laws forbids the left-hand side of one rewrite rule and states that rule in its
-# own docstring.  Read over the layers of a sequential composition rather than over the tree, three
-# of the four are patterns of two consecutive layers and one is a pattern of three:
-#
-#   swaplaw2  [swap(a, b), edges(c)]  then  [edges(b), swap(a, c)]
-#   swaplaw4  [edges(a), swap(b, c)]  then  [swap(a, c), edges(b)]
-#   swaplaw3  [swap(a, b)]            then  [swap(b, a)]
-#   swaplaw1  [swap(a, b)], then a layer whose first entry carries the edge numbers (b, c) and
-#             whose remaining entries carry (a, d) between them, then [swap(c, d)]
-#
-# ``edges(x)`` is the degenerate crossing that carries x edges straight through, which is how the
-# ``copy(x, edge())`` of the rewrite rules stands in a term.
-#
-# Each law gets the pair it rejects and, beside it, the same pair with the closing edge numbers
-# changed so that the pattern does not close.  The second one has to be admitted, and it is what
-# catches a relation that rejects more than its law does.
-
-
-def _node(root, arity, **slots):
-    """Build a tree with ``arity`` children, filling the named slots and leaving the rest at 0."""
-    children = [Tree(0, ()) for _ in range(arity)]
-    for slot, value in slots.items():
-        children[int(slot[1:])] = value
-    return Tree(root, tuple(children))
-
-
-def _swap(m, n):
-    """The wiring that crosses ``m`` edges past ``n`` edges."""
-    return _node("swap", 19, _1=Tree(m, ()), _2=Tree(n, ()))
-
-
-def _edges(n):
-    """``n`` edges carried straight through, which is the degenerate crossing."""
-    return _node("edges", 17, _0=Tree(n, ()))
-
-
-def _beside_singleton(inner=None, i=None, o=None):
-    """A layer with one entry."""
-    slots = {}
-    if inner is not None:
-        slots["_4"] = inner
-    if i is not None:
-        slots["_0"] = Tree(i, ())
-    if o is not None:
-        slots["_1"] = Tree(o, ())
-    return _node("beside_singleton", 5, **slots)
-
-
-def _beside_cons(i, i1, o, o1, first, rest):
-    """A layer with a first entry and a tail.
-
-    The combinator binds the edge numbers of the first entry and, beside them, the sums over the
-    remaining entries as ``i - i1`` and ``o - o1``.  A witness has to carry all four, since that is
-    where the three-layer pattern reads the edge numbers of the entries after the first.
-    """
-    return _node("beside_cons", 11,
-                 _0=Tree(i, ()), _1=Tree(i1, ()), _2=Tree(i - i1, ()),
-                 _3=Tree(o, ()), _4=Tree(o1, ()), _5=Tree(o - o1, ()),
-                 _9=first, _10=rest)
-
-
-def _before_singleton(layer):
-    """A sequential composition of exactly one layer."""
-    return _node("before_singleton", 6, _5=layer)
-
-
-def _before_cons(layer, rest):
-    """A sequential composition of one layer and the rest."""
-    return _node("before_cons", 9, _7=layer, _8=rest)
-
-
-def _witnesses():
-    """Build the corpus.
-
-    Returns:
-        list: One ``(law, case, verdict, head, tail)`` per witness, ``verdict`` being what the law
-        named by ``law`` has to say about the pair.
-    """
-    m, n, p, q = 3, 4, 5, 6
-    a, b, c = 3, 4, 5
-
-    # The three-layer pattern: a layer that crosses m past n, then a layer whose first entry
-    # carries (n, p) and whose remaining entries carry (m, q) between them, then a layer that
-    # crosses p past q.  The three layers run two subterms past each other and cross back, which is
-    # the same diagram as the two subterms side by side in the other order, so the space must not
-    # hold both.
-    first_layer = _beside_singleton(inner=_swap(m, n))
-    third_layer = _beside_singleton(inner=_swap(p, q))
-    third_layer_open = _beside_singleton(inner=_swap(p, q + 1))
-    middle_layer = _beside_cons(i=n + m, i1=n, o=p + q, o1=p,
-                                first=Tree("node", ()), rest=_beside_singleton(i=m, o=q))
-
-    # The pair swaplaw3 forbids: crossing a past b and then b past a is the identity wiring.
-    involution_left = _beside_singleton(inner=_swap(a, b))
-    involution_right = _beside_singleton(inner=_swap(b, a))
-    involution_open = _beside_singleton(inner=_swap(b, a + 1))
-
-    # The pair swaplaw2 forbids: crossing a past b beside c straight through, then b straight
-    # through beside a crossing past c, is one crossing of a past b + c.
-    first_pair_left = _beside_cons(i=a + b + c, i1=a + b, o=a + b + c, o1=a + b,
-                                   first=_swap(a, b), rest=_beside_singleton(inner=_edges(c)))
-    first_pair_right = _beside_cons(i=a + b + c, i1=b, o=a + b + c, o1=b,
-                                    first=_edges(b), rest=_beside_singleton(inner=_swap(a, c)))
-    first_pair_open = _beside_cons(i=a + b + c, i1=b, o=a + b + c, o1=b,
-                                   first=_edges(b), rest=_beside_singleton(inner=_swap(a + 1, c)))
-
-    # The pair swaplaw4 forbids, the mirror of the one above: one crossing of a + b past c.
-    second_pair_left = _beside_cons(i=a + b + c, i1=a, o=a + b + c, o1=a,
-                                    first=_edges(a), rest=_beside_singleton(inner=_swap(b, c)))
-    second_pair_right = _beside_cons(i=a + b + c, i1=a + c, o=a + b + c, o1=a + c,
-                                     first=_swap(a, c), rest=_beside_singleton(inner=_edges(b)))
-    second_pair_open = _beside_cons(i=a + b + c, i1=a + c, o=a + b + c, o1=a + c,
-                                    first=_swap(a, c), rest=_beside_singleton(inner=_edges(b + 1)))
-
-    return [
-        ("swaplaw1", "the three layers close", False,
-         first_layer, _before_cons(middle_layer, _before_singleton(third_layer))),
-        ("swaplaw1", "the third layer crosses other edges", True,
-         first_layer, _before_cons(middle_layer, _before_singleton(third_layer_open))),
-        ("swaplaw2", "the two layers close", False,
-         first_pair_left, _before_singleton(first_pair_right)),
-        ("swaplaw2", "the second layer crosses other edges", True,
-         first_pair_left, _before_singleton(first_pair_open)),
-        ("swaplaw3", "the two layers close", False,
-         involution_left, _before_singleton(involution_right)),
-        ("swaplaw3", "the second layer crosses other edges", True,
-         involution_left, _before_singleton(involution_open)),
-        ("swaplaw4", "the two layers close", False,
-         second_pair_left, _before_singleton(second_pair_right)),
-        ("swaplaw4", "the second layer crosses other edges", True,
-         second_pair_left, _before_singleton(second_pair_open)),
-    ]
-
-
-WITNESSES = _witnesses()
 
 
 @pytest.mark.parametrize(("law", "case", "verdict", "head", "tail"), WITNESSES,

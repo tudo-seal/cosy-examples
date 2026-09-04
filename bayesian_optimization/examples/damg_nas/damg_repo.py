@@ -1000,6 +1000,104 @@ class DAMGrepository:
                             return False
         return True
 
+    def _before_cons_clause(self, dimension, paratuples, paratupletuples):
+        """Build the before_cons clause, which composes the first layer of a chain with the rest.
+
+        This is the only clause of the repository whose predicate reads a hole, and the four swap
+        laws are that predicate.  A subclass that states the same four laws in another form has
+        one method to override and inherits the clause, rather than copying the parameter sets and
+        the constraints on them and having to be held against the original afterwards.
+
+        Args:
+            dimension (DataGroup): The feature sizes an edge bundle may carry.
+            paratuples (Group): One layer, as a tuple of component labels.
+            paratupletuples (Group): A sequence of layers, which is what a structure is.
+
+        Returns:
+            Specification: The clause.
+        """
+        clause = self._append_swap_laws(
+            SpecificationBuilder()
+            .parameter("i", dimension)
+            .parameter("j", dimension)
+            .parameter("o", dimension)
+            .parameter("request", paratupletuples)
+            .parameter("ls", paratupletuples, lambda v: [paratupletuples.normalize(v["request"])])
+            .parameter_constraint(lambda v: v["ls"] is not None and len(v["ls"]) > 1)
+            .parameter("head", paratuples, lambda v: [v["ls"][0]])
+            .parameter_constraint(lambda v: v["head"] is None or
+                                            (
+                                                (v["i"] == sum([t[1] for t in v["head"]])
+                                                 if None not in [t for t in v["head"]]
+                                                    and None not in [t[1] for t in v["head"]]
+                                                 else v["i"] > sum([t[1] for t in v["head"]
+                                                                    if t is not None and t[1] is not None]))
+                                                and (v["j"] == sum([t[2] for t in v["head"]])
+                                                     if None not in [t for t in v["head"]]
+                                                        and None not in [t[2] for t in v["head"]]
+                                                     else v["j"] > sum([t[2] for t in v["head"]
+                                                                        if t is not None and t[2] is not None]))
+                                            )
+                                  )
+            .parameter("tail", paratupletuples, lambda v: [v["ls"][1:]])
+            .parameter_constraint(lambda v: v["tail"] is None or
+                                            (
+                                                    (len(v["tail"]) > 0) and
+                                                    (
+                                                            v["tail"][0] is None or
+                                                            (
+                                                                v["j"] == sum([t[1] for t in v["tail"][0]])
+                                                                if None not in [t for t in v["tail"][0]]
+                                                                   and None not in [t[1] for t in v["tail"][0]]
+                                                                else v["j"] > sum([t[1] for t in v["tail"][0]
+                                                                                   if t is not None
+                                                                                   and t[1] is not None])
+                                                             )
+                                                    ) and
+                                                    (
+                                                            v["tail"][-1] is None or
+                                                            (v["o"] == sum([t[2] for t in v["tail"][-1]])
+                                                             if None not in [t for t in v["tail"][-1]]
+                                                                and None not in [t[2] for t in v["tail"][-1]]
+                                                             else v["o"] > sum([t[2] for t in v["tail"][-1]
+                                                                                if t is not None
+                                                                                and t[2] is not None]))
+                                                    )
+                                            )
+                                  )
+            .argument("x", Constructor("DAG_parallel",
+                                       Constructor("input", Var("i"))
+                                       & Constructor("output", Var("j"))
+                                       & Constructor("structure", Var("head"))) & Constructor("non_ID"))
+            .argument("y", Constructor("DAG",
+                                       Constructor("input", Var("j"))
+                                       & Constructor("output", Var("o"))
+                                       & Constructor("structure", Var("tail"))))
+        )
+        return clause.suffix(Constructor("DAG",
+                                         Constructor("input", Var("i"))
+                                         & Constructor("input", Literal(None))
+                                         & Constructor("output", Var("o"))
+                                         & Constructor("output", Literal(None))
+                                         & Constructor("structure", Var("request"))))
+
+    def _append_swap_laws(self, clause):
+        """Attach the four swap laws to the clause, as predicates over its two holes.
+
+        Args:
+            clause (SpecificationBuilder): The clause, with both of its holes introduced.
+
+        Returns:
+            SpecificationBuilder: The clause with the four laws on it.
+        """
+        return (
+            clause
+            .constraint(lambda v: self.swaplaw1(v["x"], v["y"]))
+            .constraint(lambda v: self.swaplaw2(v["x"], v["y"]))
+            .constraint(lambda v: self.swaplaw3(v["x"], v["y"]))
+            .constraint(lambda v: self.swaplaw4(v["x"], v["y"]))
+        )
+
     # for all rewrite rules that aren't covered by term-predicates the left-hand sides will be forbidden by clever
     # type assignments for the combinators in the following specification, that forbid the construction of terms that
     # match the left-hand sides of the rewrite rules.
@@ -1484,72 +1582,7 @@ class DAMGrepository:
                                 )),
 
             # normalization is already done at learner combinator and may be removed here, but this would require refactoring of term predicates...
-            "before_cons": SpecificationBuilder()
-            .parameter("i", dimension)
-            .parameter("j", dimension)
-            .parameter("o", dimension)
-            .parameter("request", paratupletuples)
-            .parameter("ls", paratupletuples, lambda v: [paratupletuples.normalize(v["request"])])
-            .parameter_constraint(lambda v: v["ls"] is not None and len(v["ls"]) > 1)
-            .parameter("head", paratuples, lambda v: [v["ls"][0]])
-            .parameter_constraint(lambda v: v["head"] is None or
-                                            (
-                                                (v["i"] == sum([t[1] for t in v["head"]])
-                                                 if None not in [t for t in v["head"]]
-                                                    and None not in [t[1] for t in v["head"]]
-                                                 else v["i"] > sum([t[1] for t in v["head"]
-                                                                    if t is not None and t[1] is not None]))
-                                                and (v["j"] == sum([t[2] for t in v["head"]])
-                                                     if None not in [t for t in v["head"]]
-                                                        and None not in [t[2] for t in v["head"]]
-                                                     else v["j"] > sum([t[2] for t in v["head"]
-                                                                        if t is not None and t[2] is not None]))
-                                            )
-                                  )
-            .parameter("tail", paratupletuples, lambda v: [v["ls"][1:]])
-            .parameter_constraint(lambda v: v["tail"] is None or
-                                            (
-                                                    (len(v["tail"]) > 0) and
-                                                    (
-                                                            v["tail"][0] is None or
-                                                            (
-                                                                v["j"] == sum([t[1] for t in v["tail"][0]])
-                                                                if None not in [t for t in v["tail"][0]]
-                                                                   and None not in [t[1] for t in v["tail"][0]]
-                                                                else v["j"] > sum([t[1] for t in v["tail"][0]
-                                                                                   if t is not None
-                                                                                   and t[1] is not None])
-                                                             )
-                                                    ) and
-                                                    (
-                                                            v["tail"][-1] is None or
-                                                            (v["o"] == sum([t[2] for t in v["tail"][-1]])
-                                                             if None not in [t for t in v["tail"][-1]]
-                                                                and None not in [t[2] for t in v["tail"][-1]]
-                                                             else v["o"] > sum([t[2] for t in v["tail"][-1]
-                                                                                if t is not None
-                                                                                and t[2] is not None]))
-                                                    )
-                                            )
-                                  )
-            .argument("x", Constructor("DAG_parallel",
-                                       Constructor("input", Var("i"))
-                                       & Constructor("output", Var("j"))
-                                       & Constructor("structure", Var("head"))) & Constructor("non_ID"))
-            .argument("y", Constructor("DAG",
-                                       Constructor("input", Var("j"))
-                                       & Constructor("output", Var("o"))
-                                       & Constructor("structure", Var("tail"))))
-            .constraint(lambda v: self.swaplaw1(v["x"], v["y"]))
-            .constraint(lambda v: self.swaplaw2(v["x"], v["y"]))
-            .constraint(lambda v: self.swaplaw3(v["x"], v["y"]))
-            .constraint(lambda v: self.swaplaw4(v["x"], v["y"]))
-            .suffix(Constructor("DAG",
-                                Constructor("input", Var("i"))
-                                & Constructor("input", Literal(None))
-                                & Constructor("output", Var("o"))
-                                & Constructor("output", Literal(None))
-                                & Constructor("structure", Var("request")))),
+            "before_cons": self._before_cons_clause(dimension, paratuples, paratupletuples),
 
             "mse_loss": SpecificationBuilder()
             .parameter("loss", loss_function, lambda v: list(loss_function.iter_mseloss()))
