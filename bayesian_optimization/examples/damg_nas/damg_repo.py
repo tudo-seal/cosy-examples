@@ -1633,7 +1633,16 @@ class DAMGrepository:
                                                        )
                                 & Constructor("Loss", Constructor("type", Var("loss")))
                                 & Constructor("Optimizer", Constructor("type", Var("opti")))
+                                # The epoch count carries its value and the wildcard, the way every
+                                # other slot of this suffix does.  Without the second conjunct a
+                                # target has to name an epoch count to be inhabited at all, so
+                                # "train for any of the epoch counts this repository offers" is
+                                # inexpressible and asking for it yields no term.  Putting None into
+                                # n_epoch_values instead would be the wrong repair: it makes terms
+                                # that say epochs=None, and those have no interpretation, since
+                                # `learner` counts its epochs with range().
                                 & Constructor("epochs", Var("epochs"))
+                                & Constructor("epochs", Literal(None))
                                 )
                     )
         }
