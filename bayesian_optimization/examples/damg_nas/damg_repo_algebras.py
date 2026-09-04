@@ -581,7 +581,20 @@ def pytorch_function_algebra():
 
         "l1loss": (lambda l: nn.L1Loss(reduction=l.reduction)),
 
-        "adam_optimizer": (lambda o: lambda m: optim.Adam(m.parameters(), lr=o.learning_rate)),
+        # Every field of the Adam label reaches the optimizer that label names.  Only the learning
+        # rate used to, and the other eight were read off the label and dropped, so a term saying
+        # `Adam(learning_rate=0.01, weight_decay=0.0005, ...)` trained without weight decay.  That
+        # is a silent disagreement between what a term claims and what it does, and there is no
+        # field for which dropping is the right answer: the nine fields carry the same names as
+        # the arguments of `torch.optim.Adam`, `learning_rate` aside.
+        #
+        # A field the repository declares but does not vary keeps its dataclass default, and those
+        # defaults are torch's own, so an enumerated optimizer is built exactly as before.
+        "adam_optimizer": (lambda o: lambda m: optim.Adam(
+            m.parameters(), lr=o.learning_rate, betas=o.betas, eps=o.eps,
+            weight_decay=o.weight_decay, amsgrad=o.amsgrad, maximize=o.maximize,
+            capturable=o.capturable, differentiable=o.differentiable,
+            decoupled_weight_decay=o.decoupled_weight_decay)),
 
         "learner": (
             lambda i, o, r, ls, e, l, opt, loss, optimizer, model: lambda x, y, x_test, y_test: learner(i, model,
@@ -633,7 +646,15 @@ def pytorch_model_algebra():
 
         "l1loss": (lambda l: nn.L1Loss(reduction=l.reduction)),
 
-        "adam_optimizer": (lambda o: lambda m: optim.Adam(m.parameters(), lr=o.learning_rate)),
+        # The same interpretation as in `pytorch_function_algebra`, and the same reasoning.  This
+        # copy builds nothing today, since the `learner` entry below returns the model and drops
+        # the optimizer it was handed, but it is a second statement of what an Adam label means
+        # and it has to say the same thing.
+        "adam_optimizer": (lambda o: lambda m: optim.Adam(
+            m.parameters(), lr=o.learning_rate, betas=o.betas, eps=o.eps,
+            weight_decay=o.weight_decay, amsgrad=o.amsgrad, maximize=o.maximize,
+            capturable=o.capturable, differentiable=o.differentiable,
+            decoupled_weight_decay=o.decoupled_weight_decay)),
 
         "learner": (
             lambda i, o, r, ls, e, l, opt, loss, optimizer, model: model),
