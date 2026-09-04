@@ -15,6 +15,10 @@ programs *are* the same program:
 * clause for clause, by reading off which relations the synthesized rules actually carry,
 * term for term, by counting both spaces and comparing the rows.
 
+A last group asks what a run does with the two forms.  ``build_search`` is the one place that
+decides which program the loop searches and which one the sampler counts, and the two halves of that
+decision are pinned together, since choosing them apart is how a run breaks.
+
 Structure length 2 throughout.  It is the only length whose space both forms can be counted on,
 because the coupled form has to build the retained search tree, and removing that need is what the
 recognizable form is for.  Length 2 has one blind spot, and the corpus of
@@ -360,3 +364,190 @@ def test_the_determinized_space_counts_what_the_coupled_space_counts(original, d
     }
     assert row == dict(counted.counts)
     assert row == {62: 400, 71: 24, 83: 2312}
+
+
+# ---------------------------------------------------------------------------
+# What a run does with the two forms
+# ---------------------------------------------------------------------------
+# The cases above compare the two programs.  These six pin the one place that decides which of
+# them a run searches and which it counts, ``build_search`` in ``cnn_damg_experiment_utils``.  That
+# module is imported inside each case rather than at the top, so that the structural half of this
+# file still collects without pulling in torch.
+
+
+def test_the_size_uniform_mode_searches_the_coupled_program_and_counts_the_other(original):
+    """What the size-uniform mode hands the loop, and which program is which.
+
+    The determinization is the sampler's business and nobody else's.  The evolutionary operators
+    walk the program on every mutation and every recombination, and the product program is the
+    larger one to walk, so the loop is handed the coupled one.  What this pins is exactly that
+    split: the space is the program as synthesized, the request is the requested type, and the
+    sampler is the one that counts the product.
+
+    Args:
+        original (tuple): The tracked repository's space and target.
+    """
+    from bayesian_optimization.examples.cnn_damg_nas.cnn_damg_experiment_utils import (
+        DeterminizedSizeUniformSampler,
+        build_search,
+    )
+
+    original_space, target = original
+
+    program = build_search(RecognizableCNNrepository(**PARAMETER_SETS), target)
+
+    assert program.request == target, "the loop queries the requested type, not a product symbol"
+    assert shape_of(program.space) == shape_of(original_space), (
+        "the loop searches the program as synthesized"
+    )
+    assert isinstance(program.sampler, DeterminizedSizeUniformSampler)
+    assert program.sampler.counting == "table"
+
+    provenance = program.provenance
+    assert provenance["repository"] == "RecognizableCNNrepository"
+    assert provenance["sampling"] == "size-uniform"
+    # The size of the compiled program, recorded so that a change to the repository shows up as a
+    # number in the run record rather than as a silently different search space.  A combinator
+    # costs rules and not non-terminals, which is why the two move by different amounts.
+    assert provenance["determinization_state_count"] == 1044
+    assert provenance["determinization_rules"] == 2605
+    # One, not four: the four laws are four relations over the same abstraction, and a state is a
+    # tuple over the distinct abstractions, which is what makes the product one factor wide here
+    # instead of four.  Stating each law with its own alpha would have cost the product.
+    assert provenance["abstraction_count"] == 1
+    assert provenance["search_space_construction_seconds"] > 0.0
+    assert provenance["determinization_seconds"] > 0.0
+    # The alphabet the abstraction was checked against, read off the space rather than declared.
+    # The check has to run before the determinization, because a terminal the abstraction has never
+    # seen would otherwise be folded into the state that stands for everything else, and the laws
+    # would be decided on a state that cannot represent them.
+    assert provenance["terminals"] == check_alphabet(original_space)["terminals"]
+    assert provenance["terminals"], "the check has to have seen the program's terminals"
+
+
+def test_the_sampler_draws_the_terms_the_loop_s_program_derives(original):
+    """The claim the split rests on: one language, so a drawn term is an inhabitant.
+
+    ``determinize`` derives exactly the terms the original derives, which the counting case above
+    pins on the rows.  Here it is pinned on the objects a run actually uses: what the sampler hands
+    back has to pass the coupled program's own membership test, or the loop would be optimizing
+    over terms its search space does not contain.
+
+    Args:
+        original (tuple): The tracked repository's space and target.
+    """
+    from cosy.search import checker
+
+    from bayesian_optimization.examples.cnn_damg_nas.cnn_damg_experiment_utils import build_search
+
+    original_space, target = original
+    program = build_search(RecognizableCNNrepository(**PARAMETER_SETS), target, size_bound=79)
+
+    drawn = []
+    for tree in program.sampler.sample(generator_query(program.space, program.request)):
+        drawn.append(tree)
+        if len(drawn) == 5:
+            break
+
+    assert len(drawn) == 5
+    assert len(set(drawn)) == 5, "a size-uniform prefix is a sample without replacement"
+    assert all(term_size(tree) <= 79 for tree in drawn)
+    for tree in drawn:
+        assert checker(original_space, target, tree), (
+            f"the sampler drew {tree}, which the loop's own program does not derive"
+        )
+
+
+def test_the_sampler_refuses_a_query_it_does_not_stand_in_for(original):
+    """It answers a different query than the one it is given, so it has to check which one.
+
+    Safe only as long as the incoming query is the one it was built for.  The mutation poses
+    partial-term queries and must never reach this object, since it has its own sampler, and a
+    query against another program would draw inhabitants of a space the caller is not searching.
+
+    Args:
+        original (tuple): The tracked repository's space and target.
+    """
+    from cosy.core.types import Constructor
+    from cosy.search import residual_query
+
+    from bayesian_optimization.examples.cnn_damg_nas.cnn_damg_experiment_utils import build_search
+
+    original_space, target = original
+    program = build_search(RecognizableCNNrepository(**PARAMETER_SETS), target)
+    query = generator_query(program.space, program.request)
+    drawn = next(iter(program.sampler.sample(query)))
+
+    with pytest.raises(ValueError, match="partial-term"):
+        next(iter(program.sampler.sample(
+            residual_query(program.space, program.request, drawn, ())
+        )))
+    with pytest.raises(ValueError, match="another"):
+        next(iter(program.sampler.sample(generator_query(original_space, target))))
+    with pytest.raises(ValueError, match="stands in for"):
+        next(iter(program.sampler.sample(generator_query(program.space, Constructor("Nope")))))
+
+
+def test_build_search_refuses_the_repository_it_cannot_compile(original):
+    """The plain repository is not silently accepted and counted wrong.
+
+    ``CNNrepository`` states the four laws as term predicates over two sibling holes, which is
+    exactly what no table indexed by the non-terminal can be right about.  The determinization
+    names those clauses rather than dropping them, and that refusal is the reason the recognizable
+    form exists.  A run that got a coupled program past this point would draw from branch counts
+    that overcount, with nothing in its artifacts saying so.
+
+    Args:
+        original (tuple): The tracked repository's space and target.  Only the target is used.
+    """
+    from bayesian_optimization.examples.cnn_damg_nas.cnn_damg_experiment_utils import (
+        build_search,
+    )
+
+    _space, target = original
+    with pytest.raises(ValueError):
+        build_search(CNNrepository(**PARAMETER_SETS), target)
+
+
+def test_the_depth_bounded_mode_searches_the_program_as_synthesized(original):
+    """The other half of the one decision, and it must not determinize.
+
+    Where the product program is too large to count, a run searches the coupled program and draws
+    depth-bounded instead.  What matters is that the pair stays a pair: this mode may not hand back
+    a counting sampler, and it may not hand back the product program's start symbol either, because
+    neither belongs to the space it returns.
+
+    Args:
+        original (tuple): The tracked repository's space and target.
+    """
+    from cosy.search import DepthBoundedRandomSampler
+
+    from bayesian_optimization.examples.cnn_damg_nas.cnn_damg_experiment_utils import (
+        build_search,
+    )
+
+    original_space, target = original
+    program = build_search(
+        RecognizableCNNrepository(**PARAMETER_SETS), target, sampling="depth-bounded"
+    )
+
+    assert program.request == target, "the coupled program is queried at the requested type"
+    assert isinstance(program.sampler, DepthBoundedRandomSampler)
+    assert program.provenance["sampling"] == "depth-bounded"
+    assert "determinization_rules" not in program.provenance, (
+        "a mode that does not determinize must not report a determinization"
+    )
+    # The same program the tracked repository synthesizes, rule for rule.  The recognizable form
+    # differs only in how the four laws are stated, and this mode does not compile them away.
+    assert shape_of(program.space) == shape_of(original_space)
+
+
+def test_build_search_refuses_a_sampling_mode_it_does_not_have(original):
+    """Which sampler a space admits is not something to guess a default for."""
+    from bayesian_optimization.examples.cnn_damg_nas.cnn_damg_experiment_utils import (
+        build_search,
+    )
+
+    _space, target = original
+    with pytest.raises(ValueError, match="size-uniform"):
+        build_search(RecognizableCNNrepository(**PARAMETER_SETS), target, sampling="uniform")
