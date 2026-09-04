@@ -2,12 +2,13 @@
 
 ``recognizable_cnn_damg_repo.py`` exists so that the CNN space can be determinized: its four swap
 laws are stated as an abstraction with a relation instead of as term predicates, which is what lets
-``cosy.search.determinize`` compile them into the non-terminals.  Buying that meant copying the
-``before_cons`` clause, and a copy can drift from its original.
+``cosy.search.determinize`` compile them into the non-terminals.  The two forms share the
+``before_cons`` clause the laws hang on and differ in the one method that hangs them there.
 
-These tests are what makes the copy safe.  They do not check that the copy *looks* like the
-original, they check that the two programs *are* the same program:
+These tests do not check that the one form *looks* like the other, they check that the two
+programs *are* the same program:
 
+* clause for clause, before any synthesis, so that the difference stays the four predicates,
 * rule for rule, over every non-terminal, with the same terminals and the same arguments,
 * predicate for predicate, on every pair of subterms the space realizes and on hand-built pairs
   that the laws were written to reject,
@@ -29,6 +30,7 @@ from cosy.core import Synthesizer
 from cosy.core.recognizable import RecognizableConstraint, state_of
 from cosy.core.solution_space import NonTerminalArgument
 from cosy.core.tree import Tree
+from cosy.core.types import Abstraction, Implication
 from cosy.search import depth_first, generator_query, term_size
 from cosy.search.counting import branch_counts, branch_multiplicities, size_table
 from cosy.search.determinize import determinize, unabstracted_clauses
@@ -38,6 +40,7 @@ from bayesian_optimization.examples.cnn_damg_nas.cnn_damg_targets import (
     make_usps_experiment_target,
 )
 from bayesian_optimization.examples.cnn_damg_nas.recognizable_cnn_damg_repo import (
+    OTHER_TERMINALS,
     R1,
     R2,
     R3,
@@ -46,6 +49,7 @@ from bayesian_optimization.examples.cnn_damg_nas.recognizable_cnn_damg_repo impo
     alpha,
     check_alphabet,
 )
+from bayesian_optimization.examples.recognizable_swap_laws import TOKENS
 
 LENGTH = 2
 EPOCHS = 50
@@ -127,10 +131,11 @@ def determinization(recognizable):
 def shape_of(space):
     """Return the program's rules in a form that ignores the predicates.
 
-    What a copy can get wrong is a parameter set, a constraint on the literals, or an argument
-    type, all of which change which rules the synthesis produces.  Rendering the rules without
-    their predicates isolates exactly that: what remains has to be identical, because the only
-    intended difference between the two repositories is how the four laws are stated.
+    What a subclass that goes further than restating the laws can move is a parameter set, a
+    constraint on the literals, or an argument type, all of which change which rules the synthesis
+    produces.  Rendering the rules without their predicates isolates exactly that: what remains has
+    to be identical, because the only intended difference between the two repositories is how the
+    four laws are stated.
 
     Args:
         space (SolutionSpace): The synthesized program.
@@ -153,12 +158,70 @@ def shape_of(space):
     return shape
 
 
-def test_the_two_repositories_produce_the_same_rules(original, recognizable):
-    """The copied clause must not have drifted: same non-terminals, same rules, same arguments.
+def clause_spine(clause):
+    """Return what a clause introduces, in order, with its predicates named by kind.
 
-    This is the test the duplicated ``before_cons`` clause is paid for with.  A typo in one of its
-    parameter constraints would not raise anything.  It would quietly synthesize a different space,
-    and every number measured on it would be a number about the wrong program.
+    Args:
+        clause (Specification): One combinator's specification, as the builder leaves it.
+
+    Returns:
+        list: One entry per parameter and per predicate, closed by the suffix type.
+    """
+    spine = []
+    node = clause
+    while isinstance(node, (Abstraction, Implication)):
+        if isinstance(node, Abstraction):
+            spine.append(("parameter", node.parameter.name))
+        elif node.predicate.only_literals:
+            spine.append(("constraint on the literals",))
+        elif isinstance(node.predicate.constraint, RecognizableConstraint):
+            spine.append(("law", "as a relation on states", node.predicate.constraint.abstraction))
+        else:
+            spine.append(("law", "as a predicate on terms", None))
+        node = node.body
+    spine.append(("suffix", str(node)))
+    return spine
+
+
+def test_the_two_forms_differ_in_the_four_laws_and_in_nothing_else():
+    """The clause is one clause, and the override states its four laws the other way round.
+
+    Read before any synthesis, so it says what the rule comparison cannot.  That one strips the
+    predicates off the rules, and the four laws are the predicates.  Here the two clauses have to
+    agree parameter for parameter, in the constraints on the literals and in the suffix, and each
+    has to carry four laws of one kind: predicates on terms in the base class, relations on states
+    in the override.  Dropping one, attaching a fifth, or stating a single law in the other form
+    all leave a repository that builds, and the rule comparison sees none of the three.
+
+    The four recognizable constraints have to name one and the same abstraction, because
+    ``cosy.search.determinize`` builds the product over the distinct abstractions of a program and
+    tells two of them apart with ``is`` or ``==``, which for a closure is identity.  Four closures
+    over the same terminals would be four axes of that product where one does.
+    """
+    coupled = clause_spine(CNNrepository(**PARAMETER_SETS).specification()["before_cons"])
+    restated = clause_spine(
+        RecognizableCNNrepository(**PARAMETER_SETS).specification()["before_cons"]
+    )
+
+    def without_the_laws(spine):
+        return [entry for entry in spine if entry[0] != "law"]
+
+    assert without_the_laws(coupled) == without_the_laws(restated)
+    assert [entry for entry in coupled if entry[0] == "law"] == [
+        ("law", "as a predicate on terms", None)
+    ] * 4
+    assert [entry for entry in restated if entry[0] == "law"] == [
+        ("law", "as a relation on states", alpha)
+    ] * 4
+
+
+def test_the_two_repositories_produce_the_same_rules(original, recognizable):
+    """The two forms must agree: same non-terminals, same rules, same arguments.
+
+    The clause is inherited, so what is left to catch is a subclass that goes further than
+    restating the laws, and a change to the clause that the two forms do not survive equally.
+    Neither would raise anything.  It would quietly synthesize a different space, and every number
+    measured on it would be a number about the wrong program.
 
     Args:
         original (tuple): The tracked repository's space and target.
@@ -198,6 +261,15 @@ def test_only_the_recognizable_form_can_be_determinized(original, recognizable, 
                for name in determinization.space.nonterminals()) == 2605
 
 
+def test_the_four_laws_are_compiled_over_one_abstraction(determinization):
+    """One abstraction in the program is one axis of the product, which the count above assumes.
+
+    Args:
+        determinization (Determinization): The compiled product program.
+    """
+    assert determinization.abstractions == (alpha,)
+
+
 def test_the_abstraction_covers_the_alphabet_the_program_uses(recognizable):
     """``alpha`` knows every terminal, and the laws' substring test agrees with its equality test.
 
@@ -215,6 +287,18 @@ def test_the_abstraction_covers_the_alphabet_the_program_uses(recognizable):
     # product and copy, which need an input or an output feature of 1, and this configuration has
     # none.
     assert len(found["terminals"]) == 19
+
+
+def test_the_abstraction_knows_every_combinator_of_the_repository():
+    """The alphabet is held against the combinator table, not against a space.
+
+    The check above sees only the terminals a space realizes, 19 of the 22 here, so a terminal that
+    no configuration in use enumerates can fall out of the list without anything saying so.  That
+    has happened, and the comment beside sum, product and copy in the module says how far it got.
+    The combinator table carries all 22 whatever a configuration does with them.
+    """
+    combinators = frozenset(CNNrepository(**PARAMETER_SETS).specification())
+    assert combinators == frozenset(TOKENS) | OTHER_TERMINALS
 
 
 def test_the_relations_decide_every_realized_pair_as_the_laws_do(original):
