@@ -150,6 +150,32 @@ def edgelist_learner(model, loss, optimizer, epochs, verbose=False):
 # example nx.DiGraph takes an edgelist as input to construct such a graph.
 # Therefore, composing the edgelist_algebra with a graph-constructor enables us to interpret a synthesized Tree as
 # the directed acyclic multigraph it encodes and therefore as the computational graph of a neural network.
+# Parallel and sequential composition of two edge-list continuations.
+#
+# These two helpers exist so that each continuation is evaluated exactly once, which is what makes
+# the interpretation of a term linear in its size.  Written out inline as (x(...)[0] + y(...)[0],
+# x(...)[1] + y(...)[1], x(...)[2] | y(...)[2]), a composition calls x and y once per component of
+# the tuple it builds, and since the continuations are themselves built from these same
+# combinators, that multiplies through the nesting instead of adding up.  Over the twelve targets
+# of damg_targets.py a term now evaluates exactly one continuation per leaf combinator it has,
+# which is between two and ten.
+#
+# Reusing the value is not an approximation.  A continuation is pure, so one evaluation yields the
+# same edges, the same outputs and the same node positions as three.
+def _beside_edgelists(x, y, i1, id, inputs):
+    """Parallel composition: x takes the first i1 inputs, y the rest."""
+    left = x(id, inputs[:i1])
+    right = y((id[0], id[1] + 0.2), inputs[i1:])
+    return left[0] + right[0], left[1] + right[1], left[2] | right[2]
+
+
+def _before_edgelists(x, y, id, inputs):
+    """Sequential composition: y consumes the outputs of x.  y is a (continuation, arity) pair."""
+    first = x(id, inputs)
+    second = y[0]((id[0] + 2.5, id[1]), first[1])
+    return second[0] + first[0], second[1], second[2] | first[2]
+
+
 def edgelist_algebra(verbose=False):
         return {
             "edges": (lambda io, para1, para2, para3, para4, para5, para6, para7, para8, para9, para10, para11, para12, para13, para14, para15, para16: lambda id, inputs: ([], inputs, {})),
@@ -187,19 +213,12 @@ def edgelist_algebra(verbose=False):
             "beside_singleton": (lambda i, o, ls, para, x: x),
 
             "beside_cons": (lambda i, i1, i2, o, o1, o2, ls, head, tail, x, y: lambda id, inputs:
-                (x(id, inputs[:i1])[0] + y((id[0], id[1] + 0.2), inputs[i1:])[0],
-                 x(id, inputs[:i1])[1] + y((id[0], id[1] + 0.2), inputs[i1:])[1],
-                 x(id, inputs[:i1])[2] | y((id[0], id[1] + 0.2), inputs[i1:])[2])),
+                _beside_edgelists(x, y, i1, id, inputs)),
 
             "before_singleton": (lambda i, o, r, ls, ls1, x: (x, i)),
 
-            "before_cons": (lambda i, j, o, r, ls, head, tail, x, y: (lambda id, inputs:
-                                                                      (
-                                                                           y[0]((id[0] + 2.5, id[1]), x(id, inputs)[1])[0] + x(id, inputs)[0],
-                                                                           y[0]((id[0] + 2.5, id[1]), x(id, inputs)[1])[1],
-                                                                           y[0]((id[0] + 2.5, id[1]), x(id, inputs)[1])[2] | x(id, inputs)[2]
-                                                                       ),
-                                                                       i)),
+            "before_cons": (lambda i, j, o, r, ls, head, tail, x, y:
+                            (lambda id, inputs: _before_edgelists(x, y, id, inputs), i)),
 
             "mse_loss": (lambda l: str(l)),
 
@@ -245,19 +264,12 @@ def edgelist_algebra(verbose=False):
             "beside_singleton_h1": (lambda i, o, x: x),
 
             "beside_cons_h1": (lambda i, i1, i2, o, o1, o2, x, y: lambda id, inputs:
-                (x(id, inputs[:i1])[0] + y((id[0], id[1] + 0.2), inputs[i1:])[0],
-                 x(id, inputs[:i1])[1] + y((id[0], id[1] + 0.2), inputs[i1:])[1],
-                 x(id, inputs[:i1])[2] | y((id[0], id[1] + 0.2), inputs[i1:])[2])),
+                _beside_edgelists(x, y, i1, id, inputs)),
 
             "before_singleton_h1": (lambda i, o, x: (x, i)),
 
-            "before_cons_h1": (lambda i, j, o, x, y: (lambda id, inputs:
-                                                                      (
-                                                                           y[0]((id[0] + 2.5, id[1]), x(id, inputs)[1])[0] + x(id, inputs)[0],
-                                                                           y[0]((id[0] + 2.5, id[1]), x(id, inputs)[1])[1],
-                                                                           y[0]((id[0] + 2.5, id[1]), x(id, inputs)[1])[2] | x(id, inputs)[2]
-                                                                       ),
-                                                                       i)),
+            "before_cons_h1": (lambda i, j, o, x, y:
+                               (lambda id, inputs: _before_edgelists(x, y, id, inputs), i)),
 
             "learner_h1": (lambda i, o, e, loss, optimizer, model: edgelist_learner(model, loss, optimizer, e, verbose=verbose)),
 
@@ -291,9 +303,7 @@ def edgelist_algebra(verbose=False):
             "beside_singleton_h3": (lambda i, o, x: x),
 
             "beside_cons_h3": (lambda i, i1, o, x, y: lambda id, inputs:
-            (x(id, inputs[:i1])[0] + y((id[0], id[1] + 0.2), inputs[i1:])[0],
-             x(id, inputs[:i1])[1] + y((id[0], id[1] + 0.2), inputs[i1:])[1],
-             x(id, inputs[:i1])[2] | y((id[0], id[1] + 0.2), inputs[i1:])[2])),
+                               _beside_edgelists(x, y, i1, id, inputs)),
         }
 
     # In the following we interpret the combinators as pytorch nn.modules
