@@ -129,6 +129,37 @@ def _finite_or_raise(value: Any, candidate: Any) -> float:
     return observed
 
 
+def _require_hashable(candidates: Sequence[Any], source: str) -> None:
+    """Refuse an initial design that holds a term which cannot be hashed.
+
+    The dataset is a set of terms, and every membership test this loop runs on it goes through a
+    hash: the fallback that replaces a repeat, the set the suggestion path tests a candidate
+    against, and the dictionary the pairs are checked for contradictions in.  A design that
+    cannot be hashed cannot become that dataset, and it is refused here rather than at the first
+    of those tests, which reaches the caller as a bare message about a type.
+
+    Asked of both designs this class accepts, and before either is paid for.  A drawn design is
+    deduplicated against a set on the way in, and a supplied one may cost an evaluation of the
+    quality measure per term, so a design refused afterwards is a design refused too late.
+
+    Args:
+        candidates (Sequence[Any]): The design to check.
+        source (str): Where the design came from, for the message.
+
+    Raises:
+        TypeError: If a candidate cannot be hashed.
+    """
+    for item in candidates:
+        try:
+            hash(item)
+        except TypeError as unhashable:
+            msg = (
+                f"All candidates in {source} must be hashable.  Got an unhashable item of type "
+                f"{type(item).__name__!r}."
+            )
+            raise TypeError(msg) from unhashable
+
+
 def _distinct_dataset(
     drawn: Sequence[Any], sampler: Sampler, query: Any, count: int
 ) -> tuple[list[Any], int]:
@@ -146,6 +177,14 @@ def _distinct_dataset(
     fallback rather than a second answer about identity.  See
     :func:`~bayesian_optimization.initial_sampling.distinct_prefix`.
 
+    The set the fallback tests against is one set, carried through the draws.  A term takes its
+    hash in its constructor and keeps it, so a set built again over the same terms holds the same
+    terms under the same hashes and answers the same question, and one built per replacement asks
+    that question of the whole design again for each of them.  Holding one means the design has to
+    be hashable whether or not a repeat occurs, which is why
+    :meth:`BayesianOptimization.initialize` establishes that first, in its own words rather than
+    in the interpreter's.
+
     Args:
         drawn (Sequence[Any]): What the initializer returned.
         sampler (Sampler): The loop's sampler, for the replacements.
@@ -161,16 +200,21 @@ def _distinct_dataset(
             drawn replacement turns out to equal a term the fallback's set had passed it against,
             which takes a label that hashes against its own equality, compares asymmetrically, or
             changed after its term was built.
+        TypeError: If a term cannot be hashed.  The design is held as a set here, so a caller
+            that has not checked its own design meets the interpreter's message rather than one
+            of its own.
     """
     kept: list[Any] = []
+    seen: set[Any] = set()
     repeats = 0
     for candidate in drawn:
         if any(candidate == other for other in kept):
             repeats += 1
         else:
             kept.append(candidate)
+            seen.add(candidate)
     while len(kept) < count:
-        replacement = _sample_fallback_tree(sampler, query, set(kept))
+        replacement = _sample_fallback_tree(sampler, query, seen)
         if any(replacement == other for other in kept):
             msg = (
                 "the fallback returned a term already in the initial design.  It rejects a "
@@ -181,6 +225,7 @@ def _distinct_dataset(
             )
             raise RuntimeError(msg)
         kept.append(replacement)
+        seen.add(replacement)
     return kept, repeats
 
 
@@ -615,7 +660,8 @@ class BayesianOptimization(Generic[NT, T, G]):
             ``None``.
         x0:
             Initial candidate trees.  When ``None`` the initializer draws them
-            (requires a non-``None`` ``search_space``).
+            (requires a non-``None`` ``search_space``).  Either way every term has to be
+            hashable, and a design that is not is refused before a value is read for it.
         y0:
             Initial objective values.  When ``None`` ``objective`` is called on each element
             of ``x0``.
@@ -661,6 +707,10 @@ class BayesianOptimization(Generic[NT, T, G]):
             # simply raises.  Both of those initializers raise rather than return a short
             # population.
             x0_list = list(self._initializer.initialize(self._query(), initial_size))
+            # An initializer of the caller's own may answer with anything.  The two this
+            # package ships return terms, which are hashable by construction, so an unhashable
+            # candidate here is a broken initializer rather than an unusual term.
+            _require_hashable(x0_list, "the design the initializer returned")
             # And then the dataset is made a *set*, which is not something the initializer can be
             # asked for.  Sampled initialization builds a population, and a population is a finite
             # multiset, so repeats are admissible there by definition.  The loop's dataset is not:
@@ -686,6 +736,7 @@ class BayesianOptimization(Generic[NT, T, G]):
                 )
         else:
             x0_list = list(x0)
+            _require_hashable(x0_list, "x0")
             # A design the caller hands over was not drawn here, so this loop redrew nothing in
             # it.  The count is about the repair, not about the design.
             repeats = 0
@@ -704,16 +755,6 @@ class BayesianOptimization(Generic[NT, T, G]):
                     f"len(x0)={len(x0_list)} != len(y0)={len(y0)}."
                 )
             y0_list = [_finite_or_raise(v, t) for t, v in zip(x0_list, y0, strict=True)]
-
-        # Validate hashability
-        for item in x0_list:
-            try:
-                hash(item)
-            except TypeError as unhashable:
-                raise TypeError(
-                    f"All candidates in x0 must be hashable.  Got an "
-                    f"unhashable item of type {type(item).__name__!r}."
-                ) from unhashable
 
         self._x_list = x0_list
         self._y_list = y0_list

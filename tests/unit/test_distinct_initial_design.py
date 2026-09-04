@@ -240,6 +240,90 @@ def test_a_label_changed_after_its_term_was_built_is_reported():
         _distinct_dataset([kept], _OneShot(drawn), object(), 2)
 
 
+# --- a design that cannot become a set --------------------------------------------------------
+class _FixedDesign:
+    """An initializer that answers with whatever a test hands it, protocol or not."""
+
+    def __init__(self, design):
+        self.design = design
+
+    def initialize(self, _query, _size):
+        return list(self.design)
+
+
+class _CountedObjective:
+    """A quality measure that records how often it was asked."""
+
+    def __init__(self):
+        self.calls = 0
+
+    def __call__(self, term):
+        self.calls += 1
+        return float(len(str(term)))
+
+
+def _loop_over(initializer):
+    """A loop on the expression space that draws its design from the given initializer."""
+    return BayesianOptimization(
+        search_space=expression_space(),
+        request=EXPR,
+        sampler=DepthBoundedRandomSampler(4, random.Random(0)),
+        initializer=initializer,
+        seed=0,
+    )
+
+
+@pytest.mark.parametrize(
+    "design",
+    [[["u"], ["v"], ["w"]], [["u"], ["v"], ["u"]]],
+    ids=["distinct", "with a repeat"],
+)
+def test_a_design_the_initializer_could_not_hash_is_refused_in_the_loops_own_words(design):
+    """The dataset is a set of terms, so a design that cannot be hashed cannot become one.
+
+    Which message said so used to depend on whether the design happened to hold a repeat. A
+    design without one reached the loop's own check, and a design with one met the set the
+    fallback draws its replacement against first, where the interpreter answers with the type
+    alone. Both are the same broken initializer and both are named the same way.
+    """
+    with pytest.raises(TypeError, match="the design the initializer returned must be hashable"):
+        _loop_over(_FixedDesign(design)).initialize(objective=_CountedObjective(), initial_size=3)
+
+
+def test_a_design_that_cannot_be_hashed_costs_no_evaluation(bo_factory):
+    """A design that cannot enter the dataset is refused before an evaluation is spent on it.
+
+    On the search this framework is built for, one evaluation trains a network. The check used
+    to run after the values were collected, so a design that could never enter the dataset was
+    paid for in full first.
+    """
+    supplied = _CountedObjective()
+    with pytest.raises(TypeError, match="All candidates in x0 must be hashable"):
+        bo_factory().initialize(objective=supplied, x0=[["u"], ["v"]])
+    assert supplied.calls == 0
+
+    drawn = _CountedObjective()
+    with pytest.raises(TypeError, match="must be hashable"):
+        _loop_over(_FixedDesign([["u"], ["v"], ["w"]])).initialize(objective=drawn, initial_size=3)
+    assert drawn.calls == 0
+
+
+def test_the_set_the_fallback_draws_against_grows_with_every_replacement():
+    """Each replacement is drawn against the design as it stands, the earlier replacements too.
+
+    The fallback opens a fresh stream per call, so a sampler that offers its terms in one order
+    hands back the first replacement again at the second call. A set that had not learned that
+    replacement would take it a second time, and the scan behind the fallback would stop the run
+    instead of completing the design.
+    """
+    sampler = _ScriptedSampler([_tree("first"), _tree("second")])
+    chosen = [_tree("a"), _tree("a"), _tree("a")]
+    kept, repeats = _distinct_dataset(chosen, sampler, object(), 3)
+    assert repeats == 2
+    assert [t.root for t in kept] == ["a", "first", "second"]
+    assert sampler.streams == 2
+
+
 # --- the count the run reports ----------------------------------------------------------------
 def _drawing_loop():
     """A loop over the expression space whose sampler repeats terms.
