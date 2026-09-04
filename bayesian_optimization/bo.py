@@ -575,7 +575,6 @@ class BayesianOptimization(Generic[NT, T, G]):
         self._sampler: Sampler | None = None
         self._initializer: Initializer[NT, T, G] | None = None
         self._generator_query: Any = None
-        self._last_optimized_kernel: Kernel | None = None
         self._iteration: int = 0
         self._warned_about_model_selection: bool = False
         self._warned_about_frozen_hyperparameters: bool = False
@@ -864,8 +863,6 @@ class BayesianOptimization(Generic[NT, T, G]):
 
         model = self._fit_surrogate(conditioned_x, conditioned_y)
         self._model = model
-        # Store the optimized kernel for warm-start reporting only.  Never mutate self.kernel.
-        self._last_optimized_kernel = getattr(model, "kernel_", None)
 
         # The incumbent the three scores compare against is the best observation, and best means
         # largest.  Read off the whole dataset rather than off the distinct pairs, which is the
@@ -1406,7 +1403,6 @@ class BayesianOptimization(Generic[NT, T, G]):
         self._last_suggestion = None
         self._model = None
         self._iteration = 0
-        self._last_optimized_kernel = None
         self._sampler = None
         self._initializer = None
         self._trace = []

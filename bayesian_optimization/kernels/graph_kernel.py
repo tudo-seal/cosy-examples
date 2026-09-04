@@ -193,9 +193,8 @@ class _GrakelWeisfeilerLehmanBase(StructuredKernelBase[T], ABC):
         normalize: bool = True,
         n_jobs: int | None = None,
         epsilon: float = 1e-10,
-        epsilon_bounds: tuple[float, float] = (1e-12, 1e-8),
     ) -> None:
-        super().__init__(epsilon=epsilon, epsilon_bounds=epsilon_bounds)
+        super().__init__(epsilon=epsilon)
         self.base_graph_kernel = base_graph_kernel
         self.normalize = normalize
         self.n_jobs = n_jobs
@@ -351,14 +350,12 @@ class WeisfeilerLehmanKernel(_GrakelWeisfeilerLehmanBase, Generic[T]):
         to_grakel_graph: Callable[[Tree[T]], Any] = to_tree_graph,
         n_jobs: int | None = None,
         epsilon: float = 1e-10,
-        epsilon_bounds: tuple[float, float] = (1e-12, 1e-8),
     ) -> None:
         super().__init__(
             base_graph_kernel=base_graph_kernel,
             normalize=normalize,
             n_jobs=n_jobs,
             epsilon=epsilon,
-            epsilon_bounds=epsilon_bounds,
         )
         self.h = h
         self.to_grakel_graph = to_grakel_graph
@@ -438,14 +435,12 @@ class HierarchicalWLKernel(_GrakelWeisfeilerLehmanBase, Generic[T]):
         to_grakel_graph: Callable[[Tree[T]], Any] = to_tree_graph,
         n_jobs: int | None = None,
         epsilon: float = 1e-10,
-        epsilon_bounds: tuple[float, float] = (1e-12, 1e-8),
     ) -> None:
         super().__init__(
             base_graph_kernel=base_graph_kernel,
             normalize=normalize,
             n_jobs=n_jobs,
             epsilon=epsilon,
-            epsilon_bounds=epsilon_bounds,
         )
         if not truncations:
             msg = "a hierarchical kernel needs at least one level"

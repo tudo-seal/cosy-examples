@@ -1113,6 +1113,48 @@ def test_the_loop_warns_when_the_acquisition_sits_at_its_floor(toy_loop, caplog)
     assert bo._warned_about_exploitation
 
 
+def test_the_kernel_a_pass_fitted_is_readable_off_the_surrogate():
+    """The kernel a pass fitted is public, and the one the constructor got keeps its values.
+
+    ``suggest()`` fits a Gaussian process and maximizes its acquisition against that model, so
+    ``kernel_`` of the model carries the hyperparameters the choice was made under.  The property
+    ``surrogate`` is the way to that model while the run is still going, and ``finalize()``
+    reports the same object at the end under ``gp_model``.  This loop sets ``kernel_optimizer``,
+    so the fit moves ``length_scale`` off the value the kernel was constructed with, and a fit
+    that wrote through to ``bo.kernel`` would move it there too.  Each pass replaces the model
+    the property reports, and ``reset()`` drops it.
+    """
+    terms = [Tree(f"t{index}", ()) for index in range(6)]
+    values = {term: 0.1 * index for index, term in enumerate(terms)}
+    bo = BayesianOptimization(
+        None,
+        optimizer=_ChainOptimizer(terms),
+        kernel=_IndexKernel(terms),
+        kernel_optimizer="fmin_l_bfgs_b",
+        gp_normalize_y=False,
+        seed=0,
+    )
+    constructed = bo.kernel.theta.copy()
+    bo.initialize(x0=terms[:3], y0=[values[term] for term in terms[:3]])
+    assert bo.surrogate is None, "no pass has fitted a model yet"
+
+    first = bo.suggest()
+    fitted = bo.surrogate
+    assert fitted is not None
+    assert not np.array_equal(fitted.kernel_.theta, constructed), "the fit moved length_scale"
+    assert np.array_equal(bo.kernel.theta, constructed), "bo.kernel keeps its constructed values"
+    bo.observe(first.candidate, values[first.candidate])
+
+    second = bo.suggest()
+    assert bo.surrogate is not fitted, "each pass reports its own model, not the first one"
+    bo.observe(second.candidate, values[second.candidate])
+
+    assert bo.finalize()["gp_model"] is bo.surrogate, "the two reads of the fitted model disagree"
+
+    bo.reset()
+    assert bo.surrogate is None, "a reset takes the last fitted model with it"
+
+
 def test_the_surrogate_over_the_dataset_has_seen_the_final_evaluation(toy_loop):
     """The gap ``finalize()`` documents, closed: its model is one observation short of the run."""
     bo, terms, values = toy_loop

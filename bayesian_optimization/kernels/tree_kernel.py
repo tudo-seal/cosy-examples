@@ -46,9 +46,8 @@ class OrderedRootedSubtreeKernel(StructuredKernelBase[T], Generic[T]):
         normalize: bool = True,
         tree_transformation: Callable[[Tree[T]], Tree[T]] | None = None,
         epsilon: float = 1e-10,
-        epsilon_bounds: tuple[float, float] = (1e-12, 1e-8),
     ) -> None:
-        super().__init__(epsilon=epsilon, epsilon_bounds=epsilon_bounds)
+        super().__init__(epsilon=epsilon)
         self.normalize = normalize
         self.tree_transformation = (
             tree_transformation
@@ -205,9 +204,8 @@ class SubsetTreeKernel(StructuredKernelBase[T], Generic[T]):
         normalize: bool = True,
         tree_transformation: Callable[[Tree[T]], Tree[T]] | None = None,
         epsilon: float = 1e-10,
-        epsilon_bounds: tuple[float, float] = (1e-12, 1e-8),
     ) -> None:
-        super().__init__(epsilon=epsilon, epsilon_bounds=epsilon_bounds)
+        super().__init__(epsilon=epsilon)
         self.normalize = normalize
         self.tree_transformation = (
             tree_transformation

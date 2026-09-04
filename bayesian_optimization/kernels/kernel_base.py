@@ -60,13 +60,8 @@ class StructuredKernelBase(GenericKernelMixin, NormalizedKernelMixin, Kernel, AB
     # The property below covers all access paths sklearn uses.  A bare class
     # attribute would conflict with it under mypy's no-redef rule.
 
-    def __init__(
-        self,
-        epsilon: float = 1e-10,
-        epsilon_bounds: tuple[float, float] = (1e-12, 1e-8),
-    ) -> None:
+    def __init__(self, epsilon: float = 1e-10) -> None:
         self.epsilon = epsilon
-        self.epsilon_bounds = epsilon_bounds
 
     @property
     def requires_vector_input(self) -> bool:  # type: ignore[override]
