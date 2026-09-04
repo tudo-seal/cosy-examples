@@ -1,0 +1,1880 @@
+# The CNN repository as it was when it entered this repository.
+#
+# Written by tests/test_cnn_damg_repo_is_unchanged.py, which is also the only reader.  It holds
+# three synthesized spaces rule by rule, and the verdicts of the four swap laws on the witness
+# corpus of that module.  The three spaces are the pinned VGG-11 chain, the same chain with one
+# merged position opened to two parallel components, and a small configuration with two free
+# positions.  Together they reach every combinator of CNNrepository.specification().
+#
+# A rule is one line: the index of its non-terminal, its terminal, and one field per argument,
+# `name=h<index>` for a hole into the non-terminal of that index and `name=c<index>` for a
+# constant of that index, `-` for an argument that carries no name, and `p<count>` for the number
+# of predicates the rule carries.  The non-terminals and the constants are listed once each, as
+# JSON strings, so that a rule stays one readable line.
+#
+# When a commit changes this file legitimately, regenerate it with
+#
+#     PYTHONPATH=. python tests/test_cnn_damg_repo_is_unchanged.py
+#
+# and read the diff: it names every rule that appeared and every rule that went away.  A commit
+# that meant to change nothing about the synthesized program leaves this file untouched.  The
+# whole file goes away with the last commit of the migration, together with its module.
+
+[cell vgg_chain]
+nonterminals 64
+rules 109
+terminals adam_optimizer batchnorm2d before_cons before_singleton beside_singleton conv2d cosine_annealing_lr cross_entropy_loss learner linear_layer maxpool2d no_scheduler relu sgd_optimizer sigmoid tanh
+[nonterminals vgg_chain]
+0 "DAG(input([16384]) & output([10]) & structure([(((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 4096),), ((None, 4096, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 512),), ((None, 512, 10),))]))"
+1 "DAG(input([16384]) & output([10]) & structure([(((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 4096),), ((None, 4096, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 512),), ((None, 512, 10),))]))"
+2 "DAG(input([16384]) & output([10]) & structure([(((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 4096),), ((None, 4096, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 512),), ((None, 512, 10),))]))"
+3 "DAG(input([16384]) & output([10]) & structure([(((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 4096),), ((None, 4096, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 512),), ((None, 512, 10),))]))"
+4 "DAG(input([16384]) & output([10]) & structure([(((None, 16384, 16384),), ((None, 16384, 4096),), ((None, 4096, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 512),), ((None, 512, 10),))]))"
+5 "DAG(input([16384]) & output([10]) & structure([(((None, 16384, 32768),), ((None, 32768, 32768),), ((None, 32768, 32768),), ((None, 32768, 8192),), ((None, 8192, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 4096),), ((None, 4096, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 512),), ((None, 512, 10),))]))"
+6 "DAG(input([16384]) & output([10]) & structure([(((None, 16384, 4096),), ((None, 4096, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 512),), ((None, 512, 10),))]))"
+7 "DAG(input([2048]) & output([10]) & structure([(((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 512),), ((None, 512, 10),))]))"
+8 "DAG(input([2048]) & output([10]) & structure([(((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 512),), ((None, 512, 10),))]))"
+9 "DAG(input([2048]) & output([10]) & structure([(((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 512),), ((None, 512, 10),))]))"
+10 "DAG(input([2048]) & output([10]) & structure([(((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 512),), ((None, 512, 10),))]))"
+11 "DAG(input([2048]) & output([10]) & structure([(((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 512),), ((None, 512, 10),))]))"
+12 "DAG(input([2048]) & output([10]) & structure([(((None, 2048, 2048),), ((None, 2048, 512),), ((None, 512, 10),))]))"
+13 "DAG(input([2048]) & output([10]) & structure([(((None, 2048, 512),), ((None, 512, 10),))]))"
+14 "DAG(input([3072]) & output([10]) & structure([(((None, 3072, 65536),), ((None, 65536, 65536),), ((None, 65536, 65536),), ((None, 65536, 16384),), ((None, 16384, 32768),), ((None, 32768, 32768),), ((None, 32768, 32768),), ((None, 32768, 8192),), ((None, 8192, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 4096),), ((None, 4096, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 512),), ((None, 512, 10),))]))"
+15 "DAG(input([32768]) & output([10]) & structure([(((None, 32768, 32768),), ((None, 32768, 32768),), ((None, 32768, 8192),), ((None, 8192, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 4096),), ((None, 4096, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 512),), ((None, 512, 10),))]))"
+16 "DAG(input([32768]) & output([10]) & structure([(((None, 32768, 32768),), ((None, 32768, 8192),), ((None, 8192, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 4096),), ((None, 4096, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 512),), ((None, 512, 10),))]))"
+17 "DAG(input([32768]) & output([10]) & structure([(((None, 32768, 8192),), ((None, 8192, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 4096),), ((None, 4096, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 512),), ((None, 512, 10),))]))"
+18 "DAG(input([4096]) & output([10]) & structure([(((None, 4096, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 512),), ((None, 512, 10),))]))"
+19 "DAG(input([512]) & output([10]) & structure([(((None, 512, 10),),)]))"
+20 "DAG(input([65536]) & output([10]) & structure([(((None, 65536, 16384),), ((None, 16384, 32768),), ((None, 32768, 32768),), ((None, 32768, 32768),), ((None, 32768, 8192),), ((None, 8192, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 4096),), ((None, 4096, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 512),), ((None, 512, 10),))]))"
+21 "DAG(input([65536]) & output([10]) & structure([(((None, 65536, 65536),), ((None, 65536, 16384),), ((None, 16384, 32768),), ((None, 32768, 32768),), ((None, 32768, 32768),), ((None, 32768, 8192),), ((None, 8192, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 4096),), ((None, 4096, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 512),), ((None, 512, 10),))]))"
+22 "DAG(input([65536]) & output([10]) & structure([(((None, 65536, 65536),), ((None, 65536, 65536),), ((None, 65536, 16384),), ((None, 16384, 32768),), ((None, 32768, 32768),), ((None, 32768, 32768),), ((None, 32768, 8192),), ((None, 8192, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 4096),), ((None, 4096, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 512),), ((None, 512, 10),))]))"
+23 "DAG(input([8192]) & output([10]) & structure([(((None, 8192, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 4096),), ((None, 4096, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 512),), ((None, 512, 10),))]))"
+24 "DAG(input([8192]) & output([10]) & structure([(((None, 8192, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 512),), ((None, 512, 10),))]))"
+25 "DAG(input([8192]) & output([10]) & structure([(((None, 8192, 8192),), ((None, 8192, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 512),), ((None, 512, 10),))]))"
+26 "DAG(input([8192]) & output([10]) & structure([(((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 512),), ((None, 512, 10),))]))"
+27 "DAG(input([8192]) & output([10]) & structure([(((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 512),), ((None, 512, 10),))]))"
+28 "DAG(input([8192]) & output([10]) & structure([(((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 512),), ((None, 512, 10),))]))"
+29 "DAG(input([8192]) & output([10]) & structure([(((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 512),), ((None, 512, 10),))]))"
+30 "DAG_component(input([16384]) & output([16384]) & structure([(None, 16384, 16384)])) & non_ID"
+31 "DAG_component(input([16384]) & output([32768]) & structure([(None, 16384, 32768)])) & non_ID"
+32 "DAG_component(input([16384]) & output([4096]) & structure([(None, 16384, 4096)])) & non_ID"
+33 "DAG_component(input([2048]) & output([2048]) & structure([(None, 2048, 2048)])) & non_ID"
+34 "DAG_component(input([2048]) & output([512]) & structure([(None, 2048, 512)])) & non_ID"
+35 "DAG_component(input([3072]) & output([65536]) & structure([(None, 3072, 65536)])) & non_ID"
+36 "DAG_component(input([32768]) & output([32768]) & structure([(None, 32768, 32768)])) & non_ID"
+37 "DAG_component(input([32768]) & output([8192]) & structure([(None, 32768, 8192)])) & non_ID"
+38 "DAG_component(input([4096]) & output([8192]) & structure([(None, 4096, 8192)])) & non_ID"
+39 "DAG_component(input([512]) & output([10]) & structure([(None, 512, 10)])) & non_ID"
+40 "DAG_component(input([65536]) & output([16384]) & structure([(None, 65536, 16384)])) & non_ID"
+41 "DAG_component(input([65536]) & output([65536]) & structure([(None, 65536, 65536)])) & non_ID"
+42 "DAG_component(input([8192]) & output([16384]) & structure([(None, 8192, 16384)])) & non_ID"
+43 "DAG_component(input([8192]) & output([2048]) & structure([(None, 8192, 2048)])) & non_ID"
+44 "DAG_component(input([8192]) & output([8192]) & structure([(None, 8192, 8192)])) & non_ID"
+45 "DAG_parallel(input([16384]) & output([16384]) & structure([((None, 16384, 16384),)])) & non_ID"
+46 "DAG_parallel(input([16384]) & output([32768]) & structure([((None, 16384, 32768),)])) & non_ID"
+47 "DAG_parallel(input([16384]) & output([4096]) & structure([((None, 16384, 4096),)])) & non_ID"
+48 "DAG_parallel(input([2048]) & output([2048]) & structure([((None, 2048, 2048),)])) & non_ID"
+49 "DAG_parallel(input([2048]) & output([512]) & structure([((None, 2048, 512),)])) & non_ID"
+50 "DAG_parallel(input([3072]) & output([65536]) & structure([((None, 3072, 65536),)])) & non_ID"
+51 "DAG_parallel(input([32768]) & output([32768]) & structure([((None, 32768, 32768),)])) & non_ID"
+52 "DAG_parallel(input([32768]) & output([8192]) & structure([((None, 32768, 8192),)])) & non_ID"
+53 "DAG_parallel(input([4096]) & output([8192]) & structure([((None, 4096, 8192),)])) & non_ID"
+54 "DAG_parallel(input([512]) & output([10]) & structure([((None, 512, 10),)])) & non_ID"
+55 "DAG_parallel(input([65536]) & output([16384]) & structure([((None, 65536, 16384),)])) & non_ID"
+56 "DAG_parallel(input([65536]) & output([65536]) & structure([((None, 65536, 65536),)])) & non_ID"
+57 "DAG_parallel(input([8192]) & output([16384]) & structure([((None, 8192, 16384),)])) & non_ID"
+58 "DAG_parallel(input([8192]) & output([2048]) & structure([((None, 8192, 2048),)])) & non_ID"
+59 "DAG_parallel(input([8192]) & output([8192]) & structure([((None, 8192, 8192),)])) & non_ID"
+60 "Learner(DAG(input([3072]) & output([10]) & structure([(((None, 3072, 65536),), ((None, 65536, 65536),), ((None, 65536, 65536),), ((None, 65536, 16384),), ((None, 16384, 32768),), ((None, 32768, 32768),), ((None, 32768, 32768),), ((None, 32768, 8192),), ((None, 8192, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 4096),), ((None, 4096, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 512),), ((None, 512, 10),))])) & Loss(type([CNNrepository.CrossEntropyLoss(reduction='mean')])) & Optimizer(type([None])) & Scheduler(type([None])) & epochs([50]))"
+61 "Loss(type([CNNrepository.CrossEntropyLoss(reduction='mean')]))"
+62 "Optimizer(type([None]))"
+63 "Scheduler(type([None]) & Optimizer(type([None])))"
+[constants vgg_chain]
+0 "(((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 4096),), ((None, 4096, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 512),), ((None, 512, 10),))"
+1 "(((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 4096),), ((None, 4096, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 512),), ((None, 512, 10),))"
+2 "(((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 4096),), ((None, 4096, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 512),), ((None, 512, 10),))"
+3 "(((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 4096),), ((None, 4096, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 512),), ((None, 512, 10),))"
+4 "(((None, 16384, 16384),), ((None, 16384, 4096),), ((None, 4096, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 512),), ((None, 512, 10),))"
+5 "(((None, 16384, 32768),), ((None, 32768, 32768),), ((None, 32768, 32768),), ((None, 32768, 8192),), ((None, 8192, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 4096),), ((None, 4096, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 512),), ((None, 512, 10),))"
+6 "(((None, 16384, 4096),), ((None, 4096, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 512),), ((None, 512, 10),))"
+7 "(((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 512),), ((None, 512, 10),))"
+8 "(((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 512),), ((None, 512, 10),))"
+9 "(((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 512),), ((None, 512, 10),))"
+10 "(((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 512),), ((None, 512, 10),))"
+11 "(((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 512),), ((None, 512, 10),))"
+12 "(((None, 2048, 2048),), ((None, 2048, 512),), ((None, 512, 10),))"
+13 "(((None, 2048, 512),), ((None, 512, 10),))"
+14 "(((None, 3072, 65536),), ((None, 65536, 65536),), ((None, 65536, 65536),), ((None, 65536, 16384),), ((None, 16384, 32768),), ((None, 32768, 32768),), ((None, 32768, 32768),), ((None, 32768, 8192),), ((None, 8192, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 4096),), ((None, 4096, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 512),), ((None, 512, 10),))"
+15 "(((None, 32768, 32768),), ((None, 32768, 32768),), ((None, 32768, 8192),), ((None, 8192, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 4096),), ((None, 4096, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 512),), ((None, 512, 10),))"
+16 "(((None, 32768, 32768),), ((None, 32768, 8192),), ((None, 8192, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 4096),), ((None, 4096, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 512),), ((None, 512, 10),))"
+17 "(((None, 32768, 8192),), ((None, 8192, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 4096),), ((None, 4096, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 512),), ((None, 512, 10),))"
+18 "(((None, 4096, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 512),), ((None, 512, 10),))"
+19 "(((None, 512, 10),),)"
+20 "(((None, 65536, 16384),), ((None, 16384, 32768),), ((None, 32768, 32768),), ((None, 32768, 32768),), ((None, 32768, 8192),), ((None, 8192, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 4096),), ((None, 4096, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 512),), ((None, 512, 10),))"
+21 "(((None, 65536, 65536),), ((None, 65536, 16384),), ((None, 16384, 32768),), ((None, 32768, 32768),), ((None, 32768, 32768),), ((None, 32768, 8192),), ((None, 8192, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 4096),), ((None, 4096, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 512),), ((None, 512, 10),))"
+22 "(((None, 65536, 65536),), ((None, 65536, 65536),), ((None, 65536, 16384),), ((None, 16384, 32768),), ((None, 32768, 32768),), ((None, 32768, 32768),), ((None, 32768, 8192),), ((None, 8192, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 4096),), ((None, 4096, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 512),), ((None, 512, 10),))"
+23 "(((None, 8192, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 16384),), ((None, 16384, 4096),), ((None, 4096, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 512),), ((None, 512, 10),))"
+24 "(((None, 8192, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 512),), ((None, 512, 10),))"
+25 "(((None, 8192, 8192),), ((None, 8192, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 512),), ((None, 512, 10),))"
+26 "(((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 512),), ((None, 512, 10),))"
+27 "(((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 512),), ((None, 512, 10),))"
+28 "(((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 512),), ((None, 512, 10),))"
+29 "(((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 8192),), ((None, 8192, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 2048),), ((None, 2048, 512),), ((None, 512, 10),))"
+30 "((None, 16384, 16384),)"
+31 "((None, 16384, 32768),)"
+32 "((None, 16384, 4096),)"
+33 "((None, 2048, 2048),)"
+34 "((None, 2048, 512),)"
+35 "((None, 3072, 65536),)"
+36 "((None, 32768, 32768),)"
+37 "((None, 32768, 8192),)"
+38 "((None, 4096, 8192),)"
+39 "((None, 512, 10),)"
+40 "((None, 65536, 16384),)"
+41 "((None, 65536, 65536),)"
+42 "((None, 8192, 16384),)"
+43 "((None, 8192, 2048),)"
+44 "((None, 8192, 8192),)"
+45 "(CNNrepository.BatchNorm2d(in_channels=128, input_size=(16, 16)), 32768, 32768)"
+46 "(CNNrepository.BatchNorm2d(in_channels=128, input_size=(16, 16)), 32768, None)"
+47 "(CNNrepository.BatchNorm2d(in_channels=128, input_size=(16, 16)), None, 32768)"
+48 "(CNNrepository.BatchNorm2d(in_channels=128, input_size=(16, 16)), None, None)"
+49 "(CNNrepository.BatchNorm2d(in_channels=128, input_size=(4, 4)), 2048, 2048)"
+50 "(CNNrepository.BatchNorm2d(in_channels=128, input_size=(4, 4)), 2048, None)"
+51 "(CNNrepository.BatchNorm2d(in_channels=128, input_size=(4, 4)), None, 2048)"
+52 "(CNNrepository.BatchNorm2d(in_channels=128, input_size=(4, 4)), None, None)"
+53 "(CNNrepository.BatchNorm2d(in_channels=128, input_size=(8, 8)), 8192, 8192)"
+54 "(CNNrepository.BatchNorm2d(in_channels=128, input_size=(8, 8)), 8192, None)"
+55 "(CNNrepository.BatchNorm2d(in_channels=128, input_size=(8, 8)), None, 8192)"
+56 "(CNNrepository.BatchNorm2d(in_channels=128, input_size=(8, 8)), None, None)"
+57 "(CNNrepository.BatchNorm2d(in_channels=256, input_size=(16, 16)), 65536, 65536)"
+58 "(CNNrepository.BatchNorm2d(in_channels=256, input_size=(16, 16)), 65536, None)"
+59 "(CNNrepository.BatchNorm2d(in_channels=256, input_size=(16, 16)), None, 65536)"
+60 "(CNNrepository.BatchNorm2d(in_channels=256, input_size=(16, 16)), None, None)"
+61 "(CNNrepository.BatchNorm2d(in_channels=256, input_size=(8, 8)), 16384, 16384)"
+62 "(CNNrepository.BatchNorm2d(in_channels=256, input_size=(8, 8)), 16384, None)"
+63 "(CNNrepository.BatchNorm2d(in_channels=256, input_size=(8, 8)), None, 16384)"
+64 "(CNNrepository.BatchNorm2d(in_channels=256, input_size=(8, 8)), None, None)"
+65 "(CNNrepository.BatchNorm2d(in_channels=512, input_size=(2, 2)), 2048, 2048)"
+66 "(CNNrepository.BatchNorm2d(in_channels=512, input_size=(2, 2)), 2048, None)"
+67 "(CNNrepository.BatchNorm2d(in_channels=512, input_size=(2, 2)), None, 2048)"
+68 "(CNNrepository.BatchNorm2d(in_channels=512, input_size=(2, 2)), None, None)"
+69 "(CNNrepository.BatchNorm2d(in_channels=512, input_size=(4, 4)), 8192, 8192)"
+70 "(CNNrepository.BatchNorm2d(in_channels=512, input_size=(4, 4)), 8192, None)"
+71 "(CNNrepository.BatchNorm2d(in_channels=512, input_size=(4, 4)), None, 8192)"
+72 "(CNNrepository.BatchNorm2d(in_channels=512, input_size=(4, 4)), None, None)"
+73 "(CNNrepository.BatchNorm2d(in_channels=512, input_size=(8, 8)), 32768, 32768)"
+74 "(CNNrepository.BatchNorm2d(in_channels=512, input_size=(8, 8)), 32768, None)"
+75 "(CNNrepository.BatchNorm2d(in_channels=512, input_size=(8, 8)), None, 32768)"
+76 "(CNNrepository.BatchNorm2d(in_channels=512, input_size=(8, 8)), None, None)"
+77 "(CNNrepository.BatchNorm2d(in_channels=64, input_size=(16, 16)), 16384, 16384)"
+78 "(CNNrepository.BatchNorm2d(in_channels=64, input_size=(16, 16)), 16384, None)"
+79 "(CNNrepository.BatchNorm2d(in_channels=64, input_size=(16, 16)), None, 16384)"
+80 "(CNNrepository.BatchNorm2d(in_channels=64, input_size=(16, 16)), None, None)"
+81 "(CNNrepository.BatchNorm2d(in_channels=64, input_size=(32, 32)), 65536, 65536)"
+82 "(CNNrepository.BatchNorm2d(in_channels=64, input_size=(32, 32)), 65536, None)"
+83 "(CNNrepository.BatchNorm2d(in_channels=64, input_size=(32, 32)), None, 65536)"
+84 "(CNNrepository.BatchNorm2d(in_channels=64, input_size=(32, 32)), None, None)"
+85 "(CNNrepository.Conv2d(in_channels=128, out_channels=128, input_size=(16, 16), output_size=(16, 16), kernel_size=(3, 3), stride=1, padding=1, bias=False), 32768, 32768)"
+86 "(CNNrepository.Conv2d(in_channels=128, out_channels=128, input_size=(16, 16), output_size=(16, 16), kernel_size=(3, 3), stride=1, padding=1, bias=False), 32768, None)"
+87 "(CNNrepository.Conv2d(in_channels=128, out_channels=128, input_size=(16, 16), output_size=(16, 16), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, 32768)"
+88 "(CNNrepository.Conv2d(in_channels=128, out_channels=128, input_size=(16, 16), output_size=(16, 16), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, None)"
+89 "(CNNrepository.Conv2d(in_channels=128, out_channels=128, input_size=(4, 4), output_size=(4, 4), kernel_size=(3, 3), stride=1, padding=1, bias=False), 2048, 2048)"
+90 "(CNNrepository.Conv2d(in_channels=128, out_channels=128, input_size=(4, 4), output_size=(4, 4), kernel_size=(3, 3), stride=1, padding=1, bias=False), 2048, None)"
+91 "(CNNrepository.Conv2d(in_channels=128, out_channels=128, input_size=(4, 4), output_size=(4, 4), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, 2048)"
+92 "(CNNrepository.Conv2d(in_channels=128, out_channels=128, input_size=(4, 4), output_size=(4, 4), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, None)"
+93 "(CNNrepository.Conv2d(in_channels=128, out_channels=128, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False), 8192, 8192)"
+94 "(CNNrepository.Conv2d(in_channels=128, out_channels=128, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False), 8192, None)"
+95 "(CNNrepository.Conv2d(in_channels=128, out_channels=128, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, 8192)"
+96 "(CNNrepository.Conv2d(in_channels=128, out_channels=128, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, None)"
+97 "(CNNrepository.Conv2d(in_channels=128, out_channels=256, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False), 8192, 16384)"
+98 "(CNNrepository.Conv2d(in_channels=128, out_channels=256, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False), 8192, None)"
+99 "(CNNrepository.Conv2d(in_channels=128, out_channels=256, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, 16384)"
+100 "(CNNrepository.Conv2d(in_channels=128, out_channels=256, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, None)"
+101 "(CNNrepository.Conv2d(in_channels=256, out_channels=256, input_size=(16, 16), output_size=(16, 16), kernel_size=(3, 3), stride=1, padding=1, bias=False), 65536, 65536)"
+102 "(CNNrepository.Conv2d(in_channels=256, out_channels=256, input_size=(16, 16), output_size=(16, 16), kernel_size=(3, 3), stride=1, padding=1, bias=False), 65536, None)"
+103 "(CNNrepository.Conv2d(in_channels=256, out_channels=256, input_size=(16, 16), output_size=(16, 16), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, 65536)"
+104 "(CNNrepository.Conv2d(in_channels=256, out_channels=256, input_size=(16, 16), output_size=(16, 16), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, None)"
+105 "(CNNrepository.Conv2d(in_channels=256, out_channels=256, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False), 16384, 16384)"
+106 "(CNNrepository.Conv2d(in_channels=256, out_channels=256, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False), 16384, None)"
+107 "(CNNrepository.Conv2d(in_channels=256, out_channels=256, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, 16384)"
+108 "(CNNrepository.Conv2d(in_channels=256, out_channels=256, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, None)"
+109 "(CNNrepository.Conv2d(in_channels=256, out_channels=512, input_size=(4, 4), output_size=(4, 4), kernel_size=(3, 3), stride=1, padding=1, bias=False), 4096, 8192)"
+110 "(CNNrepository.Conv2d(in_channels=256, out_channels=512, input_size=(4, 4), output_size=(4, 4), kernel_size=(3, 3), stride=1, padding=1, bias=False), 4096, None)"
+111 "(CNNrepository.Conv2d(in_channels=256, out_channels=512, input_size=(4, 4), output_size=(4, 4), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, 8192)"
+112 "(CNNrepository.Conv2d(in_channels=256, out_channels=512, input_size=(4, 4), output_size=(4, 4), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, None)"
+113 "(CNNrepository.Conv2d(in_channels=256, out_channels=512, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False), 16384, 32768)"
+114 "(CNNrepository.Conv2d(in_channels=256, out_channels=512, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False), 16384, None)"
+115 "(CNNrepository.Conv2d(in_channels=256, out_channels=512, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, 32768)"
+116 "(CNNrepository.Conv2d(in_channels=256, out_channels=512, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, None)"
+117 "(CNNrepository.Conv2d(in_channels=256, out_channels=64, input_size=(16, 16), output_size=(16, 16), kernel_size=(3, 3), stride=1, padding=1, bias=False), 65536, 16384)"
+118 "(CNNrepository.Conv2d(in_channels=256, out_channels=64, input_size=(16, 16), output_size=(16, 16), kernel_size=(3, 3), stride=1, padding=1, bias=False), 65536, None)"
+119 "(CNNrepository.Conv2d(in_channels=256, out_channels=64, input_size=(16, 16), output_size=(16, 16), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, 16384)"
+120 "(CNNrepository.Conv2d(in_channels=256, out_channels=64, input_size=(16, 16), output_size=(16, 16), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, None)"
+121 "(CNNrepository.Conv2d(in_channels=256, out_channels=64, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False), 16384, 4096)"
+122 "(CNNrepository.Conv2d(in_channels=256, out_channels=64, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False), 16384, None)"
+123 "(CNNrepository.Conv2d(in_channels=256, out_channels=64, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, 4096)"
+124 "(CNNrepository.Conv2d(in_channels=256, out_channels=64, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, None)"
+125 "(CNNrepository.Conv2d(in_channels=3, out_channels=64, input_size=(32, 32), output_size=(32, 32), kernel_size=(3, 3), stride=1, padding=1, bias=False), 3072, 65536)"
+126 "(CNNrepository.Conv2d(in_channels=3, out_channels=64, input_size=(32, 32), output_size=(32, 32), kernel_size=(3, 3), stride=1, padding=1, bias=False), 3072, None)"
+127 "(CNNrepository.Conv2d(in_channels=3, out_channels=64, input_size=(32, 32), output_size=(32, 32), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, 65536)"
+128 "(CNNrepository.Conv2d(in_channels=3, out_channels=64, input_size=(32, 32), output_size=(32, 32), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, None)"
+129 "(CNNrepository.Conv2d(in_channels=512, out_channels=128, input_size=(2, 2), output_size=(2, 2), kernel_size=(3, 3), stride=1, padding=1, bias=False), 2048, 512)"
+130 "(CNNrepository.Conv2d(in_channels=512, out_channels=128, input_size=(2, 2), output_size=(2, 2), kernel_size=(3, 3), stride=1, padding=1, bias=False), 2048, None)"
+131 "(CNNrepository.Conv2d(in_channels=512, out_channels=128, input_size=(2, 2), output_size=(2, 2), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, 512)"
+132 "(CNNrepository.Conv2d(in_channels=512, out_channels=128, input_size=(2, 2), output_size=(2, 2), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, None)"
+133 "(CNNrepository.Conv2d(in_channels=512, out_channels=128, input_size=(4, 4), output_size=(4, 4), kernel_size=(3, 3), stride=1, padding=1, bias=False), 8192, 2048)"
+134 "(CNNrepository.Conv2d(in_channels=512, out_channels=128, input_size=(4, 4), output_size=(4, 4), kernel_size=(3, 3), stride=1, padding=1, bias=False), 8192, None)"
+135 "(CNNrepository.Conv2d(in_channels=512, out_channels=128, input_size=(4, 4), output_size=(4, 4), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, 2048)"
+136 "(CNNrepository.Conv2d(in_channels=512, out_channels=128, input_size=(4, 4), output_size=(4, 4), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, None)"
+137 "(CNNrepository.Conv2d(in_channels=512, out_channels=128, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False), 32768, 8192)"
+138 "(CNNrepository.Conv2d(in_channels=512, out_channels=128, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False), 32768, None)"
+139 "(CNNrepository.Conv2d(in_channels=512, out_channels=128, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, 8192)"
+140 "(CNNrepository.Conv2d(in_channels=512, out_channels=128, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, None)"
+141 "(CNNrepository.Conv2d(in_channels=512, out_channels=512, input_size=(2, 2), output_size=(2, 2), kernel_size=(3, 3), stride=1, padding=1, bias=False), 2048, 2048)"
+142 "(CNNrepository.Conv2d(in_channels=512, out_channels=512, input_size=(2, 2), output_size=(2, 2), kernel_size=(3, 3), stride=1, padding=1, bias=False), 2048, None)"
+143 "(CNNrepository.Conv2d(in_channels=512, out_channels=512, input_size=(2, 2), output_size=(2, 2), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, 2048)"
+144 "(CNNrepository.Conv2d(in_channels=512, out_channels=512, input_size=(2, 2), output_size=(2, 2), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, None)"
+145 "(CNNrepository.Conv2d(in_channels=512, out_channels=512, input_size=(4, 4), output_size=(4, 4), kernel_size=(3, 3), stride=1, padding=1, bias=False), 8192, 8192)"
+146 "(CNNrepository.Conv2d(in_channels=512, out_channels=512, input_size=(4, 4), output_size=(4, 4), kernel_size=(3, 3), stride=1, padding=1, bias=False), 8192, None)"
+147 "(CNNrepository.Conv2d(in_channels=512, out_channels=512, input_size=(4, 4), output_size=(4, 4), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, 8192)"
+148 "(CNNrepository.Conv2d(in_channels=512, out_channels=512, input_size=(4, 4), output_size=(4, 4), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, None)"
+149 "(CNNrepository.Conv2d(in_channels=512, out_channels=512, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False), 32768, 32768)"
+150 "(CNNrepository.Conv2d(in_channels=512, out_channels=512, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False), 32768, None)"
+151 "(CNNrepository.Conv2d(in_channels=512, out_channels=512, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, 32768)"
+152 "(CNNrepository.Conv2d(in_channels=512, out_channels=512, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, None)"
+153 "(CNNrepository.Conv2d(in_channels=64, out_channels=128, input_size=(16, 16), output_size=(16, 16), kernel_size=(3, 3), stride=1, padding=1, bias=False), 16384, 32768)"
+154 "(CNNrepository.Conv2d(in_channels=64, out_channels=128, input_size=(16, 16), output_size=(16, 16), kernel_size=(3, 3), stride=1, padding=1, bias=False), 16384, None)"
+155 "(CNNrepository.Conv2d(in_channels=64, out_channels=128, input_size=(16, 16), output_size=(16, 16), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, 32768)"
+156 "(CNNrepository.Conv2d(in_channels=64, out_channels=128, input_size=(16, 16), output_size=(16, 16), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, None)"
+157 "(CNNrepository.Conv2d(in_channels=64, out_channels=128, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False), 4096, 8192)"
+158 "(CNNrepository.Conv2d(in_channels=64, out_channels=128, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False), 4096, None)"
+159 "(CNNrepository.Conv2d(in_channels=64, out_channels=128, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, 8192)"
+160 "(CNNrepository.Conv2d(in_channels=64, out_channels=128, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, None)"
+161 "(CNNrepository.Conv2d(in_channels=64, out_channels=64, input_size=(16, 16), output_size=(16, 16), kernel_size=(3, 3), stride=1, padding=1, bias=False), 16384, 16384)"
+162 "(CNNrepository.Conv2d(in_channels=64, out_channels=64, input_size=(16, 16), output_size=(16, 16), kernel_size=(3, 3), stride=1, padding=1, bias=False), 16384, None)"
+163 "(CNNrepository.Conv2d(in_channels=64, out_channels=64, input_size=(16, 16), output_size=(16, 16), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, 16384)"
+164 "(CNNrepository.Conv2d(in_channels=64, out_channels=64, input_size=(16, 16), output_size=(16, 16), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, None)"
+165 "(CNNrepository.Conv2d(in_channels=64, out_channels=64, input_size=(32, 32), output_size=(32, 32), kernel_size=(3, 3), stride=1, padding=1, bias=False), 65536, 65536)"
+166 "(CNNrepository.Conv2d(in_channels=64, out_channels=64, input_size=(32, 32), output_size=(32, 32), kernel_size=(3, 3), stride=1, padding=1, bias=False), 65536, None)"
+167 "(CNNrepository.Conv2d(in_channels=64, out_channels=64, input_size=(32, 32), output_size=(32, 32), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, 65536)"
+168 "(CNNrepository.Conv2d(in_channels=64, out_channels=64, input_size=(32, 32), output_size=(32, 32), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, None)"
+169 "(CNNrepository.Linear(in_features=512, out_features=10, bias=False), 512, 10)"
+170 "(CNNrepository.Linear(in_features=512, out_features=10, bias=False), 512, None)"
+171 "(CNNrepository.Linear(in_features=512, out_features=10, bias=False), None, 10)"
+172 "(CNNrepository.Linear(in_features=512, out_features=10, bias=False), None, None)"
+173 "(CNNrepository.Linear(in_features=512, out_features=10, bias=True), 512, 10)"
+174 "(CNNrepository.Linear(in_features=512, out_features=10, bias=True), 512, None)"
+175 "(CNNrepository.Linear(in_features=512, out_features=10, bias=True), None, 10)"
+176 "(CNNrepository.Linear(in_features=512, out_features=10, bias=True), None, None)"
+177 "(CNNrepository.MaxPool2d(in_channels=128, input_size=(16, 16), output_size=(8, 8), kernel_size=(2, 2)), 32768, 8192)"
+178 "(CNNrepository.MaxPool2d(in_channels=128, input_size=(16, 16), output_size=(8, 8), kernel_size=(2, 2)), 32768, None)"
+179 "(CNNrepository.MaxPool2d(in_channels=128, input_size=(16, 16), output_size=(8, 8), kernel_size=(2, 2)), None, 8192)"
+180 "(CNNrepository.MaxPool2d(in_channels=128, input_size=(16, 16), output_size=(8, 8), kernel_size=(2, 2)), None, None)"
+181 "(CNNrepository.MaxPool2d(in_channels=128, input_size=(4, 4), output_size=(2, 2), kernel_size=(2, 2)), 2048, 512)"
+182 "(CNNrepository.MaxPool2d(in_channels=128, input_size=(4, 4), output_size=(2, 2), kernel_size=(2, 2)), 2048, None)"
+183 "(CNNrepository.MaxPool2d(in_channels=128, input_size=(4, 4), output_size=(2, 2), kernel_size=(2, 2)), None, 512)"
+184 "(CNNrepository.MaxPool2d(in_channels=128, input_size=(4, 4), output_size=(2, 2), kernel_size=(2, 2)), None, None)"
+185 "(CNNrepository.MaxPool2d(in_channels=128, input_size=(8, 8), output_size=(4, 4), kernel_size=(2, 2)), 8192, 2048)"
+186 "(CNNrepository.MaxPool2d(in_channels=128, input_size=(8, 8), output_size=(4, 4), kernel_size=(2, 2)), 8192, None)"
+187 "(CNNrepository.MaxPool2d(in_channels=128, input_size=(8, 8), output_size=(4, 4), kernel_size=(2, 2)), None, 2048)"
+188 "(CNNrepository.MaxPool2d(in_channels=128, input_size=(8, 8), output_size=(4, 4), kernel_size=(2, 2)), None, None)"
+189 "(CNNrepository.MaxPool2d(in_channels=256, input_size=(16, 16), output_size=(8, 8), kernel_size=(2, 2)), 65536, 16384)"
+190 "(CNNrepository.MaxPool2d(in_channels=256, input_size=(16, 16), output_size=(8, 8), kernel_size=(2, 2)), 65536, None)"
+191 "(CNNrepository.MaxPool2d(in_channels=256, input_size=(16, 16), output_size=(8, 8), kernel_size=(2, 2)), None, 16384)"
+192 "(CNNrepository.MaxPool2d(in_channels=256, input_size=(16, 16), output_size=(8, 8), kernel_size=(2, 2)), None, None)"
+193 "(CNNrepository.MaxPool2d(in_channels=256, input_size=(8, 8), output_size=(4, 4), kernel_size=(2, 2)), 16384, 4096)"
+194 "(CNNrepository.MaxPool2d(in_channels=256, input_size=(8, 8), output_size=(4, 4), kernel_size=(2, 2)), 16384, None)"
+195 "(CNNrepository.MaxPool2d(in_channels=256, input_size=(8, 8), output_size=(4, 4), kernel_size=(2, 2)), None, 4096)"
+196 "(CNNrepository.MaxPool2d(in_channels=256, input_size=(8, 8), output_size=(4, 4), kernel_size=(2, 2)), None, None)"
+197 "(CNNrepository.MaxPool2d(in_channels=512, input_size=(2, 2), output_size=(1, 1), kernel_size=(2, 2)), 2048, 512)"
+198 "(CNNrepository.MaxPool2d(in_channels=512, input_size=(2, 2), output_size=(1, 1), kernel_size=(2, 2)), 2048, None)"
+199 "(CNNrepository.MaxPool2d(in_channels=512, input_size=(2, 2), output_size=(1, 1), kernel_size=(2, 2)), None, 512)"
+200 "(CNNrepository.MaxPool2d(in_channels=512, input_size=(2, 2), output_size=(1, 1), kernel_size=(2, 2)), None, None)"
+201 "(CNNrepository.MaxPool2d(in_channels=512, input_size=(4, 4), output_size=(2, 2), kernel_size=(2, 2)), 8192, 2048)"
+202 "(CNNrepository.MaxPool2d(in_channels=512, input_size=(4, 4), output_size=(2, 2), kernel_size=(2, 2)), 8192, None)"
+203 "(CNNrepository.MaxPool2d(in_channels=512, input_size=(4, 4), output_size=(2, 2), kernel_size=(2, 2)), None, 2048)"
+204 "(CNNrepository.MaxPool2d(in_channels=512, input_size=(4, 4), output_size=(2, 2), kernel_size=(2, 2)), None, None)"
+205 "(CNNrepository.MaxPool2d(in_channels=512, input_size=(8, 8), output_size=(4, 4), kernel_size=(2, 2)), 32768, 8192)"
+206 "(CNNrepository.MaxPool2d(in_channels=512, input_size=(8, 8), output_size=(4, 4), kernel_size=(2, 2)), 32768, None)"
+207 "(CNNrepository.MaxPool2d(in_channels=512, input_size=(8, 8), output_size=(4, 4), kernel_size=(2, 2)), None, 8192)"
+208 "(CNNrepository.MaxPool2d(in_channels=512, input_size=(8, 8), output_size=(4, 4), kernel_size=(2, 2)), None, None)"
+209 "(CNNrepository.MaxPool2d(in_channels=64, input_size=(16, 16), output_size=(8, 8), kernel_size=(2, 2)), 16384, 4096)"
+210 "(CNNrepository.MaxPool2d(in_channels=64, input_size=(16, 16), output_size=(8, 8), kernel_size=(2, 2)), 16384, None)"
+211 "(CNNrepository.MaxPool2d(in_channels=64, input_size=(16, 16), output_size=(8, 8), kernel_size=(2, 2)), None, 4096)"
+212 "(CNNrepository.MaxPool2d(in_channels=64, input_size=(16, 16), output_size=(8, 8), kernel_size=(2, 2)), None, None)"
+213 "(CNNrepository.MaxPool2d(in_channels=64, input_size=(32, 32), output_size=(16, 16), kernel_size=(2, 2)), 65536, 16384)"
+214 "(CNNrepository.MaxPool2d(in_channels=64, input_size=(32, 32), output_size=(16, 16), kernel_size=(2, 2)), 65536, None)"
+215 "(CNNrepository.MaxPool2d(in_channels=64, input_size=(32, 32), output_size=(16, 16), kernel_size=(2, 2)), None, 16384)"
+216 "(CNNrepository.MaxPool2d(in_channels=64, input_size=(32, 32), output_size=(16, 16), kernel_size=(2, 2)), None, None)"
+217 "(CNNrepository.ReLu(inplace=False), 16384, 16384)"
+218 "(CNNrepository.ReLu(inplace=False), 16384, None)"
+219 "(CNNrepository.ReLu(inplace=False), 2048, 2048)"
+220 "(CNNrepository.ReLu(inplace=False), 2048, None)"
+221 "(CNNrepository.ReLu(inplace=False), 32768, 32768)"
+222 "(CNNrepository.ReLu(inplace=False), 32768, None)"
+223 "(CNNrepository.ReLu(inplace=False), 65536, 65536)"
+224 "(CNNrepository.ReLu(inplace=False), 65536, None)"
+225 "(CNNrepository.ReLu(inplace=False), 8192, 8192)"
+226 "(CNNrepository.ReLu(inplace=False), 8192, None)"
+227 "(CNNrepository.ReLu(inplace=False), None, 16384)"
+228 "(CNNrepository.ReLu(inplace=False), None, 2048)"
+229 "(CNNrepository.ReLu(inplace=False), None, 32768)"
+230 "(CNNrepository.ReLu(inplace=False), None, 65536)"
+231 "(CNNrepository.ReLu(inplace=False), None, 8192)"
+232 "(CNNrepository.ReLu(inplace=False), None, None)"
+233 "(CNNrepository.Sigmoid(), 16384, 16384)"
+234 "(CNNrepository.Sigmoid(), 16384, None)"
+235 "(CNNrepository.Sigmoid(), 2048, 2048)"
+236 "(CNNrepository.Sigmoid(), 2048, None)"
+237 "(CNNrepository.Sigmoid(), 32768, 32768)"
+238 "(CNNrepository.Sigmoid(), 32768, None)"
+239 "(CNNrepository.Sigmoid(), 65536, 65536)"
+240 "(CNNrepository.Sigmoid(), 65536, None)"
+241 "(CNNrepository.Sigmoid(), 8192, 8192)"
+242 "(CNNrepository.Sigmoid(), 8192, None)"
+243 "(CNNrepository.Sigmoid(), None, 16384)"
+244 "(CNNrepository.Sigmoid(), None, 2048)"
+245 "(CNNrepository.Sigmoid(), None, 32768)"
+246 "(CNNrepository.Sigmoid(), None, 65536)"
+247 "(CNNrepository.Sigmoid(), None, 8192)"
+248 "(CNNrepository.Sigmoid(), None, None)"
+249 "(CNNrepository.Tanh(), 16384, 16384)"
+250 "(CNNrepository.Tanh(), 16384, None)"
+251 "(CNNrepository.Tanh(), 2048, 2048)"
+252 "(CNNrepository.Tanh(), 2048, None)"
+253 "(CNNrepository.Tanh(), 32768, 32768)"
+254 "(CNNrepository.Tanh(), 32768, None)"
+255 "(CNNrepository.Tanh(), 65536, 65536)"
+256 "(CNNrepository.Tanh(), 65536, None)"
+257 "(CNNrepository.Tanh(), 8192, 8192)"
+258 "(CNNrepository.Tanh(), 8192, None)"
+259 "(CNNrepository.Tanh(), None, 16384)"
+260 "(CNNrepository.Tanh(), None, 2048)"
+261 "(CNNrepository.Tanh(), None, 32768)"
+262 "(CNNrepository.Tanh(), None, 65536)"
+263 "(CNNrepository.Tanh(), None, 8192)"
+264 "(CNNrepository.Tanh(), None, None)"
+265 "(None, 16384, 16384)"
+266 "(None, 16384, 32768)"
+267 "(None, 16384, 4096)"
+268 "(None, 16384, None)"
+269 "(None, 2048, 2048)"
+270 "(None, 2048, 512)"
+271 "(None, 2048, None)"
+272 "(None, 3072, 65536)"
+273 "(None, 3072, None)"
+274 "(None, 32768, 32768)"
+275 "(None, 32768, 8192)"
+276 "(None, 32768, None)"
+277 "(None, 4096, 8192)"
+278 "(None, 4096, None)"
+279 "(None, 512, 10)"
+280 "(None, 512, None)"
+281 "(None, 65536, 16384)"
+282 "(None, 65536, 65536)"
+283 "(None, 65536, None)"
+284 "(None, 8192, 16384)"
+285 "(None, 8192, 2048)"
+286 "(None, 8192, 8192)"
+287 "(None, 8192, None)"
+288 "(None, None, 10)"
+289 "(None, None, 16384)"
+290 "(None, None, 2048)"
+291 "(None, None, 32768)"
+292 "(None, None, 4096)"
+293 "(None, None, 512)"
+294 "(None, None, 65536)"
+295 "(None, None, 8192)"
+296 "10"
+297 "16384"
+298 "2048"
+299 "3072"
+300 "32768"
+301 "4096"
+302 "50"
+303 "512"
+304 "65536"
+305 "8192"
+306 "CNNrepository.Adam(learning_rate=0.1, betas=(0.9, 0.999), eps=1e-08, weight_decay=0.0005, amsgrad=False, maximize=False, capturable=False, differentiable=False, decoupled_weight_decay=False)"
+307 "CNNrepository.BatchNorm2d(in_channels=128, input_size=(16, 16))"
+308 "CNNrepository.BatchNorm2d(in_channels=128, input_size=(4, 4))"
+309 "CNNrepository.BatchNorm2d(in_channels=128, input_size=(8, 8))"
+310 "CNNrepository.BatchNorm2d(in_channels=256, input_size=(16, 16))"
+311 "CNNrepository.BatchNorm2d(in_channels=256, input_size=(8, 8))"
+312 "CNNrepository.BatchNorm2d(in_channels=512, input_size=(2, 2))"
+313 "CNNrepository.BatchNorm2d(in_channels=512, input_size=(4, 4))"
+314 "CNNrepository.BatchNorm2d(in_channels=512, input_size=(8, 8))"
+315 "CNNrepository.BatchNorm2d(in_channels=64, input_size=(16, 16))"
+316 "CNNrepository.BatchNorm2d(in_channels=64, input_size=(32, 32))"
+317 "CNNrepository.Conv2d(in_channels=128, out_channels=128, input_size=(16, 16), output_size=(16, 16), kernel_size=(3, 3), stride=1, padding=1, bias=False)"
+318 "CNNrepository.Conv2d(in_channels=128, out_channels=128, input_size=(4, 4), output_size=(4, 4), kernel_size=(3, 3), stride=1, padding=1, bias=False)"
+319 "CNNrepository.Conv2d(in_channels=128, out_channels=128, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False)"
+320 "CNNrepository.Conv2d(in_channels=128, out_channels=256, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False)"
+321 "CNNrepository.Conv2d(in_channels=256, out_channels=256, input_size=(16, 16), output_size=(16, 16), kernel_size=(3, 3), stride=1, padding=1, bias=False)"
+322 "CNNrepository.Conv2d(in_channels=256, out_channels=256, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False)"
+323 "CNNrepository.Conv2d(in_channels=256, out_channels=512, input_size=(4, 4), output_size=(4, 4), kernel_size=(3, 3), stride=1, padding=1, bias=False)"
+324 "CNNrepository.Conv2d(in_channels=256, out_channels=512, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False)"
+325 "CNNrepository.Conv2d(in_channels=256, out_channels=64, input_size=(16, 16), output_size=(16, 16), kernel_size=(3, 3), stride=1, padding=1, bias=False)"
+326 "CNNrepository.Conv2d(in_channels=256, out_channels=64, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False)"
+327 "CNNrepository.Conv2d(in_channels=3, out_channels=64, input_size=(32, 32), output_size=(32, 32), kernel_size=(3, 3), stride=1, padding=1, bias=False)"
+328 "CNNrepository.Conv2d(in_channels=512, out_channels=128, input_size=(2, 2), output_size=(2, 2), kernel_size=(3, 3), stride=1, padding=1, bias=False)"
+329 "CNNrepository.Conv2d(in_channels=512, out_channels=128, input_size=(4, 4), output_size=(4, 4), kernel_size=(3, 3), stride=1, padding=1, bias=False)"
+330 "CNNrepository.Conv2d(in_channels=512, out_channels=128, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False)"
+331 "CNNrepository.Conv2d(in_channels=512, out_channels=512, input_size=(2, 2), output_size=(2, 2), kernel_size=(3, 3), stride=1, padding=1, bias=False)"
+332 "CNNrepository.Conv2d(in_channels=512, out_channels=512, input_size=(4, 4), output_size=(4, 4), kernel_size=(3, 3), stride=1, padding=1, bias=False)"
+333 "CNNrepository.Conv2d(in_channels=512, out_channels=512, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False)"
+334 "CNNrepository.Conv2d(in_channels=64, out_channels=128, input_size=(16, 16), output_size=(16, 16), kernel_size=(3, 3), stride=1, padding=1, bias=False)"
+335 "CNNrepository.Conv2d(in_channels=64, out_channels=128, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False)"
+336 "CNNrepository.Conv2d(in_channels=64, out_channels=64, input_size=(16, 16), output_size=(16, 16), kernel_size=(3, 3), stride=1, padding=1, bias=False)"
+337 "CNNrepository.Conv2d(in_channels=64, out_channels=64, input_size=(32, 32), output_size=(32, 32), kernel_size=(3, 3), stride=1, padding=1, bias=False)"
+338 "CNNrepository.CosineAnnealingLR(eta_min=0.0)"
+339 "CNNrepository.CrossEntropyLoss(reduction='mean')"
+340 "CNNrepository.Linear(in_features=512, out_features=10, bias=False)"
+341 "CNNrepository.Linear(in_features=512, out_features=10, bias=True)"
+342 "CNNrepository.MaxPool2d(in_channels=128, input_size=(16, 16), output_size=(8, 8), kernel_size=(2, 2))"
+343 "CNNrepository.MaxPool2d(in_channels=128, input_size=(4, 4), output_size=(2, 2), kernel_size=(2, 2))"
+344 "CNNrepository.MaxPool2d(in_channels=128, input_size=(8, 8), output_size=(4, 4), kernel_size=(2, 2))"
+345 "CNNrepository.MaxPool2d(in_channels=256, input_size=(16, 16), output_size=(8, 8), kernel_size=(2, 2))"
+346 "CNNrepository.MaxPool2d(in_channels=256, input_size=(8, 8), output_size=(4, 4), kernel_size=(2, 2))"
+347 "CNNrepository.MaxPool2d(in_channels=512, input_size=(2, 2), output_size=(1, 1), kernel_size=(2, 2))"
+348 "CNNrepository.MaxPool2d(in_channels=512, input_size=(4, 4), output_size=(2, 2), kernel_size=(2, 2))"
+349 "CNNrepository.MaxPool2d(in_channels=512, input_size=(8, 8), output_size=(4, 4), kernel_size=(2, 2))"
+350 "CNNrepository.MaxPool2d(in_channels=64, input_size=(16, 16), output_size=(8, 8), kernel_size=(2, 2))"
+351 "CNNrepository.MaxPool2d(in_channels=64, input_size=(32, 32), output_size=(16, 16), kernel_size=(2, 2))"
+352 "CNNrepository.NoScheduler()"
+353 "CNNrepository.ReLu(inplace=False)"
+354 "CNNrepository.SGD(learning_rate=0.1, momentum=0.9, dampening=0.0, weight_decay=0.0005, nesterov=False, maximize=False)"
+355 "CNNrepository.Sigmoid()"
+356 "CNNrepository.Tanh()"
+357 "None"
+[rules vgg_chain]
+0 before_cons p4 i=c297 j=c297 o=c296 request=c0 ls=c0 head=c30 tail=c1 x=h45 y=h1
+1 before_cons p4 i=c297 j=c297 o=c296 request=c1 ls=c1 head=c30 tail=c2 x=h45 y=h2
+2 before_cons p4 i=c297 j=c297 o=c296 request=c2 ls=c2 head=c30 tail=c3 x=h45 y=h3
+3 before_cons p4 i=c297 j=c297 o=c296 request=c3 ls=c3 head=c30 tail=c4 x=h45 y=h4
+4 before_cons p4 i=c297 j=c297 o=c296 request=c4 ls=c4 head=c30 tail=c6 x=h45 y=h6
+5 before_cons p4 i=c297 j=c300 o=c296 request=c5 ls=c5 head=c31 tail=c15 x=h46 y=h15
+6 before_cons p4 i=c297 j=c301 o=c296 request=c6 ls=c6 head=c32 tail=c18 x=h47 y=h18
+7 before_cons p4 i=c298 j=c298 o=c296 request=c7 ls=c7 head=c33 tail=c8 x=h48 y=h8
+8 before_cons p4 i=c298 j=c298 o=c296 request=c8 ls=c8 head=c33 tail=c9 x=h48 y=h9
+9 before_cons p4 i=c298 j=c298 o=c296 request=c9 ls=c9 head=c33 tail=c10 x=h48 y=h10
+10 before_cons p4 i=c298 j=c298 o=c296 request=c10 ls=c10 head=c33 tail=c11 x=h48 y=h11
+11 before_cons p4 i=c298 j=c298 o=c296 request=c11 ls=c11 head=c33 tail=c12 x=h48 y=h12
+12 before_cons p4 i=c298 j=c298 o=c296 request=c12 ls=c12 head=c33 tail=c13 x=h48 y=h13
+13 before_cons p4 i=c298 j=c303 o=c296 request=c13 ls=c13 head=c34 tail=c19 x=h49 y=h19
+14 before_cons p4 i=c299 j=c304 o=c296 request=c14 ls=c14 head=c35 tail=c22 x=h50 y=h22
+15 before_cons p4 i=c300 j=c300 o=c296 request=c15 ls=c15 head=c36 tail=c16 x=h51 y=h16
+16 before_cons p4 i=c300 j=c300 o=c296 request=c16 ls=c16 head=c36 tail=c17 x=h51 y=h17
+17 before_cons p4 i=c300 j=c305 o=c296 request=c17 ls=c17 head=c37 tail=c23 x=h52 y=h23
+18 before_cons p4 i=c301 j=c305 o=c296 request=c18 ls=c18 head=c38 tail=c29 x=h53 y=h29
+19 before_singleton p0 i=c303 o=c296 request=c19 ls=c19 ls1=c39 x=h54
+20 before_cons p4 i=c304 j=c297 o=c296 request=c20 ls=c20 head=c40 tail=c5 x=h55 y=h5
+21 before_cons p4 i=c304 j=c304 o=c296 request=c21 ls=c21 head=c41 tail=c20 x=h56 y=h20
+22 before_cons p4 i=c304 j=c304 o=c296 request=c22 ls=c22 head=c41 tail=c21 x=h56 y=h21
+23 before_cons p4 i=c305 j=c297 o=c296 request=c23 ls=c23 head=c42 tail=c0 x=h57 y=h0
+24 before_cons p4 i=c305 j=c298 o=c296 request=c24 ls=c24 head=c43 tail=c7 x=h58 y=h7
+25 before_cons p4 i=c305 j=c305 o=c296 request=c25 ls=c25 head=c44 tail=c24 x=h59 y=h24
+26 before_cons p4 i=c305 j=c305 o=c296 request=c26 ls=c26 head=c44 tail=c25 x=h59 y=h25
+27 before_cons p4 i=c305 j=c305 o=c296 request=c27 ls=c27 head=c44 tail=c26 x=h59 y=h26
+28 before_cons p4 i=c305 j=c305 o=c296 request=c28 ls=c28 head=c44 tail=c27 x=h59 y=h27
+29 before_cons p4 i=c305 j=c305 o=c296 request=c29 ls=c29 head=c44 tail=c28 x=h59 y=h28
+30 batchnorm2d p0 l=c311 i=c297 o=c297 para1=c61 para2=c62 para3=c63 para4=c265 para5=c64 para6=c289 para7=c268
+30 batchnorm2d p0 l=c315 i=c297 o=c297 para1=c77 para2=c78 para3=c79 para4=c265 para5=c80 para6=c289 para7=c268
+30 conv2d p0 l=c322 i=c297 o=c297 para1=c105 para2=c106 para3=c107 para4=c265 para5=c108 para6=c289 para7=c268
+30 conv2d p0 l=c336 i=c297 o=c297 para1=c161 para2=c162 para3=c163 para4=c265 para5=c164 para6=c289 para7=c268
+30 relu p0 l=c353 i=c297 o=c297 para1=c217 para2=c218 para3=c227 para4=c265 para5=c232 para6=c289 para7=c268
+30 sigmoid p0 l=c355 i=c297 o=c297 para1=c233 para2=c234 para3=c243 para4=c265 para5=c248 para6=c289 para7=c268
+30 tanh p0 l=c356 i=c297 o=c297 para1=c249 para2=c250 para3=c259 para4=c265 para5=c264 para6=c289 para7=c268
+31 conv2d p0 l=c324 i=c297 o=c300 para1=c113 para2=c114 para3=c115 para4=c266 para5=c116 para6=c291 para7=c268
+31 conv2d p0 l=c334 i=c297 o=c300 para1=c153 para2=c154 para3=c155 para4=c266 para5=c156 para6=c291 para7=c268
+32 conv2d p0 l=c326 i=c297 o=c301 para1=c121 para2=c122 para3=c123 para4=c267 para5=c124 para6=c292 para7=c268
+32 maxpool2d p0 l=c346 i=c297 o=c301 para1=c193 para2=c194 para3=c195 para4=c267 para5=c196 para6=c292 para7=c268
+32 maxpool2d p0 l=c350 i=c297 o=c301 para1=c209 para2=c210 para3=c211 para4=c267 para5=c212 para6=c292 para7=c268
+33 batchnorm2d p0 l=c308 i=c298 o=c298 para1=c49 para2=c50 para3=c51 para4=c269 para5=c52 para6=c290 para7=c271
+33 batchnorm2d p0 l=c312 i=c298 o=c298 para1=c65 para2=c66 para3=c67 para4=c269 para5=c68 para6=c290 para7=c271
+33 conv2d p0 l=c318 i=c298 o=c298 para1=c89 para2=c90 para3=c91 para4=c269 para5=c92 para6=c290 para7=c271
+33 conv2d p0 l=c331 i=c298 o=c298 para1=c141 para2=c142 para3=c143 para4=c269 para5=c144 para6=c290 para7=c271
+33 relu p0 l=c353 i=c298 o=c298 para1=c219 para2=c220 para3=c228 para4=c269 para5=c232 para6=c290 para7=c271
+33 sigmoid p0 l=c355 i=c298 o=c298 para1=c235 para2=c236 para3=c244 para4=c269 para5=c248 para6=c290 para7=c271
+33 tanh p0 l=c356 i=c298 o=c298 para1=c251 para2=c252 para3=c260 para4=c269 para5=c264 para6=c290 para7=c271
+34 conv2d p0 l=c328 i=c298 o=c303 para1=c129 para2=c130 para3=c131 para4=c270 para5=c132 para6=c293 para7=c271
+34 maxpool2d p0 l=c343 i=c298 o=c303 para1=c181 para2=c182 para3=c183 para4=c270 para5=c184 para6=c293 para7=c271
+34 maxpool2d p0 l=c347 i=c298 o=c303 para1=c197 para2=c198 para3=c199 para4=c270 para5=c200 para6=c293 para7=c271
+35 conv2d p0 l=c327 i=c299 o=c304 para1=c125 para2=c126 para3=c127 para4=c272 para5=c128 para6=c294 para7=c273
+36 batchnorm2d p0 l=c307 i=c300 o=c300 para1=c45 para2=c46 para3=c47 para4=c274 para5=c48 para6=c291 para7=c276
+36 batchnorm2d p0 l=c314 i=c300 o=c300 para1=c73 para2=c74 para3=c75 para4=c274 para5=c76 para6=c291 para7=c276
+36 conv2d p0 l=c317 i=c300 o=c300 para1=c85 para2=c86 para3=c87 para4=c274 para5=c88 para6=c291 para7=c276
+36 conv2d p0 l=c333 i=c300 o=c300 para1=c149 para2=c150 para3=c151 para4=c274 para5=c152 para6=c291 para7=c276
+36 relu p0 l=c353 i=c300 o=c300 para1=c221 para2=c222 para3=c229 para4=c274 para5=c232 para6=c291 para7=c276
+36 sigmoid p0 l=c355 i=c300 o=c300 para1=c237 para2=c238 para3=c245 para4=c274 para5=c248 para6=c291 para7=c276
+36 tanh p0 l=c356 i=c300 o=c300 para1=c253 para2=c254 para3=c261 para4=c274 para5=c264 para6=c291 para7=c276
+37 conv2d p0 l=c330 i=c300 o=c305 para1=c137 para2=c138 para3=c139 para4=c275 para5=c140 para6=c295 para7=c276
+37 maxpool2d p0 l=c342 i=c300 o=c305 para1=c177 para2=c178 para3=c179 para4=c275 para5=c180 para6=c295 para7=c276
+37 maxpool2d p0 l=c349 i=c300 o=c305 para1=c205 para2=c206 para3=c207 para4=c275 para5=c208 para6=c295 para7=c276
+38 conv2d p0 l=c323 i=c301 o=c305 para1=c109 para2=c110 para3=c111 para4=c277 para5=c112 para6=c295 para7=c278
+38 conv2d p0 l=c335 i=c301 o=c305 para1=c157 para2=c158 para3=c159 para4=c277 para5=c160 para6=c295 para7=c278
+39 linear_layer p0 l=c340 i=c303 o=c296 para1=c169 para2=c170 para3=c171 para4=c279 para5=c172 para6=c288 para7=c280
+39 linear_layer p0 l=c341 i=c303 o=c296 para1=c173 para2=c174 para3=c175 para4=c279 para5=c176 para6=c288 para7=c280
+40 conv2d p0 l=c325 i=c304 o=c297 para1=c117 para2=c118 para3=c119 para4=c281 para5=c120 para6=c289 para7=c283
+40 maxpool2d p0 l=c345 i=c304 o=c297 para1=c189 para2=c190 para3=c191 para4=c281 para5=c192 para6=c289 para7=c283
+40 maxpool2d p0 l=c351 i=c304 o=c297 para1=c213 para2=c214 para3=c215 para4=c281 para5=c216 para6=c289 para7=c283
+41 batchnorm2d p0 l=c310 i=c304 o=c304 para1=c57 para2=c58 para3=c59 para4=c282 para5=c60 para6=c294 para7=c283
+41 batchnorm2d p0 l=c316 i=c304 o=c304 para1=c81 para2=c82 para3=c83 para4=c282 para5=c84 para6=c294 para7=c283
+41 conv2d p0 l=c321 i=c304 o=c304 para1=c101 para2=c102 para3=c103 para4=c282 para5=c104 para6=c294 para7=c283
+41 conv2d p0 l=c337 i=c304 o=c304 para1=c165 para2=c166 para3=c167 para4=c282 para5=c168 para6=c294 para7=c283
+41 relu p0 l=c353 i=c304 o=c304 para1=c223 para2=c224 para3=c230 para4=c282 para5=c232 para6=c294 para7=c283
+41 sigmoid p0 l=c355 i=c304 o=c304 para1=c239 para2=c240 para3=c246 para4=c282 para5=c248 para6=c294 para7=c283
+41 tanh p0 l=c356 i=c304 o=c304 para1=c255 para2=c256 para3=c262 para4=c282 para5=c264 para6=c294 para7=c283
+42 conv2d p0 l=c320 i=c305 o=c297 para1=c97 para2=c98 para3=c99 para4=c284 para5=c100 para6=c289 para7=c287
+43 conv2d p0 l=c329 i=c305 o=c298 para1=c133 para2=c134 para3=c135 para4=c285 para5=c136 para6=c290 para7=c287
+43 maxpool2d p0 l=c344 i=c305 o=c298 para1=c185 para2=c186 para3=c187 para4=c285 para5=c188 para6=c290 para7=c287
+43 maxpool2d p0 l=c348 i=c305 o=c298 para1=c201 para2=c202 para3=c203 para4=c285 para5=c204 para6=c290 para7=c287
+44 batchnorm2d p0 l=c309 i=c305 o=c305 para1=c53 para2=c54 para3=c55 para4=c286 para5=c56 para6=c295 para7=c287
+44 batchnorm2d p0 l=c313 i=c305 o=c305 para1=c69 para2=c70 para3=c71 para4=c286 para5=c72 para6=c295 para7=c287
+44 conv2d p0 l=c319 i=c305 o=c305 para1=c93 para2=c94 para3=c95 para4=c286 para5=c96 para6=c295 para7=c287
+44 conv2d p0 l=c332 i=c305 o=c305 para1=c145 para2=c146 para3=c147 para4=c286 para5=c148 para6=c295 para7=c287
+44 relu p0 l=c353 i=c305 o=c305 para1=c225 para2=c226 para3=c231 para4=c286 para5=c232 para6=c295 para7=c287
+44 sigmoid p0 l=c355 i=c305 o=c305 para1=c241 para2=c242 para3=c247 para4=c286 para5=c248 para6=c295 para7=c287
+44 tanh p0 l=c356 i=c305 o=c305 para1=c257 para2=c258 para3=c263 para4=c286 para5=c264 para6=c295 para7=c287
+45 beside_singleton p0 i=c297 o=c297 ls=c30 para=c265 -=h30
+46 beside_singleton p0 i=c297 o=c300 ls=c31 para=c266 -=h31
+47 beside_singleton p0 i=c297 o=c301 ls=c32 para=c267 -=h32
+48 beside_singleton p0 i=c298 o=c298 ls=c33 para=c269 -=h33
+49 beside_singleton p0 i=c298 o=c303 ls=c34 para=c270 -=h34
+50 beside_singleton p0 i=c299 o=c304 ls=c35 para=c272 -=h35
+51 beside_singleton p0 i=c300 o=c300 ls=c36 para=c274 -=h36
+52 beside_singleton p0 i=c300 o=c305 ls=c37 para=c275 -=h37
+53 beside_singleton p0 i=c301 o=c305 ls=c38 para=c277 -=h38
+54 beside_singleton p0 i=c303 o=c296 ls=c39 para=c279 -=h39
+55 beside_singleton p0 i=c304 o=c297 ls=c40 para=c281 -=h40
+56 beside_singleton p0 i=c304 o=c304 ls=c41 para=c282 -=h41
+57 beside_singleton p0 i=c305 o=c297 ls=c42 para=c284 -=h42
+58 beside_singleton p0 i=c305 o=c298 ls=c43 para=c285 -=h43
+59 beside_singleton p0 i=c305 o=c305 ls=c44 para=c286 -=h44
+60 learner p0 i=c299 o=c296 request=c14 ls=c14 epochs=c302 loss=c339 opti=c357 sched=c357 loss_f=h61 scheduler=h63 model=h14
+61 cross_entropy_loss p0 loss=c339
+62 adam_optimizer p0 optimizer=c306
+62 sgd_optimizer p0 optimizer=c354
+63 cosine_annealing_lr p0 opti=c357 sched=c338 optimizer=h62
+63 no_scheduler p0 opti=c357 sched=c352 optimizer=h62
+
+[cell parallel_chain]
+nonterminals 53
+rules 97
+terminals adam_optimizer batchnorm2d before_cons before_singleton beside_cons beside_singleton conv2d cosine_annealing_lr cross_entropy_loss edges learner linear_layer maxpool2d no_scheduler relu sgd_optimizer sigmoid swap tanh
+[nonterminals parallel_chain]
+0 "DAG(input([16384]) & output([10]) & structure([(((None, 16384, 16384),), ((None, 16384, 4096),), ((None, 4096, 8192),), ((None, 8192, 8192),), ((None, 8192, 2048),), (None, None), ((None, 2048, 512),), ((None, 512, 10),))]))"
+1 "DAG(input([16384]) & output([10]) & structure([(((None, 16384, 32768),), ((None, 32768, 32768),), ((None, 32768, 8192),), ((None, 8192, 16384),), ((None, 16384, 16384),), ((None, 16384, 4096),), ((None, 4096, 8192),), ((None, 8192, 8192),), ((None, 8192, 2048),), (None, None), ((None, 2048, 512),), ((None, 512, 10),))]))"
+2 "DAG(input([16384]) & output([10]) & structure([(((None, 16384, 4096),), ((None, 4096, 8192),), ((None, 8192, 8192),), ((None, 8192, 2048),), (None, None), ((None, 2048, 512),), ((None, 512, 10),))]))"
+3 "DAG(input([2048]) & output([10]) & structure([(((None, 2048, 512),), ((None, 512, 10),))]))"
+4 "DAG(input([2048]) & output([10]) & structure([((None, None), ((None, 2048, 512),), ((None, 512, 10),))]))"
+5 "DAG(input([3072]) & output([10]) & structure([(((None, 3072, 65536),), ((None, 65536, 65536),), ((None, 65536, 16384),), ((None, 16384, 32768),), ((None, 32768, 32768),), ((None, 32768, 8192),), ((None, 8192, 16384),), ((None, 16384, 16384),), ((None, 16384, 4096),), ((None, 4096, 8192),), ((None, 8192, 8192),), ((None, 8192, 2048),), (None, None), ((None, 2048, 512),), ((None, 512, 10),))]))"
+6 "DAG(input([32768]) & output([10]) & structure([(((None, 32768, 32768),), ((None, 32768, 8192),), ((None, 8192, 16384),), ((None, 16384, 16384),), ((None, 16384, 4096),), ((None, 4096, 8192),), ((None, 8192, 8192),), ((None, 8192, 2048),), (None, None), ((None, 2048, 512),), ((None, 512, 10),))]))"
+7 "DAG(input([32768]) & output([10]) & structure([(((None, 32768, 8192),), ((None, 8192, 16384),), ((None, 16384, 16384),), ((None, 16384, 4096),), ((None, 4096, 8192),), ((None, 8192, 8192),), ((None, 8192, 2048),), (None, None), ((None, 2048, 512),), ((None, 512, 10),))]))"
+8 "DAG(input([4096]) & output([10]) & structure([(((None, 4096, 8192),), ((None, 8192, 8192),), ((None, 8192, 2048),), (None, None), ((None, 2048, 512),), ((None, 512, 10),))]))"
+9 "DAG(input([512]) & output([10]) & structure([(((None, 512, 10),),)]))"
+10 "DAG(input([65536]) & output([10]) & structure([(((None, 65536, 16384),), ((None, 16384, 32768),), ((None, 32768, 32768),), ((None, 32768, 8192),), ((None, 8192, 16384),), ((None, 16384, 16384),), ((None, 16384, 4096),), ((None, 4096, 8192),), ((None, 8192, 8192),), ((None, 8192, 2048),), (None, None), ((None, 2048, 512),), ((None, 512, 10),))]))"
+11 "DAG(input([65536]) & output([10]) & structure([(((None, 65536, 65536),), ((None, 65536, 16384),), ((None, 16384, 32768),), ((None, 32768, 32768),), ((None, 32768, 8192),), ((None, 8192, 16384),), ((None, 16384, 16384),), ((None, 16384, 4096),), ((None, 4096, 8192),), ((None, 8192, 8192),), ((None, 8192, 2048),), (None, None), ((None, 2048, 512),), ((None, 512, 10),))]))"
+12 "DAG(input([8192]) & output([10]) & structure([(((None, 8192, 16384),), ((None, 16384, 16384),), ((None, 16384, 4096),), ((None, 4096, 8192),), ((None, 8192, 8192),), ((None, 8192, 2048),), (None, None), ((None, 2048, 512),), ((None, 512, 10),))]))"
+13 "DAG(input([8192]) & output([10]) & structure([(((None, 8192, 2048),), (None, None), ((None, 2048, 512),), ((None, 512, 10),))]))"
+14 "DAG(input([8192]) & output([10]) & structure([(((None, 8192, 8192),), ((None, 8192, 2048),), (None, None), ((None, 2048, 512),), ((None, 512, 10),))]))"
+15 "DAG_component(input([1024]) & output([1024]) & structure([None])) & ID"
+16 "DAG_component(input([1024]) & output([1024]) & structure([None])) & non_ID"
+17 "DAG_component(input([16384]) & output([16384]) & structure([(None, 16384, 16384)])) & non_ID"
+18 "DAG_component(input([16384]) & output([32768]) & structure([(None, 16384, 32768)])) & non_ID"
+19 "DAG_component(input([16384]) & output([4096]) & structure([(None, 16384, 4096)])) & non_ID"
+20 "DAG_component(input([2048]) & output([512]) & structure([(None, 2048, 512)])) & non_ID"
+21 "DAG_component(input([3072]) & output([65536]) & structure([(None, 3072, 65536)])) & non_ID"
+22 "DAG_component(input([32768]) & output([32768]) & structure([(None, 32768, 32768)])) & non_ID"
+23 "DAG_component(input([32768]) & output([8192]) & structure([(None, 32768, 8192)])) & non_ID"
+24 "DAG_component(input([4096]) & output([8192]) & structure([(None, 4096, 8192)])) & non_ID"
+25 "DAG_component(input([512]) & output([10]) & structure([(None, 512, 10)])) & non_ID"
+26 "DAG_component(input([65536]) & output([16384]) & structure([(None, 65536, 16384)])) & non_ID"
+27 "DAG_component(input([65536]) & output([65536]) & structure([(None, 65536, 65536)])) & non_ID"
+28 "DAG_component(input([8192]) & output([16384]) & structure([(None, 8192, 16384)])) & non_ID"
+29 "DAG_component(input([8192]) & output([2048]) & structure([(None, 8192, 2048)])) & non_ID"
+30 "DAG_component(input([8192]) & output([8192]) & structure([(None, 8192, 8192)])) & non_ID"
+31 "DAG_parallel(input([1024]) & output([1024]) & structure([(None,)])) & ID"
+32 "DAG_parallel(input([1024]) & output([1024]) & structure([(None,)])) & non_ID"
+33 "DAG_parallel(input([1024]) & output([1024]) & structure([(None,)])) & non_ID & last(non_ID)"
+34 "DAG_parallel(input([16384]) & output([16384]) & structure([((None, 16384, 16384),)])) & non_ID"
+35 "DAG_parallel(input([16384]) & output([32768]) & structure([((None, 16384, 32768),)])) & non_ID"
+36 "DAG_parallel(input([16384]) & output([4096]) & structure([((None, 16384, 4096),)])) & non_ID"
+37 "DAG_parallel(input([2048]) & output([2048]) & structure([(None, None)])) & non_ID"
+38 "DAG_parallel(input([2048]) & output([512]) & structure([((None, 2048, 512),)])) & non_ID"
+39 "DAG_parallel(input([3072]) & output([65536]) & structure([((None, 3072, 65536),)])) & non_ID"
+40 "DAG_parallel(input([32768]) & output([32768]) & structure([((None, 32768, 32768),)])) & non_ID"
+41 "DAG_parallel(input([32768]) & output([8192]) & structure([((None, 32768, 8192),)])) & non_ID"
+42 "DAG_parallel(input([4096]) & output([8192]) & structure([((None, 4096, 8192),)])) & non_ID"
+43 "DAG_parallel(input([512]) & output([10]) & structure([((None, 512, 10),)])) & non_ID"
+44 "DAG_parallel(input([65536]) & output([16384]) & structure([((None, 65536, 16384),)])) & non_ID"
+45 "DAG_parallel(input([65536]) & output([65536]) & structure([((None, 65536, 65536),)])) & non_ID"
+46 "DAG_parallel(input([8192]) & output([16384]) & structure([((None, 8192, 16384),)])) & non_ID"
+47 "DAG_parallel(input([8192]) & output([2048]) & structure([((None, 8192, 2048),)])) & non_ID"
+48 "DAG_parallel(input([8192]) & output([8192]) & structure([((None, 8192, 8192),)])) & non_ID"
+49 "Learner(DAG(input([3072]) & output([10]) & structure([(((None, 3072, 65536),), ((None, 65536, 65536),), ((None, 65536, 16384),), ((None, 16384, 32768),), ((None, 32768, 32768),), ((None, 32768, 8192),), ((None, 8192, 16384),), ((None, 16384, 16384),), ((None, 16384, 4096),), ((None, 4096, 8192),), ((None, 8192, 8192),), ((None, 8192, 2048),), (None, None), ((None, 2048, 512),), ((None, 512, 10),))])) & Loss(type([CNNrepository.CrossEntropyLoss(reduction='mean')])) & Optimizer(type([None])) & Scheduler(type([None])) & epochs([50]))"
+50 "Loss(type([CNNrepository.CrossEntropyLoss(reduction='mean')]))"
+51 "Optimizer(type([None]))"
+52 "Scheduler(type([None]) & Optimizer(type([None])))"
+[constants parallel_chain]
+0 "(('swap', 0, 1024), 1024, 1024)"
+1 "(('swap', 0, 1024), 1024, None)"
+2 "(('swap', 0, 1024), None, 1024)"
+3 "(('swap', 0, 1024), None, None)"
+4 "(('swap', 0, None), 1024, 1024)"
+5 "(('swap', 0, None), 1024, None)"
+6 "(('swap', 0, None), None, 1024)"
+7 "(('swap', 0, None), None, None)"
+8 "(('swap', 512, 512), 1024, 1024)"
+9 "(('swap', 512, 512), 1024, None)"
+10 "(('swap', 512, 512), None, 1024)"
+11 "(('swap', 512, 512), None, None)"
+12 "(('swap', 512, None), 1024, 1024)"
+13 "(('swap', 512, None), 1024, None)"
+14 "(('swap', 512, None), None, 1024)"
+15 "(('swap', 512, None), None, None)"
+16 "(('swap', None, 1024), 1024, 1024)"
+17 "(('swap', None, 1024), 1024, None)"
+18 "(('swap', None, 1024), None, 1024)"
+19 "(('swap', None, 1024), None, None)"
+20 "(('swap', None, 512), 1024, 1024)"
+21 "(('swap', None, 512), 1024, None)"
+22 "(('swap', None, 512), None, 1024)"
+23 "(('swap', None, 512), None, None)"
+24 "(('swap', None, None), 1024, 1024)"
+25 "(('swap', None, None), 1024, None)"
+26 "(('swap', None, None), None, 1024)"
+27 "(('swap', None, None), None, None)"
+28 "(((None, 16384, 16384),), ((None, 16384, 4096),), ((None, 4096, 8192),), ((None, 8192, 8192),), ((None, 8192, 2048),), (None, None), ((None, 2048, 512),), ((None, 512, 10),))"
+29 "(((None, 16384, 32768),), ((None, 32768, 32768),), ((None, 32768, 8192),), ((None, 8192, 16384),), ((None, 16384, 16384),), ((None, 16384, 4096),), ((None, 4096, 8192),), ((None, 8192, 8192),), ((None, 8192, 2048),), (None, None), ((None, 2048, 512),), ((None, 512, 10),))"
+30 "(((None, 16384, 4096),), ((None, 4096, 8192),), ((None, 8192, 8192),), ((None, 8192, 2048),), (None, None), ((None, 2048, 512),), ((None, 512, 10),))"
+31 "(((None, 2048, 512),), ((None, 512, 10),))"
+32 "(((None, 3072, 65536),), ((None, 65536, 65536),), ((None, 65536, 16384),), ((None, 16384, 32768),), ((None, 32768, 32768),), ((None, 32768, 8192),), ((None, 8192, 16384),), ((None, 16384, 16384),), ((None, 16384, 4096),), ((None, 4096, 8192),), ((None, 8192, 8192),), ((None, 8192, 2048),), (None, None), ((None, 2048, 512),), ((None, 512, 10),))"
+33 "(((None, 32768, 32768),), ((None, 32768, 8192),), ((None, 8192, 16384),), ((None, 16384, 16384),), ((None, 16384, 4096),), ((None, 4096, 8192),), ((None, 8192, 8192),), ((None, 8192, 2048),), (None, None), ((None, 2048, 512),), ((None, 512, 10),))"
+34 "(((None, 32768, 8192),), ((None, 8192, 16384),), ((None, 16384, 16384),), ((None, 16384, 4096),), ((None, 4096, 8192),), ((None, 8192, 8192),), ((None, 8192, 2048),), (None, None), ((None, 2048, 512),), ((None, 512, 10),))"
+35 "(((None, 4096, 8192),), ((None, 8192, 8192),), ((None, 8192, 2048),), (None, None), ((None, 2048, 512),), ((None, 512, 10),))"
+36 "(((None, 512, 10),),)"
+37 "(((None, 65536, 16384),), ((None, 16384, 32768),), ((None, 32768, 32768),), ((None, 32768, 8192),), ((None, 8192, 16384),), ((None, 16384, 16384),), ((None, 16384, 4096),), ((None, 4096, 8192),), ((None, 8192, 8192),), ((None, 8192, 2048),), (None, None), ((None, 2048, 512),), ((None, 512, 10),))"
+38 "(((None, 65536, 65536),), ((None, 65536, 16384),), ((None, 16384, 32768),), ((None, 32768, 32768),), ((None, 32768, 8192),), ((None, 8192, 16384),), ((None, 16384, 16384),), ((None, 16384, 4096),), ((None, 4096, 8192),), ((None, 8192, 8192),), ((None, 8192, 2048),), (None, None), ((None, 2048, 512),), ((None, 512, 10),))"
+39 "(((None, 8192, 16384),), ((None, 16384, 16384),), ((None, 16384, 4096),), ((None, 4096, 8192),), ((None, 8192, 8192),), ((None, 8192, 2048),), (None, None), ((None, 2048, 512),), ((None, 512, 10),))"
+40 "(((None, 8192, 2048),), (None, None), ((None, 2048, 512),), ((None, 512, 10),))"
+41 "(((None, 8192, 8192),), ((None, 8192, 2048),), (None, None), ((None, 2048, 512),), ((None, 512, 10),))"
+42 "((None, 16384, 16384),)"
+43 "((None, 16384, 32768),)"
+44 "((None, 16384, 4096),)"
+45 "((None, 2048, 512),)"
+46 "((None, 3072, 65536),)"
+47 "((None, 32768, 32768),)"
+48 "((None, 32768, 8192),)"
+49 "((None, 4096, 8192),)"
+50 "((None, 512, 10),)"
+51 "((None, 65536, 16384),)"
+52 "((None, 65536, 65536),)"
+53 "((None, 8192, 16384),)"
+54 "((None, 8192, 2048),)"
+55 "((None, 8192, 8192),)"
+56 "((None, None), ((None, 2048, 512),), ((None, 512, 10),))"
+57 "(CNNrepository.BatchNorm2d(in_channels=128, input_size=(16, 16)), 32768, 32768)"
+58 "(CNNrepository.BatchNorm2d(in_channels=128, input_size=(16, 16)), 32768, None)"
+59 "(CNNrepository.BatchNorm2d(in_channels=128, input_size=(16, 16)), None, 32768)"
+60 "(CNNrepository.BatchNorm2d(in_channels=128, input_size=(16, 16)), None, None)"
+61 "(CNNrepository.BatchNorm2d(in_channels=128, input_size=(8, 8)), 8192, 8192)"
+62 "(CNNrepository.BatchNorm2d(in_channels=128, input_size=(8, 8)), 8192, None)"
+63 "(CNNrepository.BatchNorm2d(in_channels=128, input_size=(8, 8)), None, 8192)"
+64 "(CNNrepository.BatchNorm2d(in_channels=128, input_size=(8, 8)), None, None)"
+65 "(CNNrepository.BatchNorm2d(in_channels=256, input_size=(16, 16)), 65536, 65536)"
+66 "(CNNrepository.BatchNorm2d(in_channels=256, input_size=(16, 16)), 65536, None)"
+67 "(CNNrepository.BatchNorm2d(in_channels=256, input_size=(16, 16)), None, 65536)"
+68 "(CNNrepository.BatchNorm2d(in_channels=256, input_size=(16, 16)), None, None)"
+69 "(CNNrepository.BatchNorm2d(in_channels=256, input_size=(8, 8)), 16384, 16384)"
+70 "(CNNrepository.BatchNorm2d(in_channels=256, input_size=(8, 8)), 16384, None)"
+71 "(CNNrepository.BatchNorm2d(in_channels=256, input_size=(8, 8)), None, 16384)"
+72 "(CNNrepository.BatchNorm2d(in_channels=256, input_size=(8, 8)), None, None)"
+73 "(CNNrepository.BatchNorm2d(in_channels=512, input_size=(4, 4)), 8192, 8192)"
+74 "(CNNrepository.BatchNorm2d(in_channels=512, input_size=(4, 4)), 8192, None)"
+75 "(CNNrepository.BatchNorm2d(in_channels=512, input_size=(4, 4)), None, 8192)"
+76 "(CNNrepository.BatchNorm2d(in_channels=512, input_size=(4, 4)), None, None)"
+77 "(CNNrepository.BatchNorm2d(in_channels=512, input_size=(8, 8)), 32768, 32768)"
+78 "(CNNrepository.BatchNorm2d(in_channels=512, input_size=(8, 8)), 32768, None)"
+79 "(CNNrepository.BatchNorm2d(in_channels=512, input_size=(8, 8)), None, 32768)"
+80 "(CNNrepository.BatchNorm2d(in_channels=512, input_size=(8, 8)), None, None)"
+81 "(CNNrepository.BatchNorm2d(in_channels=64, input_size=(16, 16)), 16384, 16384)"
+82 "(CNNrepository.BatchNorm2d(in_channels=64, input_size=(16, 16)), 16384, None)"
+83 "(CNNrepository.BatchNorm2d(in_channels=64, input_size=(16, 16)), None, 16384)"
+84 "(CNNrepository.BatchNorm2d(in_channels=64, input_size=(16, 16)), None, None)"
+85 "(CNNrepository.BatchNorm2d(in_channels=64, input_size=(32, 32)), 65536, 65536)"
+86 "(CNNrepository.BatchNorm2d(in_channels=64, input_size=(32, 32)), 65536, None)"
+87 "(CNNrepository.BatchNorm2d(in_channels=64, input_size=(32, 32)), None, 65536)"
+88 "(CNNrepository.BatchNorm2d(in_channels=64, input_size=(32, 32)), None, None)"
+89 "(CNNrepository.Conv2d(in_channels=128, out_channels=128, input_size=(16, 16), output_size=(16, 16), kernel_size=(3, 3), stride=1, padding=1, bias=False), 32768, 32768)"
+90 "(CNNrepository.Conv2d(in_channels=128, out_channels=128, input_size=(16, 16), output_size=(16, 16), kernel_size=(3, 3), stride=1, padding=1, bias=False), 32768, None)"
+91 "(CNNrepository.Conv2d(in_channels=128, out_channels=128, input_size=(16, 16), output_size=(16, 16), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, 32768)"
+92 "(CNNrepository.Conv2d(in_channels=128, out_channels=128, input_size=(16, 16), output_size=(16, 16), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, None)"
+93 "(CNNrepository.Conv2d(in_channels=128, out_channels=128, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False), 8192, 8192)"
+94 "(CNNrepository.Conv2d(in_channels=128, out_channels=128, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False), 8192, None)"
+95 "(CNNrepository.Conv2d(in_channels=128, out_channels=128, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, 8192)"
+96 "(CNNrepository.Conv2d(in_channels=128, out_channels=128, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, None)"
+97 "(CNNrepository.Conv2d(in_channels=128, out_channels=256, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False), 8192, 16384)"
+98 "(CNNrepository.Conv2d(in_channels=128, out_channels=256, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False), 8192, None)"
+99 "(CNNrepository.Conv2d(in_channels=128, out_channels=256, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, 16384)"
+100 "(CNNrepository.Conv2d(in_channels=128, out_channels=256, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, None)"
+101 "(CNNrepository.Conv2d(in_channels=256, out_channels=256, input_size=(16, 16), output_size=(16, 16), kernel_size=(3, 3), stride=1, padding=1, bias=False), 65536, 65536)"
+102 "(CNNrepository.Conv2d(in_channels=256, out_channels=256, input_size=(16, 16), output_size=(16, 16), kernel_size=(3, 3), stride=1, padding=1, bias=False), 65536, None)"
+103 "(CNNrepository.Conv2d(in_channels=256, out_channels=256, input_size=(16, 16), output_size=(16, 16), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, 65536)"
+104 "(CNNrepository.Conv2d(in_channels=256, out_channels=256, input_size=(16, 16), output_size=(16, 16), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, None)"
+105 "(CNNrepository.Conv2d(in_channels=256, out_channels=256, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False), 16384, 16384)"
+106 "(CNNrepository.Conv2d(in_channels=256, out_channels=256, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False), 16384, None)"
+107 "(CNNrepository.Conv2d(in_channels=256, out_channels=256, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, 16384)"
+108 "(CNNrepository.Conv2d(in_channels=256, out_channels=256, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, None)"
+109 "(CNNrepository.Conv2d(in_channels=256, out_channels=512, input_size=(4, 4), output_size=(4, 4), kernel_size=(3, 3), stride=1, padding=1, bias=False), 4096, 8192)"
+110 "(CNNrepository.Conv2d(in_channels=256, out_channels=512, input_size=(4, 4), output_size=(4, 4), kernel_size=(3, 3), stride=1, padding=1, bias=False), 4096, None)"
+111 "(CNNrepository.Conv2d(in_channels=256, out_channels=512, input_size=(4, 4), output_size=(4, 4), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, 8192)"
+112 "(CNNrepository.Conv2d(in_channels=256, out_channels=512, input_size=(4, 4), output_size=(4, 4), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, None)"
+113 "(CNNrepository.Conv2d(in_channels=256, out_channels=512, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False), 16384, 32768)"
+114 "(CNNrepository.Conv2d(in_channels=256, out_channels=512, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False), 16384, None)"
+115 "(CNNrepository.Conv2d(in_channels=256, out_channels=512, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, 32768)"
+116 "(CNNrepository.Conv2d(in_channels=256, out_channels=512, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, None)"
+117 "(CNNrepository.Conv2d(in_channels=256, out_channels=64, input_size=(16, 16), output_size=(16, 16), kernel_size=(3, 3), stride=1, padding=1, bias=False), 65536, 16384)"
+118 "(CNNrepository.Conv2d(in_channels=256, out_channels=64, input_size=(16, 16), output_size=(16, 16), kernel_size=(3, 3), stride=1, padding=1, bias=False), 65536, None)"
+119 "(CNNrepository.Conv2d(in_channels=256, out_channels=64, input_size=(16, 16), output_size=(16, 16), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, 16384)"
+120 "(CNNrepository.Conv2d(in_channels=256, out_channels=64, input_size=(16, 16), output_size=(16, 16), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, None)"
+121 "(CNNrepository.Conv2d(in_channels=256, out_channels=64, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False), 16384, 4096)"
+122 "(CNNrepository.Conv2d(in_channels=256, out_channels=64, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False), 16384, None)"
+123 "(CNNrepository.Conv2d(in_channels=256, out_channels=64, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, 4096)"
+124 "(CNNrepository.Conv2d(in_channels=256, out_channels=64, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, None)"
+125 "(CNNrepository.Conv2d(in_channels=3, out_channels=64, input_size=(32, 32), output_size=(32, 32), kernel_size=(3, 3), stride=1, padding=1, bias=False), 3072, 65536)"
+126 "(CNNrepository.Conv2d(in_channels=3, out_channels=64, input_size=(32, 32), output_size=(32, 32), kernel_size=(3, 3), stride=1, padding=1, bias=False), 3072, None)"
+127 "(CNNrepository.Conv2d(in_channels=3, out_channels=64, input_size=(32, 32), output_size=(32, 32), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, 65536)"
+128 "(CNNrepository.Conv2d(in_channels=3, out_channels=64, input_size=(32, 32), output_size=(32, 32), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, None)"
+129 "(CNNrepository.Conv2d(in_channels=512, out_channels=128, input_size=(2, 2), output_size=(2, 2), kernel_size=(3, 3), stride=1, padding=1, bias=False), 2048, 512)"
+130 "(CNNrepository.Conv2d(in_channels=512, out_channels=128, input_size=(2, 2), output_size=(2, 2), kernel_size=(3, 3), stride=1, padding=1, bias=False), 2048, None)"
+131 "(CNNrepository.Conv2d(in_channels=512, out_channels=128, input_size=(2, 2), output_size=(2, 2), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, 512)"
+132 "(CNNrepository.Conv2d(in_channels=512, out_channels=128, input_size=(2, 2), output_size=(2, 2), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, None)"
+133 "(CNNrepository.Conv2d(in_channels=512, out_channels=128, input_size=(4, 4), output_size=(4, 4), kernel_size=(3, 3), stride=1, padding=1, bias=False), 8192, 2048)"
+134 "(CNNrepository.Conv2d(in_channels=512, out_channels=128, input_size=(4, 4), output_size=(4, 4), kernel_size=(3, 3), stride=1, padding=1, bias=False), 8192, None)"
+135 "(CNNrepository.Conv2d(in_channels=512, out_channels=128, input_size=(4, 4), output_size=(4, 4), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, 2048)"
+136 "(CNNrepository.Conv2d(in_channels=512, out_channels=128, input_size=(4, 4), output_size=(4, 4), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, None)"
+137 "(CNNrepository.Conv2d(in_channels=512, out_channels=128, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False), 32768, 8192)"
+138 "(CNNrepository.Conv2d(in_channels=512, out_channels=128, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False), 32768, None)"
+139 "(CNNrepository.Conv2d(in_channels=512, out_channels=128, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, 8192)"
+140 "(CNNrepository.Conv2d(in_channels=512, out_channels=128, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, None)"
+141 "(CNNrepository.Conv2d(in_channels=512, out_channels=512, input_size=(4, 4), output_size=(4, 4), kernel_size=(3, 3), stride=1, padding=1, bias=False), 8192, 8192)"
+142 "(CNNrepository.Conv2d(in_channels=512, out_channels=512, input_size=(4, 4), output_size=(4, 4), kernel_size=(3, 3), stride=1, padding=1, bias=False), 8192, None)"
+143 "(CNNrepository.Conv2d(in_channels=512, out_channels=512, input_size=(4, 4), output_size=(4, 4), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, 8192)"
+144 "(CNNrepository.Conv2d(in_channels=512, out_channels=512, input_size=(4, 4), output_size=(4, 4), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, None)"
+145 "(CNNrepository.Conv2d(in_channels=512, out_channels=512, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False), 32768, 32768)"
+146 "(CNNrepository.Conv2d(in_channels=512, out_channels=512, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False), 32768, None)"
+147 "(CNNrepository.Conv2d(in_channels=512, out_channels=512, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, 32768)"
+148 "(CNNrepository.Conv2d(in_channels=512, out_channels=512, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, None)"
+149 "(CNNrepository.Conv2d(in_channels=64, out_channels=128, input_size=(16, 16), output_size=(16, 16), kernel_size=(3, 3), stride=1, padding=1, bias=False), 16384, 32768)"
+150 "(CNNrepository.Conv2d(in_channels=64, out_channels=128, input_size=(16, 16), output_size=(16, 16), kernel_size=(3, 3), stride=1, padding=1, bias=False), 16384, None)"
+151 "(CNNrepository.Conv2d(in_channels=64, out_channels=128, input_size=(16, 16), output_size=(16, 16), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, 32768)"
+152 "(CNNrepository.Conv2d(in_channels=64, out_channels=128, input_size=(16, 16), output_size=(16, 16), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, None)"
+153 "(CNNrepository.Conv2d(in_channels=64, out_channels=128, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False), 4096, 8192)"
+154 "(CNNrepository.Conv2d(in_channels=64, out_channels=128, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False), 4096, None)"
+155 "(CNNrepository.Conv2d(in_channels=64, out_channels=128, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, 8192)"
+156 "(CNNrepository.Conv2d(in_channels=64, out_channels=128, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, None)"
+157 "(CNNrepository.Conv2d(in_channels=64, out_channels=64, input_size=(16, 16), output_size=(16, 16), kernel_size=(3, 3), stride=1, padding=1, bias=False), 16384, 16384)"
+158 "(CNNrepository.Conv2d(in_channels=64, out_channels=64, input_size=(16, 16), output_size=(16, 16), kernel_size=(3, 3), stride=1, padding=1, bias=False), 16384, None)"
+159 "(CNNrepository.Conv2d(in_channels=64, out_channels=64, input_size=(16, 16), output_size=(16, 16), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, 16384)"
+160 "(CNNrepository.Conv2d(in_channels=64, out_channels=64, input_size=(16, 16), output_size=(16, 16), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, None)"
+161 "(CNNrepository.Conv2d(in_channels=64, out_channels=64, input_size=(32, 32), output_size=(32, 32), kernel_size=(3, 3), stride=1, padding=1, bias=False), 65536, 65536)"
+162 "(CNNrepository.Conv2d(in_channels=64, out_channels=64, input_size=(32, 32), output_size=(32, 32), kernel_size=(3, 3), stride=1, padding=1, bias=False), 65536, None)"
+163 "(CNNrepository.Conv2d(in_channels=64, out_channels=64, input_size=(32, 32), output_size=(32, 32), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, 65536)"
+164 "(CNNrepository.Conv2d(in_channels=64, out_channels=64, input_size=(32, 32), output_size=(32, 32), kernel_size=(3, 3), stride=1, padding=1, bias=False), None, None)"
+165 "(CNNrepository.Linear(in_features=512, out_features=10, bias=False), 512, 10)"
+166 "(CNNrepository.Linear(in_features=512, out_features=10, bias=False), 512, None)"
+167 "(CNNrepository.Linear(in_features=512, out_features=10, bias=False), None, 10)"
+168 "(CNNrepository.Linear(in_features=512, out_features=10, bias=False), None, None)"
+169 "(CNNrepository.Linear(in_features=512, out_features=10, bias=True), 512, 10)"
+170 "(CNNrepository.Linear(in_features=512, out_features=10, bias=True), 512, None)"
+171 "(CNNrepository.Linear(in_features=512, out_features=10, bias=True), None, 10)"
+172 "(CNNrepository.Linear(in_features=512, out_features=10, bias=True), None, None)"
+173 "(CNNrepository.MaxPool2d(in_channels=128, input_size=(16, 16), output_size=(8, 8), kernel_size=(2, 2)), 32768, 8192)"
+174 "(CNNrepository.MaxPool2d(in_channels=128, input_size=(16, 16), output_size=(8, 8), kernel_size=(2, 2)), 32768, None)"
+175 "(CNNrepository.MaxPool2d(in_channels=128, input_size=(16, 16), output_size=(8, 8), kernel_size=(2, 2)), None, 8192)"
+176 "(CNNrepository.MaxPool2d(in_channels=128, input_size=(16, 16), output_size=(8, 8), kernel_size=(2, 2)), None, None)"
+177 "(CNNrepository.MaxPool2d(in_channels=128, input_size=(4, 4), output_size=(2, 2), kernel_size=(2, 2)), 2048, 512)"
+178 "(CNNrepository.MaxPool2d(in_channels=128, input_size=(4, 4), output_size=(2, 2), kernel_size=(2, 2)), 2048, None)"
+179 "(CNNrepository.MaxPool2d(in_channels=128, input_size=(4, 4), output_size=(2, 2), kernel_size=(2, 2)), None, 512)"
+180 "(CNNrepository.MaxPool2d(in_channels=128, input_size=(4, 4), output_size=(2, 2), kernel_size=(2, 2)), None, None)"
+181 "(CNNrepository.MaxPool2d(in_channels=128, input_size=(8, 8), output_size=(4, 4), kernel_size=(2, 2)), 8192, 2048)"
+182 "(CNNrepository.MaxPool2d(in_channels=128, input_size=(8, 8), output_size=(4, 4), kernel_size=(2, 2)), 8192, None)"
+183 "(CNNrepository.MaxPool2d(in_channels=128, input_size=(8, 8), output_size=(4, 4), kernel_size=(2, 2)), None, 2048)"
+184 "(CNNrepository.MaxPool2d(in_channels=128, input_size=(8, 8), output_size=(4, 4), kernel_size=(2, 2)), None, None)"
+185 "(CNNrepository.MaxPool2d(in_channels=256, input_size=(16, 16), output_size=(8, 8), kernel_size=(2, 2)), 65536, 16384)"
+186 "(CNNrepository.MaxPool2d(in_channels=256, input_size=(16, 16), output_size=(8, 8), kernel_size=(2, 2)), 65536, None)"
+187 "(CNNrepository.MaxPool2d(in_channels=256, input_size=(16, 16), output_size=(8, 8), kernel_size=(2, 2)), None, 16384)"
+188 "(CNNrepository.MaxPool2d(in_channels=256, input_size=(16, 16), output_size=(8, 8), kernel_size=(2, 2)), None, None)"
+189 "(CNNrepository.MaxPool2d(in_channels=256, input_size=(8, 8), output_size=(4, 4), kernel_size=(2, 2)), 16384, 4096)"
+190 "(CNNrepository.MaxPool2d(in_channels=256, input_size=(8, 8), output_size=(4, 4), kernel_size=(2, 2)), 16384, None)"
+191 "(CNNrepository.MaxPool2d(in_channels=256, input_size=(8, 8), output_size=(4, 4), kernel_size=(2, 2)), None, 4096)"
+192 "(CNNrepository.MaxPool2d(in_channels=256, input_size=(8, 8), output_size=(4, 4), kernel_size=(2, 2)), None, None)"
+193 "(CNNrepository.MaxPool2d(in_channels=512, input_size=(2, 2), output_size=(1, 1), kernel_size=(2, 2)), 2048, 512)"
+194 "(CNNrepository.MaxPool2d(in_channels=512, input_size=(2, 2), output_size=(1, 1), kernel_size=(2, 2)), 2048, None)"
+195 "(CNNrepository.MaxPool2d(in_channels=512, input_size=(2, 2), output_size=(1, 1), kernel_size=(2, 2)), None, 512)"
+196 "(CNNrepository.MaxPool2d(in_channels=512, input_size=(2, 2), output_size=(1, 1), kernel_size=(2, 2)), None, None)"
+197 "(CNNrepository.MaxPool2d(in_channels=512, input_size=(4, 4), output_size=(2, 2), kernel_size=(2, 2)), 8192, 2048)"
+198 "(CNNrepository.MaxPool2d(in_channels=512, input_size=(4, 4), output_size=(2, 2), kernel_size=(2, 2)), 8192, None)"
+199 "(CNNrepository.MaxPool2d(in_channels=512, input_size=(4, 4), output_size=(2, 2), kernel_size=(2, 2)), None, 2048)"
+200 "(CNNrepository.MaxPool2d(in_channels=512, input_size=(4, 4), output_size=(2, 2), kernel_size=(2, 2)), None, None)"
+201 "(CNNrepository.MaxPool2d(in_channels=512, input_size=(8, 8), output_size=(4, 4), kernel_size=(2, 2)), 32768, 8192)"
+202 "(CNNrepository.MaxPool2d(in_channels=512, input_size=(8, 8), output_size=(4, 4), kernel_size=(2, 2)), 32768, None)"
+203 "(CNNrepository.MaxPool2d(in_channels=512, input_size=(8, 8), output_size=(4, 4), kernel_size=(2, 2)), None, 8192)"
+204 "(CNNrepository.MaxPool2d(in_channels=512, input_size=(8, 8), output_size=(4, 4), kernel_size=(2, 2)), None, None)"
+205 "(CNNrepository.MaxPool2d(in_channels=64, input_size=(16, 16), output_size=(8, 8), kernel_size=(2, 2)), 16384, 4096)"
+206 "(CNNrepository.MaxPool2d(in_channels=64, input_size=(16, 16), output_size=(8, 8), kernel_size=(2, 2)), 16384, None)"
+207 "(CNNrepository.MaxPool2d(in_channels=64, input_size=(16, 16), output_size=(8, 8), kernel_size=(2, 2)), None, 4096)"
+208 "(CNNrepository.MaxPool2d(in_channels=64, input_size=(16, 16), output_size=(8, 8), kernel_size=(2, 2)), None, None)"
+209 "(CNNrepository.MaxPool2d(in_channels=64, input_size=(32, 32), output_size=(16, 16), kernel_size=(2, 2)), 65536, 16384)"
+210 "(CNNrepository.MaxPool2d(in_channels=64, input_size=(32, 32), output_size=(16, 16), kernel_size=(2, 2)), 65536, None)"
+211 "(CNNrepository.MaxPool2d(in_channels=64, input_size=(32, 32), output_size=(16, 16), kernel_size=(2, 2)), None, 16384)"
+212 "(CNNrepository.MaxPool2d(in_channels=64, input_size=(32, 32), output_size=(16, 16), kernel_size=(2, 2)), None, None)"
+213 "(CNNrepository.ReLu(inplace=False), 1024, 1024)"
+214 "(CNNrepository.ReLu(inplace=False), 1024, None)"
+215 "(CNNrepository.ReLu(inplace=False), 16384, 16384)"
+216 "(CNNrepository.ReLu(inplace=False), 16384, None)"
+217 "(CNNrepository.ReLu(inplace=False), 32768, 32768)"
+218 "(CNNrepository.ReLu(inplace=False), 32768, None)"
+219 "(CNNrepository.ReLu(inplace=False), 65536, 65536)"
+220 "(CNNrepository.ReLu(inplace=False), 65536, None)"
+221 "(CNNrepository.ReLu(inplace=False), 8192, 8192)"
+222 "(CNNrepository.ReLu(inplace=False), 8192, None)"
+223 "(CNNrepository.ReLu(inplace=False), None, 1024)"
+224 "(CNNrepository.ReLu(inplace=False), None, 16384)"
+225 "(CNNrepository.ReLu(inplace=False), None, 32768)"
+226 "(CNNrepository.ReLu(inplace=False), None, 65536)"
+227 "(CNNrepository.ReLu(inplace=False), None, 8192)"
+228 "(CNNrepository.ReLu(inplace=False), None, None)"
+229 "(CNNrepository.Sigmoid(), 1024, 1024)"
+230 "(CNNrepository.Sigmoid(), 1024, None)"
+231 "(CNNrepository.Sigmoid(), 16384, 16384)"
+232 "(CNNrepository.Sigmoid(), 16384, None)"
+233 "(CNNrepository.Sigmoid(), 32768, 32768)"
+234 "(CNNrepository.Sigmoid(), 32768, None)"
+235 "(CNNrepository.Sigmoid(), 65536, 65536)"
+236 "(CNNrepository.Sigmoid(), 65536, None)"
+237 "(CNNrepository.Sigmoid(), 8192, 8192)"
+238 "(CNNrepository.Sigmoid(), 8192, None)"
+239 "(CNNrepository.Sigmoid(), None, 1024)"
+240 "(CNNrepository.Sigmoid(), None, 16384)"
+241 "(CNNrepository.Sigmoid(), None, 32768)"
+242 "(CNNrepository.Sigmoid(), None, 65536)"
+243 "(CNNrepository.Sigmoid(), None, 8192)"
+244 "(CNNrepository.Sigmoid(), None, None)"
+245 "(CNNrepository.Tanh(), 1024, 1024)"
+246 "(CNNrepository.Tanh(), 1024, None)"
+247 "(CNNrepository.Tanh(), 16384, 16384)"
+248 "(CNNrepository.Tanh(), 16384, None)"
+249 "(CNNrepository.Tanh(), 32768, 32768)"
+250 "(CNNrepository.Tanh(), 32768, None)"
+251 "(CNNrepository.Tanh(), 65536, 65536)"
+252 "(CNNrepository.Tanh(), 65536, None)"
+253 "(CNNrepository.Tanh(), 8192, 8192)"
+254 "(CNNrepository.Tanh(), 8192, None)"
+255 "(CNNrepository.Tanh(), None, 1024)"
+256 "(CNNrepository.Tanh(), None, 16384)"
+257 "(CNNrepository.Tanh(), None, 32768)"
+258 "(CNNrepository.Tanh(), None, 65536)"
+259 "(CNNrepository.Tanh(), None, 8192)"
+260 "(CNNrepository.Tanh(), None, None)"
+261 "(None, 1024, 1024)"
+262 "(None, 1024, None)"
+263 "(None, 16384, 16384)"
+264 "(None, 16384, 32768)"
+265 "(None, 16384, 4096)"
+266 "(None, 16384, None)"
+267 "(None, 2048, 512)"
+268 "(None, 2048, None)"
+269 "(None, 3072, 65536)"
+270 "(None, 3072, None)"
+271 "(None, 32768, 32768)"
+272 "(None, 32768, 8192)"
+273 "(None, 32768, None)"
+274 "(None, 4096, 8192)"
+275 "(None, 4096, None)"
+276 "(None, 512, 10)"
+277 "(None, 512, None)"
+278 "(None, 65536, 16384)"
+279 "(None, 65536, 65536)"
+280 "(None, 65536, None)"
+281 "(None, 8192, 16384)"
+282 "(None, 8192, 2048)"
+283 "(None, 8192, 8192)"
+284 "(None, 8192, None)"
+285 "(None, None)"
+286 "(None, None, 10)"
+287 "(None, None, 1024)"
+288 "(None, None, 16384)"
+289 "(None, None, 2048)"
+290 "(None, None, 32768)"
+291 "(None, None, 4096)"
+292 "(None, None, 512)"
+293 "(None, None, 65536)"
+294 "(None, None, 8192)"
+295 "(None,)"
+296 "10"
+297 "1024"
+298 "16384"
+299 "2048"
+300 "3072"
+301 "32768"
+302 "4096"
+303 "50"
+304 "512"
+305 "65536"
+306 "8192"
+307 "CNNrepository.Adam(learning_rate=0.1, betas=(0.9, 0.999), eps=1e-08, weight_decay=0.0005, amsgrad=False, maximize=False, capturable=False, differentiable=False, decoupled_weight_decay=False)"
+308 "CNNrepository.BatchNorm2d(in_channels=128, input_size=(16, 16))"
+309 "CNNrepository.BatchNorm2d(in_channels=128, input_size=(8, 8))"
+310 "CNNrepository.BatchNorm2d(in_channels=256, input_size=(16, 16))"
+311 "CNNrepository.BatchNorm2d(in_channels=256, input_size=(8, 8))"
+312 "CNNrepository.BatchNorm2d(in_channels=512, input_size=(4, 4))"
+313 "CNNrepository.BatchNorm2d(in_channels=512, input_size=(8, 8))"
+314 "CNNrepository.BatchNorm2d(in_channels=64, input_size=(16, 16))"
+315 "CNNrepository.BatchNorm2d(in_channels=64, input_size=(32, 32))"
+316 "CNNrepository.Conv2d(in_channels=128, out_channels=128, input_size=(16, 16), output_size=(16, 16), kernel_size=(3, 3), stride=1, padding=1, bias=False)"
+317 "CNNrepository.Conv2d(in_channels=128, out_channels=128, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False)"
+318 "CNNrepository.Conv2d(in_channels=128, out_channels=256, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False)"
+319 "CNNrepository.Conv2d(in_channels=256, out_channels=256, input_size=(16, 16), output_size=(16, 16), kernel_size=(3, 3), stride=1, padding=1, bias=False)"
+320 "CNNrepository.Conv2d(in_channels=256, out_channels=256, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False)"
+321 "CNNrepository.Conv2d(in_channels=256, out_channels=512, input_size=(4, 4), output_size=(4, 4), kernel_size=(3, 3), stride=1, padding=1, bias=False)"
+322 "CNNrepository.Conv2d(in_channels=256, out_channels=512, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False)"
+323 "CNNrepository.Conv2d(in_channels=256, out_channels=64, input_size=(16, 16), output_size=(16, 16), kernel_size=(3, 3), stride=1, padding=1, bias=False)"
+324 "CNNrepository.Conv2d(in_channels=256, out_channels=64, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False)"
+325 "CNNrepository.Conv2d(in_channels=3, out_channels=64, input_size=(32, 32), output_size=(32, 32), kernel_size=(3, 3), stride=1, padding=1, bias=False)"
+326 "CNNrepository.Conv2d(in_channels=512, out_channels=128, input_size=(2, 2), output_size=(2, 2), kernel_size=(3, 3), stride=1, padding=1, bias=False)"
+327 "CNNrepository.Conv2d(in_channels=512, out_channels=128, input_size=(4, 4), output_size=(4, 4), kernel_size=(3, 3), stride=1, padding=1, bias=False)"
+328 "CNNrepository.Conv2d(in_channels=512, out_channels=128, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False)"
+329 "CNNrepository.Conv2d(in_channels=512, out_channels=512, input_size=(4, 4), output_size=(4, 4), kernel_size=(3, 3), stride=1, padding=1, bias=False)"
+330 "CNNrepository.Conv2d(in_channels=512, out_channels=512, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False)"
+331 "CNNrepository.Conv2d(in_channels=64, out_channels=128, input_size=(16, 16), output_size=(16, 16), kernel_size=(3, 3), stride=1, padding=1, bias=False)"
+332 "CNNrepository.Conv2d(in_channels=64, out_channels=128, input_size=(8, 8), output_size=(8, 8), kernel_size=(3, 3), stride=1, padding=1, bias=False)"
+333 "CNNrepository.Conv2d(in_channels=64, out_channels=64, input_size=(16, 16), output_size=(16, 16), kernel_size=(3, 3), stride=1, padding=1, bias=False)"
+334 "CNNrepository.Conv2d(in_channels=64, out_channels=64, input_size=(32, 32), output_size=(32, 32), kernel_size=(3, 3), stride=1, padding=1, bias=False)"
+335 "CNNrepository.CosineAnnealingLR(eta_min=0.0)"
+336 "CNNrepository.CrossEntropyLoss(reduction='mean')"
+337 "CNNrepository.Linear(in_features=512, out_features=10, bias=False)"
+338 "CNNrepository.Linear(in_features=512, out_features=10, bias=True)"
+339 "CNNrepository.MaxPool2d(in_channels=128, input_size=(16, 16), output_size=(8, 8), kernel_size=(2, 2))"
+340 "CNNrepository.MaxPool2d(in_channels=128, input_size=(4, 4), output_size=(2, 2), kernel_size=(2, 2))"
+341 "CNNrepository.MaxPool2d(in_channels=128, input_size=(8, 8), output_size=(4, 4), kernel_size=(2, 2))"
+342 "CNNrepository.MaxPool2d(in_channels=256, input_size=(16, 16), output_size=(8, 8), kernel_size=(2, 2))"
+343 "CNNrepository.MaxPool2d(in_channels=256, input_size=(8, 8), output_size=(4, 4), kernel_size=(2, 2))"
+344 "CNNrepository.MaxPool2d(in_channels=512, input_size=(2, 2), output_size=(1, 1), kernel_size=(2, 2))"
+345 "CNNrepository.MaxPool2d(in_channels=512, input_size=(4, 4), output_size=(2, 2), kernel_size=(2, 2))"
+346 "CNNrepository.MaxPool2d(in_channels=512, input_size=(8, 8), output_size=(4, 4), kernel_size=(2, 2))"
+347 "CNNrepository.MaxPool2d(in_channels=64, input_size=(16, 16), output_size=(8, 8), kernel_size=(2, 2))"
+348 "CNNrepository.MaxPool2d(in_channels=64, input_size=(32, 32), output_size=(16, 16), kernel_size=(2, 2))"
+349 "CNNrepository.NoScheduler()"
+350 "CNNrepository.ReLu(inplace=False)"
+351 "CNNrepository.SGD(learning_rate=0.1, momentum=0.9, dampening=0.0, weight_decay=0.0005, nesterov=False, maximize=False)"
+352 "CNNrepository.Sigmoid()"
+353 "CNNrepository.Tanh()"
+354 "None"
+[rules parallel_chain]
+0 before_cons p4 i=c298 j=c298 o=c296 request=c28 ls=c28 head=c42 tail=c30 x=h34 y=h2
+1 before_cons p4 i=c298 j=c301 o=c296 request=c29 ls=c29 head=c43 tail=c33 x=h35 y=h6
+2 before_cons p4 i=c298 j=c302 o=c296 request=c30 ls=c30 head=c44 tail=c35 x=h36 y=h8
+3 before_cons p4 i=c299 j=c304 o=c296 request=c31 ls=c31 head=c45 tail=c36 x=h38 y=h9
+4 before_cons p4 i=c299 j=c299 o=c296 request=c56 ls=c56 head=c285 tail=c31 x=h37 y=h3
+5 before_cons p4 i=c300 j=c305 o=c296 request=c32 ls=c32 head=c46 tail=c38 x=h39 y=h11
+6 before_cons p4 i=c301 j=c301 o=c296 request=c33 ls=c33 head=c47 tail=c34 x=h40 y=h7
+7 before_cons p4 i=c301 j=c306 o=c296 request=c34 ls=c34 head=c48 tail=c39 x=h41 y=h12
+8 before_cons p4 i=c302 j=c306 o=c296 request=c35 ls=c35 head=c49 tail=c41 x=h42 y=h14
+9 before_singleton p0 i=c304 o=c296 request=c36 ls=c36 ls1=c50 x=h43
+10 before_cons p4 i=c305 j=c298 o=c296 request=c37 ls=c37 head=c51 tail=c29 x=h44 y=h1
+11 before_cons p4 i=c305 j=c305 o=c296 request=c38 ls=c38 head=c52 tail=c37 x=h45 y=h10
+12 before_cons p4 i=c306 j=c298 o=c296 request=c39 ls=c39 head=c53 tail=c28 x=h46 y=h0
+13 before_cons p4 i=c306 j=c299 o=c296 request=c40 ls=c40 head=c54 tail=c56 x=h47 y=h4
+14 before_cons p4 i=c306 j=c306 o=c296 request=c41 ls=c41 head=c55 tail=c40 x=h48 y=h13
+15 edges p0 io=c297 para1=c0 para2=c4 para3=c16 para4=c24 para5=c1 para6=c5 para7=c17 para8=c25 para9=c2 para10=c6 para11=c18 para12=c26 para13=c3 para14=c7 para15=c19 para16=c27
+16 relu p0 l=c350 i=c297 o=c297 para1=c213 para2=c214 para3=c223 para4=c261 para5=c228 para6=c287 para7=c262
+16 sigmoid p0 l=c352 i=c297 o=c297 para1=c229 para2=c230 para3=c239 para4=c261 para5=c244 para6=c287 para7=c262
+16 swap p0 io=c297 n=c304 m=c304 para1=c8 para2=c12 para3=c20 para4=c24 para5=c9 para6=c13 para7=c21 para8=c25 para9=c10 para10=c14 para11=c22 para12=c26 para13=c11 para14=c15 para15=c23 para16=c27
+16 tanh p0 l=c353 i=c297 o=c297 para1=c245 para2=c246 para3=c255 para4=c261 para5=c260 para6=c287 para7=c262
+17 batchnorm2d p0 l=c311 i=c298 o=c298 para1=c69 para2=c70 para3=c71 para4=c263 para5=c72 para6=c288 para7=c266
+17 batchnorm2d p0 l=c314 i=c298 o=c298 para1=c81 para2=c82 para3=c83 para4=c263 para5=c84 para6=c288 para7=c266
+17 conv2d p0 l=c320 i=c298 o=c298 para1=c105 para2=c106 para3=c107 para4=c263 para5=c108 para6=c288 para7=c266
+17 conv2d p0 l=c333 i=c298 o=c298 para1=c157 para2=c158 para3=c159 para4=c263 para5=c160 para6=c288 para7=c266
+17 relu p0 l=c350 i=c298 o=c298 para1=c215 para2=c216 para3=c224 para4=c263 para5=c228 para6=c288 para7=c266
+17 sigmoid p0 l=c352 i=c298 o=c298 para1=c231 para2=c232 para3=c240 para4=c263 para5=c244 para6=c288 para7=c266
+17 tanh p0 l=c353 i=c298 o=c298 para1=c247 para2=c248 para3=c256 para4=c263 para5=c260 para6=c288 para7=c266
+18 conv2d p0 l=c322 i=c298 o=c301 para1=c113 para2=c114 para3=c115 para4=c264 para5=c116 para6=c290 para7=c266
+18 conv2d p0 l=c331 i=c298 o=c301 para1=c149 para2=c150 para3=c151 para4=c264 para5=c152 para6=c290 para7=c266
+19 conv2d p0 l=c324 i=c298 o=c302 para1=c121 para2=c122 para3=c123 para4=c265 para5=c124 para6=c291 para7=c266
+19 maxpool2d p0 l=c343 i=c298 o=c302 para1=c189 para2=c190 para3=c191 para4=c265 para5=c192 para6=c291 para7=c266
+19 maxpool2d p0 l=c347 i=c298 o=c302 para1=c205 para2=c206 para3=c207 para4=c265 para5=c208 para6=c291 para7=c266
+20 conv2d p0 l=c326 i=c299 o=c304 para1=c129 para2=c130 para3=c131 para4=c267 para5=c132 para6=c292 para7=c268
+20 maxpool2d p0 l=c340 i=c299 o=c304 para1=c177 para2=c178 para3=c179 para4=c267 para5=c180 para6=c292 para7=c268
+20 maxpool2d p0 l=c344 i=c299 o=c304 para1=c193 para2=c194 para3=c195 para4=c267 para5=c196 para6=c292 para7=c268
+21 conv2d p0 l=c325 i=c300 o=c305 para1=c125 para2=c126 para3=c127 para4=c269 para5=c128 para6=c293 para7=c270
+22 batchnorm2d p0 l=c308 i=c301 o=c301 para1=c57 para2=c58 para3=c59 para4=c271 para5=c60 para6=c290 para7=c273
+22 batchnorm2d p0 l=c313 i=c301 o=c301 para1=c77 para2=c78 para3=c79 para4=c271 para5=c80 para6=c290 para7=c273
+22 conv2d p0 l=c316 i=c301 o=c301 para1=c89 para2=c90 para3=c91 para4=c271 para5=c92 para6=c290 para7=c273
+22 conv2d p0 l=c330 i=c301 o=c301 para1=c145 para2=c146 para3=c147 para4=c271 para5=c148 para6=c290 para7=c273
+22 relu p0 l=c350 i=c301 o=c301 para1=c217 para2=c218 para3=c225 para4=c271 para5=c228 para6=c290 para7=c273
+22 sigmoid p0 l=c352 i=c301 o=c301 para1=c233 para2=c234 para3=c241 para4=c271 para5=c244 para6=c290 para7=c273
+22 tanh p0 l=c353 i=c301 o=c301 para1=c249 para2=c250 para3=c257 para4=c271 para5=c260 para6=c290 para7=c273
+23 conv2d p0 l=c328 i=c301 o=c306 para1=c137 para2=c138 para3=c139 para4=c272 para5=c140 para6=c294 para7=c273
+23 maxpool2d p0 l=c339 i=c301 o=c306 para1=c173 para2=c174 para3=c175 para4=c272 para5=c176 para6=c294 para7=c273
+23 maxpool2d p0 l=c346 i=c301 o=c306 para1=c201 para2=c202 para3=c203 para4=c272 para5=c204 para6=c294 para7=c273
+24 conv2d p0 l=c321 i=c302 o=c306 para1=c109 para2=c110 para3=c111 para4=c274 para5=c112 para6=c294 para7=c275
+24 conv2d p0 l=c332 i=c302 o=c306 para1=c153 para2=c154 para3=c155 para4=c274 para5=c156 para6=c294 para7=c275
+25 linear_layer p0 l=c337 i=c304 o=c296 para1=c165 para2=c166 para3=c167 para4=c276 para5=c168 para6=c286 para7=c277
+25 linear_layer p0 l=c338 i=c304 o=c296 para1=c169 para2=c170 para3=c171 para4=c276 para5=c172 para6=c286 para7=c277
+26 conv2d p0 l=c323 i=c305 o=c298 para1=c117 para2=c118 para3=c119 para4=c278 para5=c120 para6=c288 para7=c280
+26 maxpool2d p0 l=c342 i=c305 o=c298 para1=c185 para2=c186 para3=c187 para4=c278 para5=c188 para6=c288 para7=c280
+26 maxpool2d p0 l=c348 i=c305 o=c298 para1=c209 para2=c210 para3=c211 para4=c278 para5=c212 para6=c288 para7=c280
+27 batchnorm2d p0 l=c310 i=c305 o=c305 para1=c65 para2=c66 para3=c67 para4=c279 para5=c68 para6=c293 para7=c280
+27 batchnorm2d p0 l=c315 i=c305 o=c305 para1=c85 para2=c86 para3=c87 para4=c279 para5=c88 para6=c293 para7=c280
+27 conv2d p0 l=c319 i=c305 o=c305 para1=c101 para2=c102 para3=c103 para4=c279 para5=c104 para6=c293 para7=c280
+27 conv2d p0 l=c334 i=c305 o=c305 para1=c161 para2=c162 para3=c163 para4=c279 para5=c164 para6=c293 para7=c280
+27 relu p0 l=c350 i=c305 o=c305 para1=c219 para2=c220 para3=c226 para4=c279 para5=c228 para6=c293 para7=c280
+27 sigmoid p0 l=c352 i=c305 o=c305 para1=c235 para2=c236 para3=c242 para4=c279 para5=c244 para6=c293 para7=c280
+27 tanh p0 l=c353 i=c305 o=c305 para1=c251 para2=c252 para3=c258 para4=c279 para5=c260 para6=c293 para7=c280
+28 conv2d p0 l=c318 i=c306 o=c298 para1=c97 para2=c98 para3=c99 para4=c281 para5=c100 para6=c288 para7=c284
+29 conv2d p0 l=c327 i=c306 o=c299 para1=c133 para2=c134 para3=c135 para4=c282 para5=c136 para6=c289 para7=c284
+29 maxpool2d p0 l=c341 i=c306 o=c299 para1=c181 para2=c182 para3=c183 para4=c282 para5=c184 para6=c289 para7=c284
+29 maxpool2d p0 l=c345 i=c306 o=c299 para1=c197 para2=c198 para3=c199 para4=c282 para5=c200 para6=c289 para7=c284
+30 batchnorm2d p0 l=c309 i=c306 o=c306 para1=c61 para2=c62 para3=c63 para4=c283 para5=c64 para6=c294 para7=c284
+30 batchnorm2d p0 l=c312 i=c306 o=c306 para1=c73 para2=c74 para3=c75 para4=c283 para5=c76 para6=c294 para7=c284
+30 conv2d p0 l=c317 i=c306 o=c306 para1=c93 para2=c94 para3=c95 para4=c283 para5=c96 para6=c294 para7=c284
+30 conv2d p0 l=c329 i=c306 o=c306 para1=c141 para2=c142 para3=c143 para4=c283 para5=c144 para6=c294 para7=c284
+30 relu p0 l=c350 i=c306 o=c306 para1=c221 para2=c222 para3=c227 para4=c283 para5=c228 para6=c294 para7=c284
+30 sigmoid p0 l=c352 i=c306 o=c306 para1=c237 para2=c238 para3=c243 para4=c283 para5=c244 para6=c294 para7=c284
+30 tanh p0 l=c353 i=c306 o=c306 para1=c253 para2=c254 para3=c259 para4=c283 para5=c260 para6=c294 para7=c284
+31 beside_singleton p0 i=c297 o=c297 ls=c295 para=c354 -=h15
+32 beside_singleton p0 i=c297 o=c297 ls=c295 para=c354 -=h16
+33 beside_singleton p0 i=c297 o=c297 ls=c295 para=c354 -=h16
+34 beside_singleton p0 i=c298 o=c298 ls=c42 para=c263 -=h17
+35 beside_singleton p0 i=c298 o=c301 ls=c43 para=c264 -=h18
+36 beside_singleton p0 i=c298 o=c302 ls=c44 para=c265 -=h19
+37 beside_cons p0 i=c299 i1=c297 i2=c297 o=c299 o1=c297 o2=c297 ls=c285 head=c354 tail=c295 -=h15 -=h33
+37 beside_cons p0 i=c299 i1=c297 i2=c297 o=c299 o1=c297 o2=c297 ls=c285 head=c354 tail=c295 -=h16 -=h31
+37 beside_cons p0 i=c299 i1=c297 i2=c297 o=c299 o1=c297 o2=c297 ls=c285 head=c354 tail=c295 -=h16 -=h32
+38 beside_singleton p0 i=c299 o=c304 ls=c45 para=c267 -=h20
+39 beside_singleton p0 i=c300 o=c305 ls=c46 para=c269 -=h21
+40 beside_singleton p0 i=c301 o=c301 ls=c47 para=c271 -=h22
+41 beside_singleton p0 i=c301 o=c306 ls=c48 para=c272 -=h23
+42 beside_singleton p0 i=c302 o=c306 ls=c49 para=c274 -=h24
+43 beside_singleton p0 i=c304 o=c296 ls=c50 para=c276 -=h25
+44 beside_singleton p0 i=c305 o=c298 ls=c51 para=c278 -=h26
+45 beside_singleton p0 i=c305 o=c305 ls=c52 para=c279 -=h27
+46 beside_singleton p0 i=c306 o=c298 ls=c53 para=c281 -=h28
+47 beside_singleton p0 i=c306 o=c299 ls=c54 para=c282 -=h29
+48 beside_singleton p0 i=c306 o=c306 ls=c55 para=c283 -=h30
+49 learner p0 i=c300 o=c296 request=c32 ls=c32 epochs=c303 loss=c336 opti=c354 sched=c354 loss_f=h50 scheduler=h52 model=h5
+50 cross_entropy_loss p0 loss=c336
+51 adam_optimizer p0 optimizer=c307
+51 sgd_optimizer p0 optimizer=c351
+52 cosine_annealing_lr p0 opti=c354 sched=c335 optimizer=h51
+52 no_scheduler p0 opti=c354 sched=c349 optimizer=h51
+
+[cell small_free]
+nonterminals 82
+rules 308
+terminals adam_optimizer batchnorm2d before_cons before_singleton beside_cons beside_singleton conv2d copy cosine_annealing_lr cross_entropy_loss edges learner linear_layer maxpool2d no_scheduler product relu sgd_optimizer sigmoid sum swap tanh
+[nonterminals small_free]
+0 "DAG(input([1]) & output([1]) & structure([(None,)]))"
+1 "DAG(input([2]) & output([1]) & structure([(None,)]))"
+2 "DAG(input([3]) & output([1]) & structure([(None,)]))"
+3 "DAG(input([4]) & output([1]) & structure([(None, None)]))"
+4 "DAG(input([4]) & output([1]) & structure([(None,)]))"
+5 "DAG(input([5]) & output([1]) & structure([(None,)]))"
+6 "DAG(input([6]) & output([1]) & structure([(None,)]))"
+7 "DAG(input([8]) & output([1]) & structure([(None,)]))"
+8 "DAG_component(input([1]) & output([1]) & structure([None])) & ID"
+9 "DAG_component(input([1]) & output([1]) & structure([None])) & non_ID"
+10 "DAG_component(input([1]) & output([2]) & structure([None])) & non_ID"
+11 "DAG_component(input([1]) & output([3]) & structure([None])) & non_ID"
+12 "DAG_component(input([1]) & output([4]) & structure([None])) & non_ID"
+13 "DAG_component(input([1]) & output([5]) & structure([None])) & non_ID"
+14 "DAG_component(input([1]) & output([6]) & structure([None])) & non_ID"
+15 "DAG_component(input([2]) & output([1]) & structure([None])) & non_ID"
+16 "DAG_component(input([2]) & output([2]) & structure([None])) & ID"
+17 "DAG_component(input([2]) & output([2]) & structure([None])) & non_ID"
+18 "DAG_component(input([2]) & output([4]) & structure([None])) & non_ID"
+19 "DAG_component(input([3]) & output([1]) & structure([None])) & non_ID"
+20 "DAG_component(input([3]) & output([3]) & structure([None])) & ID"
+21 "DAG_component(input([3]) & output([3]) & structure([None])) & non_ID"
+22 "DAG_component(input([4]) & output([1]) & structure([None])) & non_ID"
+23 "DAG_component(input([4]) & output([2]) & structure([None])) & non_ID"
+24 "DAG_component(input([4]) & output([4]) & structure([None])) & non_ID"
+25 "DAG_component(input([5]) & output([1]) & structure([None])) & non_ID"
+26 "DAG_component(input([6]) & output([1]) & structure([None])) & non_ID"
+27 "DAG_component(input([8]) & output([1]) & structure([None])) & non_ID"
+28 "DAG_parallel(input([1]) & output([1]) & structure([None])) & ID"
+29 "DAG_parallel(input([1]) & output([1]) & structure([None])) & non_ID"
+30 "DAG_parallel(input([1]) & output([1]) & structure([None])) & non_ID & last(non_ID)"
+31 "DAG_parallel(input([1]) & output([2]) & structure([None])) & non_ID"
+32 "DAG_parallel(input([1]) & output([2]) & structure([None])) & non_ID & last(non_ID)"
+33 "DAG_parallel(input([1]) & output([3]) & structure([None])) & non_ID"
+34 "DAG_parallel(input([1]) & output([3]) & structure([None])) & non_ID & last(non_ID)"
+35 "DAG_parallel(input([1]) & output([4]) & structure([None])) & non_ID"
+36 "DAG_parallel(input([1]) & output([4]) & structure([None])) & non_ID & last(non_ID)"
+37 "DAG_parallel(input([1]) & output([5]) & structure([None])) & non_ID"
+38 "DAG_parallel(input([1]) & output([5]) & structure([None])) & non_ID & last(non_ID)"
+39 "DAG_parallel(input([1]) & output([6]) & structure([None])) & non_ID"
+40 "DAG_parallel(input([1]) & output([6]) & structure([None])) & non_ID & last(non_ID)"
+41 "DAG_parallel(input([2]) & output([1]) & structure([None])) & non_ID"
+42 "DAG_parallel(input([2]) & output([1]) & structure([None])) & non_ID & last(non_ID)"
+43 "DAG_parallel(input([2]) & output([2]) & structure([None])) & ID"
+44 "DAG_parallel(input([2]) & output([2]) & structure([None])) & non_ID"
+45 "DAG_parallel(input([2]) & output([2]) & structure([None])) & non_ID & last(non_ID)"
+46 "DAG_parallel(input([2]) & output([3]) & structure([None])) & non_ID"
+47 "DAG_parallel(input([2]) & output([3]) & structure([None])) & non_ID & last(non_ID)"
+48 "DAG_parallel(input([2]) & output([4]) & structure([None])) & non_ID"
+49 "DAG_parallel(input([2]) & output([4]) & structure([None])) & non_ID & last(non_ID)"
+50 "DAG_parallel(input([2]) & output([5]) & structure([None])) & non_ID"
+51 "DAG_parallel(input([2]) & output([5]) & structure([None])) & non_ID & last(non_ID)"
+52 "DAG_parallel(input([2]) & output([6]) & structure([None])) & non_ID"
+53 "DAG_parallel(input([2]) & output([6]) & structure([None])) & non_ID & last(non_ID)"
+54 "DAG_parallel(input([3]) & output([1]) & structure([None])) & non_ID"
+55 "DAG_parallel(input([3]) & output([1]) & structure([None])) & non_ID & last(non_ID)"
+56 "DAG_parallel(input([3]) & output([2]) & structure([None])) & non_ID"
+57 "DAG_parallel(input([3]) & output([2]) & structure([None])) & non_ID & last(non_ID)"
+58 "DAG_parallel(input([3]) & output([3]) & structure([None])) & ID"
+59 "DAG_parallel(input([3]) & output([3]) & structure([None])) & non_ID"
+60 "DAG_parallel(input([3]) & output([3]) & structure([None])) & non_ID & last(non_ID)"
+61 "DAG_parallel(input([3]) & output([4]) & structure([None])) & non_ID"
+62 "DAG_parallel(input([3]) & output([4]) & structure([None])) & non_ID & last(non_ID)"
+63 "DAG_parallel(input([3]) & output([5]) & structure([None])) & non_ID"
+64 "DAG_parallel(input([3]) & output([5]) & structure([None])) & non_ID & last(non_ID)"
+65 "DAG_parallel(input([3]) & output([6]) & structure([None])) & non_ID"
+66 "DAG_parallel(input([3]) & output([6]) & structure([None])) & non_ID & last(non_ID)"
+67 "DAG_parallel(input([4]) & output([1]) & structure([None])) & non_ID"
+68 "DAG_parallel(input([4]) & output([2]) & structure([None])) & non_ID"
+69 "DAG_parallel(input([4]) & output([3]) & structure([None])) & non_ID"
+70 "DAG_parallel(input([4]) & output([4]) & structure([None])) & non_ID"
+71 "DAG_parallel(input([4]) & output([5]) & structure([None])) & non_ID"
+72 "DAG_parallel(input([4]) & output([6]) & structure([None])) & non_ID"
+73 "DAG_parallel(input([4]) & output([8]) & structure([None])) & non_ID"
+74 "DAG_parallel(input([5]) & output([1]) & structure([None])) & non_ID"
+75 "DAG_parallel(input([6]) & output([1]) & structure([None])) & non_ID"
+76 "DAG_parallel(input([8]) & output([1]) & structure([None])) & non_ID"
+77 "Learner(DAG(input([4]) & output([1]) & structure([(None, None)])) & Loss(type([CNNrepository.CrossEntropyLoss(reduction='mean')])) & Optimizer(type([None])) & epochs([1]))"
+78 "Loss(type([CNNrepository.CrossEntropyLoss(reduction='mean')]))"
+79 "Optimizer(type([None]))"
+80 "Scheduler(type([CNNrepository.CosineAnnealingLR(eta_min=0.0)]) & Optimizer(type([None])))"
+81 "Scheduler(type([CNNrepository.NoScheduler()]) & Optimizer(type([None])))"
+[constants small_free]
+0 "(('swap', 0, 1), 1, 1)"
+1 "(('swap', 0, 1), 1, None)"
+2 "(('swap', 0, 1), None, 1)"
+3 "(('swap', 0, 1), None, None)"
+4 "(('swap', 0, 2), 2, 2)"
+5 "(('swap', 0, 2), 2, None)"
+6 "(('swap', 0, 2), None, 2)"
+7 "(('swap', 0, 2), None, None)"
+8 "(('swap', 0, 3), 3, 3)"
+9 "(('swap', 0, 3), 3, None)"
+10 "(('swap', 0, 3), None, 3)"
+11 "(('swap', 0, 3), None, None)"
+12 "(('swap', 0, None), 1, 1)"
+13 "(('swap', 0, None), 1, None)"
+14 "(('swap', 0, None), 2, 2)"
+15 "(('swap', 0, None), 2, None)"
+16 "(('swap', 0, None), 3, 3)"
+17 "(('swap', 0, None), 3, None)"
+18 "(('swap', 0, None), None, 1)"
+19 "(('swap', 0, None), None, 2)"
+20 "(('swap', 0, None), None, 3)"
+21 "(('swap', 0, None), None, None)"
+22 "(('swap', 1, 1), 2, 2)"
+23 "(('swap', 1, 1), 2, None)"
+24 "(('swap', 1, 1), None, 2)"
+25 "(('swap', 1, 1), None, None)"
+26 "(('swap', 1, 2), 3, 3)"
+27 "(('swap', 1, 2), 3, None)"
+28 "(('swap', 1, 2), None, 3)"
+29 "(('swap', 1, 2), None, None)"
+30 "(('swap', 1, 3), 4, 4)"
+31 "(('swap', 1, 3), 4, None)"
+32 "(('swap', 1, 3), None, 4)"
+33 "(('swap', 1, 3), None, None)"
+34 "(('swap', 1, None), 2, 2)"
+35 "(('swap', 1, None), 2, None)"
+36 "(('swap', 1, None), 3, 3)"
+37 "(('swap', 1, None), 3, None)"
+38 "(('swap', 1, None), 4, 4)"
+39 "(('swap', 1, None), 4, None)"
+40 "(('swap', 1, None), None, 2)"
+41 "(('swap', 1, None), None, 3)"
+42 "(('swap', 1, None), None, 4)"
+43 "(('swap', 1, None), None, None)"
+44 "(('swap', 2, 1), 3, 3)"
+45 "(('swap', 2, 1), 3, None)"
+46 "(('swap', 2, 1), None, 3)"
+47 "(('swap', 2, 1), None, None)"
+48 "(('swap', 2, 2), 4, 4)"
+49 "(('swap', 2, 2), 4, None)"
+50 "(('swap', 2, 2), None, 4)"
+51 "(('swap', 2, 2), None, None)"
+52 "(('swap', 2, None), 3, 3)"
+53 "(('swap', 2, None), 3, None)"
+54 "(('swap', 2, None), 4, 4)"
+55 "(('swap', 2, None), 4, None)"
+56 "(('swap', 2, None), None, 3)"
+57 "(('swap', 2, None), None, 4)"
+58 "(('swap', 2, None), None, None)"
+59 "(('swap', 3, 1), 4, 4)"
+60 "(('swap', 3, 1), 4, None)"
+61 "(('swap', 3, 1), None, 4)"
+62 "(('swap', 3, 1), None, None)"
+63 "(('swap', 3, None), 4, 4)"
+64 "(('swap', 3, None), 4, None)"
+65 "(('swap', 3, None), None, 4)"
+66 "(('swap', 3, None), None, None)"
+67 "(('swap', None, 1), 1, 1)"
+68 "(('swap', None, 1), 1, None)"
+69 "(('swap', None, 1), 2, 2)"
+70 "(('swap', None, 1), 2, None)"
+71 "(('swap', None, 1), 3, 3)"
+72 "(('swap', None, 1), 3, None)"
+73 "(('swap', None, 1), 4, 4)"
+74 "(('swap', None, 1), 4, None)"
+75 "(('swap', None, 1), None, 1)"
+76 "(('swap', None, 1), None, 2)"
+77 "(('swap', None, 1), None, 3)"
+78 "(('swap', None, 1), None, 4)"
+79 "(('swap', None, 1), None, None)"
+80 "(('swap', None, 2), 2, 2)"
+81 "(('swap', None, 2), 2, None)"
+82 "(('swap', None, 2), 3, 3)"
+83 "(('swap', None, 2), 3, None)"
+84 "(('swap', None, 2), 4, 4)"
+85 "(('swap', None, 2), 4, None)"
+86 "(('swap', None, 2), None, 2)"
+87 "(('swap', None, 2), None, 3)"
+88 "(('swap', None, 2), None, 4)"
+89 "(('swap', None, 2), None, None)"
+90 "(('swap', None, 3), 3, 3)"
+91 "(('swap', None, 3), 3, None)"
+92 "(('swap', None, 3), 4, 4)"
+93 "(('swap', None, 3), 4, None)"
+94 "(('swap', None, 3), None, 3)"
+95 "(('swap', None, 3), None, 4)"
+96 "(('swap', None, 3), None, None)"
+97 "(('swap', None, None), 1, 1)"
+98 "(('swap', None, None), 1, None)"
+99 "(('swap', None, None), 2, 2)"
+100 "(('swap', None, None), 2, None)"
+101 "(('swap', None, None), 3, 3)"
+102 "(('swap', None, None), 3, None)"
+103 "(('swap', None, None), 4, 4)"
+104 "(('swap', None, None), 4, None)"
+105 "(('swap', None, None), None, 1)"
+106 "(('swap', None, None), None, 2)"
+107 "(('swap', None, None), None, 3)"
+108 "(('swap', None, None), None, 4)"
+109 "(('swap', None, None), None, None)"
+110 "(CNNrepository.BatchNorm2d(in_channels=1, input_size=(1, 1)), 1, 1)"
+111 "(CNNrepository.BatchNorm2d(in_channels=1, input_size=(1, 1)), 1, None)"
+112 "(CNNrepository.BatchNorm2d(in_channels=1, input_size=(1, 1)), None, 1)"
+113 "(CNNrepository.BatchNorm2d(in_channels=1, input_size=(1, 1)), None, None)"
+114 "(CNNrepository.BatchNorm2d(in_channels=1, input_size=(2, 2)), 4, 4)"
+115 "(CNNrepository.BatchNorm2d(in_channels=1, input_size=(2, 2)), 4, None)"
+116 "(CNNrepository.BatchNorm2d(in_channels=1, input_size=(2, 2)), None, 4)"
+117 "(CNNrepository.BatchNorm2d(in_channels=1, input_size=(2, 2)), None, None)"
+118 "(CNNrepository.BatchNorm2d(in_channels=2, input_size=(1, 1)), 2, 2)"
+119 "(CNNrepository.BatchNorm2d(in_channels=2, input_size=(1, 1)), 2, None)"
+120 "(CNNrepository.BatchNorm2d(in_channels=2, input_size=(1, 1)), None, 2)"
+121 "(CNNrepository.BatchNorm2d(in_channels=2, input_size=(1, 1)), None, None)"
+122 "(CNNrepository.Conv2d(in_channels=1, out_channels=1, input_size=(2, 2), output_size=(1, 1), kernel_size=(2, 2), stride=1, padding=0, bias=False), 4, 1)"
+123 "(CNNrepository.Conv2d(in_channels=1, out_channels=1, input_size=(2, 2), output_size=(1, 1), kernel_size=(2, 2), stride=1, padding=0, bias=False), 4, None)"
+124 "(CNNrepository.Conv2d(in_channels=1, out_channels=1, input_size=(2, 2), output_size=(1, 1), kernel_size=(2, 2), stride=1, padding=0, bias=False), None, 1)"
+125 "(CNNrepository.Conv2d(in_channels=1, out_channels=1, input_size=(2, 2), output_size=(1, 1), kernel_size=(2, 2), stride=1, padding=0, bias=False), None, None)"
+126 "(CNNrepository.Conv2d(in_channels=1, out_channels=2, input_size=(2, 2), output_size=(1, 1), kernel_size=(2, 2), stride=1, padding=0, bias=False), 4, 2)"
+127 "(CNNrepository.Conv2d(in_channels=1, out_channels=2, input_size=(2, 2), output_size=(1, 1), kernel_size=(2, 2), stride=1, padding=0, bias=False), 4, None)"
+128 "(CNNrepository.Conv2d(in_channels=1, out_channels=2, input_size=(2, 2), output_size=(1, 1), kernel_size=(2, 2), stride=1, padding=0, bias=False), None, 2)"
+129 "(CNNrepository.Conv2d(in_channels=1, out_channels=2, input_size=(2, 2), output_size=(1, 1), kernel_size=(2, 2), stride=1, padding=0, bias=False), None, None)"
+130 "(CNNrepository.Copy(out_dimension=2), 1, 2)"
+131 "(CNNrepository.Copy(out_dimension=2), 1, None)"
+132 "(CNNrepository.Copy(out_dimension=2), None, 2)"
+133 "(CNNrepository.Copy(out_dimension=2), None, None)"
+134 "(CNNrepository.Copy(out_dimension=3), 1, 3)"
+135 "(CNNrepository.Copy(out_dimension=3), 1, None)"
+136 "(CNNrepository.Copy(out_dimension=3), None, 3)"
+137 "(CNNrepository.Copy(out_dimension=3), None, None)"
+138 "(CNNrepository.Copy(out_dimension=4), 1, 4)"
+139 "(CNNrepository.Copy(out_dimension=4), 1, None)"
+140 "(CNNrepository.Copy(out_dimension=4), None, 4)"
+141 "(CNNrepository.Copy(out_dimension=4), None, None)"
+142 "(CNNrepository.Copy(out_dimension=5), 1, 5)"
+143 "(CNNrepository.Copy(out_dimension=5), 1, None)"
+144 "(CNNrepository.Copy(out_dimension=5), None, 5)"
+145 "(CNNrepository.Copy(out_dimension=5), None, None)"
+146 "(CNNrepository.Copy(out_dimension=6), 1, 6)"
+147 "(CNNrepository.Copy(out_dimension=6), 1, None)"
+148 "(CNNrepository.Copy(out_dimension=6), None, 6)"
+149 "(CNNrepository.Copy(out_dimension=6), None, None)"
+150 "(CNNrepository.Linear(in_features=1, out_features=1, bias=False), 1, 1)"
+151 "(CNNrepository.Linear(in_features=1, out_features=1, bias=False), 1, None)"
+152 "(CNNrepository.Linear(in_features=1, out_features=1, bias=False), None, 1)"
+153 "(CNNrepository.Linear(in_features=1, out_features=1, bias=False), None, None)"
+154 "(CNNrepository.Linear(in_features=1, out_features=1, bias=True), 1, 1)"
+155 "(CNNrepository.Linear(in_features=1, out_features=1, bias=True), 1, None)"
+156 "(CNNrepository.Linear(in_features=1, out_features=1, bias=True), None, 1)"
+157 "(CNNrepository.Linear(in_features=1, out_features=1, bias=True), None, None)"
+158 "(CNNrepository.Linear(in_features=1, out_features=2, bias=False), 1, 2)"
+159 "(CNNrepository.Linear(in_features=1, out_features=2, bias=False), 1, None)"
+160 "(CNNrepository.Linear(in_features=1, out_features=2, bias=False), None, 2)"
+161 "(CNNrepository.Linear(in_features=1, out_features=2, bias=False), None, None)"
+162 "(CNNrepository.Linear(in_features=1, out_features=2, bias=True), 1, 2)"
+163 "(CNNrepository.Linear(in_features=1, out_features=2, bias=True), 1, None)"
+164 "(CNNrepository.Linear(in_features=1, out_features=2, bias=True), None, 2)"
+165 "(CNNrepository.Linear(in_features=1, out_features=2, bias=True), None, None)"
+166 "(CNNrepository.Linear(in_features=1, out_features=4, bias=False), 1, 4)"
+167 "(CNNrepository.Linear(in_features=1, out_features=4, bias=False), 1, None)"
+168 "(CNNrepository.Linear(in_features=1, out_features=4, bias=False), None, 4)"
+169 "(CNNrepository.Linear(in_features=1, out_features=4, bias=False), None, None)"
+170 "(CNNrepository.Linear(in_features=1, out_features=4, bias=True), 1, 4)"
+171 "(CNNrepository.Linear(in_features=1, out_features=4, bias=True), 1, None)"
+172 "(CNNrepository.Linear(in_features=1, out_features=4, bias=True), None, 4)"
+173 "(CNNrepository.Linear(in_features=1, out_features=4, bias=True), None, None)"
+174 "(CNNrepository.Linear(in_features=2, out_features=1, bias=False), 2, 1)"
+175 "(CNNrepository.Linear(in_features=2, out_features=1, bias=False), 2, None)"
+176 "(CNNrepository.Linear(in_features=2, out_features=1, bias=False), None, 1)"
+177 "(CNNrepository.Linear(in_features=2, out_features=1, bias=False), None, None)"
+178 "(CNNrepository.Linear(in_features=2, out_features=1, bias=True), 2, 1)"
+179 "(CNNrepository.Linear(in_features=2, out_features=1, bias=True), 2, None)"
+180 "(CNNrepository.Linear(in_features=2, out_features=1, bias=True), None, 1)"
+181 "(CNNrepository.Linear(in_features=2, out_features=1, bias=True), None, None)"
+182 "(CNNrepository.Linear(in_features=2, out_features=2, bias=False), 2, 2)"
+183 "(CNNrepository.Linear(in_features=2, out_features=2, bias=False), 2, None)"
+184 "(CNNrepository.Linear(in_features=2, out_features=2, bias=False), None, 2)"
+185 "(CNNrepository.Linear(in_features=2, out_features=2, bias=False), None, None)"
+186 "(CNNrepository.Linear(in_features=2, out_features=2, bias=True), 2, 2)"
+187 "(CNNrepository.Linear(in_features=2, out_features=2, bias=True), 2, None)"
+188 "(CNNrepository.Linear(in_features=2, out_features=2, bias=True), None, 2)"
+189 "(CNNrepository.Linear(in_features=2, out_features=2, bias=True), None, None)"
+190 "(CNNrepository.Linear(in_features=2, out_features=4, bias=False), 2, 4)"
+191 "(CNNrepository.Linear(in_features=2, out_features=4, bias=False), 2, None)"
+192 "(CNNrepository.Linear(in_features=2, out_features=4, bias=False), None, 4)"
+193 "(CNNrepository.Linear(in_features=2, out_features=4, bias=False), None, None)"
+194 "(CNNrepository.Linear(in_features=2, out_features=4, bias=True), 2, 4)"
+195 "(CNNrepository.Linear(in_features=2, out_features=4, bias=True), 2, None)"
+196 "(CNNrepository.Linear(in_features=2, out_features=4, bias=True), None, 4)"
+197 "(CNNrepository.Linear(in_features=2, out_features=4, bias=True), None, None)"
+198 "(CNNrepository.Linear(in_features=4, out_features=1, bias=False), 4, 1)"
+199 "(CNNrepository.Linear(in_features=4, out_features=1, bias=False), 4, None)"
+200 "(CNNrepository.Linear(in_features=4, out_features=1, bias=False), None, 1)"
+201 "(CNNrepository.Linear(in_features=4, out_features=1, bias=False), None, None)"
+202 "(CNNrepository.Linear(in_features=4, out_features=1, bias=True), 4, 1)"
+203 "(CNNrepository.Linear(in_features=4, out_features=1, bias=True), 4, None)"
+204 "(CNNrepository.Linear(in_features=4, out_features=1, bias=True), None, 1)"
+205 "(CNNrepository.Linear(in_features=4, out_features=1, bias=True), None, None)"
+206 "(CNNrepository.Linear(in_features=4, out_features=2, bias=False), 4, 2)"
+207 "(CNNrepository.Linear(in_features=4, out_features=2, bias=False), 4, None)"
+208 "(CNNrepository.Linear(in_features=4, out_features=2, bias=False), None, 2)"
+209 "(CNNrepository.Linear(in_features=4, out_features=2, bias=False), None, None)"
+210 "(CNNrepository.Linear(in_features=4, out_features=2, bias=True), 4, 2)"
+211 "(CNNrepository.Linear(in_features=4, out_features=2, bias=True), 4, None)"
+212 "(CNNrepository.Linear(in_features=4, out_features=2, bias=True), None, 2)"
+213 "(CNNrepository.Linear(in_features=4, out_features=2, bias=True), None, None)"
+214 "(CNNrepository.Linear(in_features=4, out_features=4, bias=False), 4, 4)"
+215 "(CNNrepository.Linear(in_features=4, out_features=4, bias=False), 4, None)"
+216 "(CNNrepository.Linear(in_features=4, out_features=4, bias=False), None, 4)"
+217 "(CNNrepository.Linear(in_features=4, out_features=4, bias=False), None, None)"
+218 "(CNNrepository.Linear(in_features=4, out_features=4, bias=True), 4, 4)"
+219 "(CNNrepository.Linear(in_features=4, out_features=4, bias=True), 4, None)"
+220 "(CNNrepository.Linear(in_features=4, out_features=4, bias=True), None, 4)"
+221 "(CNNrepository.Linear(in_features=4, out_features=4, bias=True), None, None)"
+222 "(CNNrepository.MaxPool2d(in_channels=1, input_size=(2, 2), output_size=(1, 1), kernel_size=(2, 2)), 4, 1)"
+223 "(CNNrepository.MaxPool2d(in_channels=1, input_size=(2, 2), output_size=(1, 1), kernel_size=(2, 2)), 4, None)"
+224 "(CNNrepository.MaxPool2d(in_channels=1, input_size=(2, 2), output_size=(1, 1), kernel_size=(2, 2)), None, 1)"
+225 "(CNNrepository.MaxPool2d(in_channels=1, input_size=(2, 2), output_size=(1, 1), kernel_size=(2, 2)), None, None)"
+226 "(CNNrepository.Product(with_constant=1), 1, 1)"
+227 "(CNNrepository.Product(with_constant=1), 1, None)"
+228 "(CNNrepository.Product(with_constant=1), 2, 1)"
+229 "(CNNrepository.Product(with_constant=1), 2, None)"
+230 "(CNNrepository.Product(with_constant=1), 3, 1)"
+231 "(CNNrepository.Product(with_constant=1), 3, None)"
+232 "(CNNrepository.Product(with_constant=1), 4, 1)"
+233 "(CNNrepository.Product(with_constant=1), 4, None)"
+234 "(CNNrepository.Product(with_constant=1), 5, 1)"
+235 "(CNNrepository.Product(with_constant=1), 5, None)"
+236 "(CNNrepository.Product(with_constant=1), 6, 1)"
+237 "(CNNrepository.Product(with_constant=1), 6, None)"
+238 "(CNNrepository.Product(with_constant=1), 8, 1)"
+239 "(CNNrepository.Product(with_constant=1), 8, None)"
+240 "(CNNrepository.Product(with_constant=1), None, 1)"
+241 "(CNNrepository.Product(with_constant=1), None, None)"
+242 "(CNNrepository.ReLu(inplace=False), 1, 1)"
+243 "(CNNrepository.ReLu(inplace=False), 1, None)"
+244 "(CNNrepository.ReLu(inplace=False), 2, 2)"
+245 "(CNNrepository.ReLu(inplace=False), 2, None)"
+246 "(CNNrepository.ReLu(inplace=False), 3, 3)"
+247 "(CNNrepository.ReLu(inplace=False), 3, None)"
+248 "(CNNrepository.ReLu(inplace=False), 4, 4)"
+249 "(CNNrepository.ReLu(inplace=False), 4, None)"
+250 "(CNNrepository.ReLu(inplace=False), None, 1)"
+251 "(CNNrepository.ReLu(inplace=False), None, 2)"
+252 "(CNNrepository.ReLu(inplace=False), None, 3)"
+253 "(CNNrepository.ReLu(inplace=False), None, 4)"
+254 "(CNNrepository.ReLu(inplace=False), None, None)"
+255 "(CNNrepository.Sigmoid(), 1, 1)"
+256 "(CNNrepository.Sigmoid(), 1, None)"
+257 "(CNNrepository.Sigmoid(), 2, 2)"
+258 "(CNNrepository.Sigmoid(), 2, None)"
+259 "(CNNrepository.Sigmoid(), 3, 3)"
+260 "(CNNrepository.Sigmoid(), 3, None)"
+261 "(CNNrepository.Sigmoid(), 4, 4)"
+262 "(CNNrepository.Sigmoid(), 4, None)"
+263 "(CNNrepository.Sigmoid(), None, 1)"
+264 "(CNNrepository.Sigmoid(), None, 2)"
+265 "(CNNrepository.Sigmoid(), None, 3)"
+266 "(CNNrepository.Sigmoid(), None, 4)"
+267 "(CNNrepository.Sigmoid(), None, None)"
+268 "(CNNrepository.Sum(with_constant=0), 1, 1)"
+269 "(CNNrepository.Sum(with_constant=0), 1, None)"
+270 "(CNNrepository.Sum(with_constant=0), 2, 1)"
+271 "(CNNrepository.Sum(with_constant=0), 2, None)"
+272 "(CNNrepository.Sum(with_constant=0), 3, 1)"
+273 "(CNNrepository.Sum(with_constant=0), 3, None)"
+274 "(CNNrepository.Sum(with_constant=0), 4, 1)"
+275 "(CNNrepository.Sum(with_constant=0), 4, None)"
+276 "(CNNrepository.Sum(with_constant=0), 5, 1)"
+277 "(CNNrepository.Sum(with_constant=0), 5, None)"
+278 "(CNNrepository.Sum(with_constant=0), 6, 1)"
+279 "(CNNrepository.Sum(with_constant=0), 6, None)"
+280 "(CNNrepository.Sum(with_constant=0), 8, 1)"
+281 "(CNNrepository.Sum(with_constant=0), 8, None)"
+282 "(CNNrepository.Sum(with_constant=0), None, 1)"
+283 "(CNNrepository.Sum(with_constant=0), None, None)"
+284 "(CNNrepository.Sum(with_constant=1), 1, 1)"
+285 "(CNNrepository.Sum(with_constant=1), 1, None)"
+286 "(CNNrepository.Sum(with_constant=1), 2, 1)"
+287 "(CNNrepository.Sum(with_constant=1), 2, None)"
+288 "(CNNrepository.Sum(with_constant=1), 3, 1)"
+289 "(CNNrepository.Sum(with_constant=1), 3, None)"
+290 "(CNNrepository.Sum(with_constant=1), 4, 1)"
+291 "(CNNrepository.Sum(with_constant=1), 4, None)"
+292 "(CNNrepository.Sum(with_constant=1), 5, 1)"
+293 "(CNNrepository.Sum(with_constant=1), 5, None)"
+294 "(CNNrepository.Sum(with_constant=1), 6, 1)"
+295 "(CNNrepository.Sum(with_constant=1), 6, None)"
+296 "(CNNrepository.Sum(with_constant=1), 8, 1)"
+297 "(CNNrepository.Sum(with_constant=1), 8, None)"
+298 "(CNNrepository.Sum(with_constant=1), None, 1)"
+299 "(CNNrepository.Sum(with_constant=1), None, None)"
+300 "(CNNrepository.Tanh(), 1, 1)"
+301 "(CNNrepository.Tanh(), 1, None)"
+302 "(CNNrepository.Tanh(), 2, 2)"
+303 "(CNNrepository.Tanh(), 2, None)"
+304 "(CNNrepository.Tanh(), 3, 3)"
+305 "(CNNrepository.Tanh(), 3, None)"
+306 "(CNNrepository.Tanh(), 4, 4)"
+307 "(CNNrepository.Tanh(), 4, None)"
+308 "(CNNrepository.Tanh(), None, 1)"
+309 "(CNNrepository.Tanh(), None, 2)"
+310 "(CNNrepository.Tanh(), None, 3)"
+311 "(CNNrepository.Tanh(), None, 4)"
+312 "(CNNrepository.Tanh(), None, None)"
+313 "(None, 1, 1)"
+314 "(None, 1, 2)"
+315 "(None, 1, 3)"
+316 "(None, 1, 4)"
+317 "(None, 1, 5)"
+318 "(None, 1, 6)"
+319 "(None, 1, None)"
+320 "(None, 2, 1)"
+321 "(None, 2, 2)"
+322 "(None, 2, 4)"
+323 "(None, 2, None)"
+324 "(None, 3, 1)"
+325 "(None, 3, 3)"
+326 "(None, 3, None)"
+327 "(None, 4, 1)"
+328 "(None, 4, 2)"
+329 "(None, 4, 4)"
+330 "(None, 4, None)"
+331 "(None, 5, 1)"
+332 "(None, 5, None)"
+333 "(None, 6, 1)"
+334 "(None, 6, None)"
+335 "(None, 8, 1)"
+336 "(None, 8, None)"
+337 "(None, None)"
+338 "(None, None, 1)"
+339 "(None, None, 2)"
+340 "(None, None, 3)"
+341 "(None, None, 4)"
+342 "(None, None, 5)"
+343 "(None, None, 6)"
+344 "(None,)"
+345 "1"
+346 "2"
+347 "3"
+348 "4"
+349 "5"
+350 "6"
+351 "8"
+352 "CNNrepository.Adam(learning_rate=0.001, betas=(0.9, 0.999), eps=1e-08, weight_decay=0.0, amsgrad=False, maximize=False, capturable=False, differentiable=False, decoupled_weight_decay=False)"
+353 "CNNrepository.BatchNorm2d(in_channels=1, input_size=(1, 1))"
+354 "CNNrepository.BatchNorm2d(in_channels=1, input_size=(2, 2))"
+355 "CNNrepository.BatchNorm2d(in_channels=2, input_size=(1, 1))"
+356 "CNNrepository.Conv2d(in_channels=1, out_channels=1, input_size=(2, 2), output_size=(1, 1), kernel_size=(2, 2), stride=1, padding=0, bias=False)"
+357 "CNNrepository.Conv2d(in_channels=1, out_channels=2, input_size=(2, 2), output_size=(1, 1), kernel_size=(2, 2), stride=1, padding=0, bias=False)"
+358 "CNNrepository.Copy(out_dimension=2)"
+359 "CNNrepository.Copy(out_dimension=3)"
+360 "CNNrepository.Copy(out_dimension=4)"
+361 "CNNrepository.Copy(out_dimension=5)"
+362 "CNNrepository.Copy(out_dimension=6)"
+363 "CNNrepository.CosineAnnealingLR(eta_min=0.0)"
+364 "CNNrepository.CrossEntropyLoss(reduction='mean')"
+365 "CNNrepository.Linear(in_features=1, out_features=1, bias=False)"
+366 "CNNrepository.Linear(in_features=1, out_features=1, bias=True)"
+367 "CNNrepository.Linear(in_features=1, out_features=2, bias=False)"
+368 "CNNrepository.Linear(in_features=1, out_features=2, bias=True)"
+369 "CNNrepository.Linear(in_features=1, out_features=4, bias=False)"
+370 "CNNrepository.Linear(in_features=1, out_features=4, bias=True)"
+371 "CNNrepository.Linear(in_features=2, out_features=1, bias=False)"
+372 "CNNrepository.Linear(in_features=2, out_features=1, bias=True)"
+373 "CNNrepository.Linear(in_features=2, out_features=2, bias=False)"
+374 "CNNrepository.Linear(in_features=2, out_features=2, bias=True)"
+375 "CNNrepository.Linear(in_features=2, out_features=4, bias=False)"
+376 "CNNrepository.Linear(in_features=2, out_features=4, bias=True)"
+377 "CNNrepository.Linear(in_features=4, out_features=1, bias=False)"
+378 "CNNrepository.Linear(in_features=4, out_features=1, bias=True)"
+379 "CNNrepository.Linear(in_features=4, out_features=2, bias=False)"
+380 "CNNrepository.Linear(in_features=4, out_features=2, bias=True)"
+381 "CNNrepository.Linear(in_features=4, out_features=4, bias=False)"
+382 "CNNrepository.Linear(in_features=4, out_features=4, bias=True)"
+383 "CNNrepository.MaxPool2d(in_channels=1, input_size=(2, 2), output_size=(1, 1), kernel_size=(2, 2))"
+384 "CNNrepository.NoScheduler()"
+385 "CNNrepository.Product(with_constant=1)"
+386 "CNNrepository.ReLu(inplace=False)"
+387 "CNNrepository.SGD(learning_rate=0.001, momentum=0.9, dampening=0.0, weight_decay=0.0, nesterov=False, maximize=False)"
+388 "CNNrepository.Sigmoid()"
+389 "CNNrepository.Sum(with_constant=0)"
+390 "CNNrepository.Sum(with_constant=1)"
+391 "CNNrepository.Tanh()"
+392 "None"
+[rules small_free]
+0 before_singleton p0 i=c345 o=c345 request=c344 ls=c344 ls1=c392 x=h29
+1 before_singleton p0 i=c346 o=c345 request=c344 ls=c344 ls1=c392 x=h41
+2 before_singleton p0 i=c347 o=c345 request=c344 ls=c344 ls1=c392 x=h54
+3 before_cons p4 i=c348 j=c345 o=c345 request=c337 ls=c337 head=c392 tail=c344 x=h67 y=h0
+3 before_cons p4 i=c348 j=c346 o=c345 request=c337 ls=c337 head=c392 tail=c344 x=h68 y=h1
+3 before_cons p4 i=c348 j=c347 o=c345 request=c337 ls=c337 head=c392 tail=c344 x=h69 y=h2
+3 before_cons p4 i=c348 j=c348 o=c345 request=c337 ls=c337 head=c392 tail=c344 x=h70 y=h4
+3 before_cons p4 i=c348 j=c349 o=c345 request=c337 ls=c337 head=c392 tail=c344 x=h71 y=h5
+3 before_cons p4 i=c348 j=c350 o=c345 request=c337 ls=c337 head=c392 tail=c344 x=h72 y=h6
+3 before_cons p4 i=c348 j=c351 o=c345 request=c337 ls=c337 head=c392 tail=c344 x=h73 y=h7
+4 before_singleton p0 i=c348 o=c345 request=c344 ls=c344 ls1=c392 x=h67
+5 before_singleton p0 i=c349 o=c345 request=c344 ls=c344 ls1=c392 x=h74
+6 before_singleton p0 i=c350 o=c345 request=c344 ls=c344 ls1=c392 x=h75
+7 before_singleton p0 i=c351 o=c345 request=c344 ls=c344 ls1=c392 x=h76
+8 edges p0 io=c345 para1=c0 para2=c12 para3=c67 para4=c97 para5=c1 para6=c13 para7=c68 para8=c98 para9=c2 para10=c18 para11=c75 para12=c105 para13=c3 para14=c21 para15=c79 para16=c109
+9 batchnorm2d p0 l=c353 i=c345 o=c345 para1=c110 para2=c111 para3=c112 para4=c313 para5=c113 para6=c338 para7=c319
+9 linear_layer p0 l=c365 i=c345 o=c345 para1=c150 para2=c151 para3=c152 para4=c313 para5=c153 para6=c338 para7=c319
+9 linear_layer p0 l=c366 i=c345 o=c345 para1=c154 para2=c155 para3=c156 para4=c313 para5=c157 para6=c338 para7=c319
+9 product p0 l=c385 i=c345 o=c345 para1=c226 para2=c227 para3=c240 para4=c313 para5=c241 para6=c338 para7=c319
+9 relu p0 l=c386 i=c345 o=c345 para1=c242 para2=c243 para3=c250 para4=c313 para5=c254 para6=c338 para7=c319
+9 sigmoid p0 l=c388 i=c345 o=c345 para1=c255 para2=c256 para3=c263 para4=c313 para5=c267 para6=c338 para7=c319
+9 sum p0 l=c389 i=c345 o=c345 para1=c268 para2=c269 para3=c282 para4=c313 para5=c283 para6=c338 para7=c319
+9 sum p0 l=c390 i=c345 o=c345 para1=c284 para2=c285 para3=c298 para4=c313 para5=c299 para6=c338 para7=c319
+9 tanh p0 l=c391 i=c345 o=c345 para1=c300 para2=c301 para3=c308 para4=c313 para5=c312 para6=c338 para7=c319
+10 copy p0 l=c358 i=c345 o=c346 para1=c130 para2=c131 para3=c132 para4=c314 para5=c133 para6=c339 para7=c319
+10 linear_layer p0 l=c367 i=c345 o=c346 para1=c158 para2=c159 para3=c160 para4=c314 para5=c161 para6=c339 para7=c319
+10 linear_layer p0 l=c368 i=c345 o=c346 para1=c162 para2=c163 para3=c164 para4=c314 para5=c165 para6=c339 para7=c319
+11 copy p0 l=c359 i=c345 o=c347 para1=c134 para2=c135 para3=c136 para4=c315 para5=c137 para6=c340 para7=c319
+12 copy p0 l=c360 i=c345 o=c348 para1=c138 para2=c139 para3=c140 para4=c316 para5=c141 para6=c341 para7=c319
+12 linear_layer p0 l=c369 i=c345 o=c348 para1=c166 para2=c167 para3=c168 para4=c316 para5=c169 para6=c341 para7=c319
+12 linear_layer p0 l=c370 i=c345 o=c348 para1=c170 para2=c171 para3=c172 para4=c316 para5=c173 para6=c341 para7=c319
+13 copy p0 l=c361 i=c345 o=c349 para1=c142 para2=c143 para3=c144 para4=c317 para5=c145 para6=c342 para7=c319
+14 copy p0 l=c362 i=c345 o=c350 para1=c146 para2=c147 para3=c148 para4=c318 para5=c149 para6=c343 para7=c319
+15 linear_layer p0 l=c371 i=c346 o=c345 para1=c174 para2=c175 para3=c176 para4=c320 para5=c177 para6=c338 para7=c323
+15 linear_layer p0 l=c372 i=c346 o=c345 para1=c178 para2=c179 para3=c180 para4=c320 para5=c181 para6=c338 para7=c323
+15 product p0 l=c385 i=c346 o=c345 para1=c228 para2=c229 para3=c240 para4=c320 para5=c241 para6=c338 para7=c323
+15 sum p0 l=c389 i=c346 o=c345 para1=c270 para2=c271 para3=c282 para4=c320 para5=c283 para6=c338 para7=c323
+15 sum p0 l=c390 i=c346 o=c345 para1=c286 para2=c287 para3=c298 para4=c320 para5=c299 para6=c338 para7=c323
+16 edges p0 io=c346 para1=c4 para2=c14 para3=c80 para4=c99 para5=c5 para6=c15 para7=c81 para8=c100 para9=c6 para10=c19 para11=c86 para12=c106 para13=c7 para14=c21 para15=c89 para16=c109
+17 batchnorm2d p0 l=c355 i=c346 o=c346 para1=c118 para2=c119 para3=c120 para4=c321 para5=c121 para6=c339 para7=c323
+17 linear_layer p0 l=c373 i=c346 o=c346 para1=c182 para2=c183 para3=c184 para4=c321 para5=c185 para6=c339 para7=c323
+17 linear_layer p0 l=c374 i=c346 o=c346 para1=c186 para2=c187 para3=c188 para4=c321 para5=c189 para6=c339 para7=c323
+17 relu p0 l=c386 i=c346 o=c346 para1=c244 para2=c245 para3=c251 para4=c321 para5=c254 para6=c339 para7=c323
+17 sigmoid p0 l=c388 i=c346 o=c346 para1=c257 para2=c258 para3=c264 para4=c321 para5=c267 para6=c339 para7=c323
+17 swap p0 io=c346 n=c345 m=c345 para1=c22 para2=c34 para3=c69 para4=c99 para5=c23 para6=c35 para7=c70 para8=c100 para9=c24 para10=c40 para11=c76 para12=c106 para13=c25 para14=c43 para15=c79 para16=c109
+17 tanh p0 l=c391 i=c346 o=c346 para1=c302 para2=c303 para3=c309 para4=c321 para5=c312 para6=c339 para7=c323
+18 linear_layer p0 l=c375 i=c346 o=c348 para1=c190 para2=c191 para3=c192 para4=c322 para5=c193 para6=c341 para7=c323
+18 linear_layer p0 l=c376 i=c346 o=c348 para1=c194 para2=c195 para3=c196 para4=c322 para5=c197 para6=c341 para7=c323
+19 product p0 l=c385 i=c347 o=c345 para1=c230 para2=c231 para3=c240 para4=c324 para5=c241 para6=c338 para7=c326
+19 sum p0 l=c389 i=c347 o=c345 para1=c272 para2=c273 para3=c282 para4=c324 para5=c283 para6=c338 para7=c326
+19 sum p0 l=c390 i=c347 o=c345 para1=c288 para2=c289 para3=c298 para4=c324 para5=c299 para6=c338 para7=c326
+20 edges p0 io=c347 para1=c8 para2=c16 para3=c90 para4=c101 para5=c9 para6=c17 para7=c91 para8=c102 para9=c10 para10=c20 para11=c94 para12=c107 para13=c11 para14=c21 para15=c96 para16=c109
+21 relu p0 l=c386 i=c347 o=c347 para1=c246 para2=c247 para3=c252 para4=c325 para5=c254 para6=c340 para7=c326
+21 sigmoid p0 l=c388 i=c347 o=c347 para1=c259 para2=c260 para3=c265 para4=c325 para5=c267 para6=c340 para7=c326
+21 swap p0 io=c347 n=c345 m=c346 para1=c26 para2=c36 para3=c82 para4=c101 para5=c27 para6=c37 para7=c83 para8=c102 para9=c28 para10=c41 para11=c87 para12=c107 para13=c29 para14=c43 para15=c89 para16=c109
+21 swap p0 io=c347 n=c346 m=c345 para1=c44 para2=c52 para3=c71 para4=c101 para5=c45 para6=c53 para7=c72 para8=c102 para9=c46 para10=c56 para11=c77 para12=c107 para13=c47 para14=c58 para15=c79 para16=c109
+21 tanh p0 l=c391 i=c347 o=c347 para1=c304 para2=c305 para3=c310 para4=c325 para5=c312 para6=c340 para7=c326
+22 conv2d p0 l=c356 i=c348 o=c345 para1=c122 para2=c123 para3=c124 para4=c327 para5=c125 para6=c338 para7=c330
+22 linear_layer p0 l=c377 i=c348 o=c345 para1=c198 para2=c199 para3=c200 para4=c327 para5=c201 para6=c338 para7=c330
+22 linear_layer p0 l=c378 i=c348 o=c345 para1=c202 para2=c203 para3=c204 para4=c327 para5=c205 para6=c338 para7=c330
+22 maxpool2d p0 l=c383 i=c348 o=c345 para1=c222 para2=c223 para3=c224 para4=c327 para5=c225 para6=c338 para7=c330
+22 product p0 l=c385 i=c348 o=c345 para1=c232 para2=c233 para3=c240 para4=c327 para5=c241 para6=c338 para7=c330
+22 sum p0 l=c389 i=c348 o=c345 para1=c274 para2=c275 para3=c282 para4=c327 para5=c283 para6=c338 para7=c330
+22 sum p0 l=c390 i=c348 o=c345 para1=c290 para2=c291 para3=c298 para4=c327 para5=c299 para6=c338 para7=c330
+23 conv2d p0 l=c357 i=c348 o=c346 para1=c126 para2=c127 para3=c128 para4=c328 para5=c129 para6=c339 para7=c330
+23 linear_layer p0 l=c379 i=c348 o=c346 para1=c206 para2=c207 para3=c208 para4=c328 para5=c209 para6=c339 para7=c330
+23 linear_layer p0 l=c380 i=c348 o=c346 para1=c210 para2=c211 para3=c212 para4=c328 para5=c213 para6=c339 para7=c330
+24 batchnorm2d p0 l=c354 i=c348 o=c348 para1=c114 para2=c115 para3=c116 para4=c329 para5=c117 para6=c341 para7=c330
+24 linear_layer p0 l=c381 i=c348 o=c348 para1=c214 para2=c215 para3=c216 para4=c329 para5=c217 para6=c341 para7=c330
+24 linear_layer p0 l=c382 i=c348 o=c348 para1=c218 para2=c219 para3=c220 para4=c329 para5=c221 para6=c341 para7=c330
+24 relu p0 l=c386 i=c348 o=c348 para1=c248 para2=c249 para3=c253 para4=c329 para5=c254 para6=c341 para7=c330
+24 sigmoid p0 l=c388 i=c348 o=c348 para1=c261 para2=c262 para3=c266 para4=c329 para5=c267 para6=c341 para7=c330
+24 swap p0 io=c348 n=c345 m=c347 para1=c30 para2=c38 para3=c92 para4=c103 para5=c31 para6=c39 para7=c93 para8=c104 para9=c32 para10=c42 para11=c95 para12=c108 para13=c33 para14=c43 para15=c96 para16=c109
+24 swap p0 io=c348 n=c346 m=c346 para1=c48 para2=c54 para3=c84 para4=c103 para5=c49 para6=c55 para7=c85 para8=c104 para9=c50 para10=c57 para11=c88 para12=c108 para13=c51 para14=c58 para15=c89 para16=c109
+24 swap p0 io=c348 n=c347 m=c345 para1=c59 para2=c63 para3=c73 para4=c103 para5=c60 para6=c64 para7=c74 para8=c104 para9=c61 para10=c65 para11=c78 para12=c108 para13=c62 para14=c66 para15=c79 para16=c109
+24 tanh p0 l=c391 i=c348 o=c348 para1=c306 para2=c307 para3=c311 para4=c329 para5=c312 para6=c341 para7=c330
+25 product p0 l=c385 i=c349 o=c345 para1=c234 para2=c235 para3=c240 para4=c331 para5=c241 para6=c338 para7=c332
+25 sum p0 l=c389 i=c349 o=c345 para1=c276 para2=c277 para3=c282 para4=c331 para5=c283 para6=c338 para7=c332
+25 sum p0 l=c390 i=c349 o=c345 para1=c292 para2=c293 para3=c298 para4=c331 para5=c299 para6=c338 para7=c332
+26 product p0 l=c385 i=c350 o=c345 para1=c236 para2=c237 para3=c240 para4=c333 para5=c241 para6=c338 para7=c334
+26 sum p0 l=c389 i=c350 o=c345 para1=c278 para2=c279 para3=c282 para4=c333 para5=c283 para6=c338 para7=c334
+26 sum p0 l=c390 i=c350 o=c345 para1=c294 para2=c295 para3=c298 para4=c333 para5=c299 para6=c338 para7=c334
+27 product p0 l=c385 i=c351 o=c345 para1=c238 para2=c239 para3=c240 para4=c335 para5=c241 para6=c338 para7=c336
+27 sum p0 l=c389 i=c351 o=c345 para1=c280 para2=c281 para3=c282 para4=c335 para5=c283 para6=c338 para7=c336
+27 sum p0 l=c390 i=c351 o=c345 para1=c296 para2=c297 para3=c298 para4=c335 para5=c299 para6=c338 para7=c336
+28 beside_singleton p0 i=c345 o=c345 ls=c392 para=c392 -=h8
+29 beside_singleton p0 i=c345 o=c345 ls=c392 para=c392 -=h9
+30 beside_singleton p0 i=c345 o=c345 ls=c392 para=c392 -=h9
+31 beside_singleton p0 i=c345 o=c346 ls=c392 para=c392 -=h10
+32 beside_singleton p0 i=c345 o=c346 ls=c392 para=c392 -=h10
+33 beside_singleton p0 i=c345 o=c347 ls=c392 para=c392 -=h11
+34 beside_singleton p0 i=c345 o=c347 ls=c392 para=c392 -=h11
+35 beside_singleton p0 i=c345 o=c348 ls=c392 para=c392 -=h12
+36 beside_singleton p0 i=c345 o=c348 ls=c392 para=c392 -=h12
+37 beside_singleton p0 i=c345 o=c349 ls=c392 para=c392 -=h13
+38 beside_singleton p0 i=c345 o=c349 ls=c392 para=c392 -=h13
+39 beside_singleton p0 i=c345 o=c350 ls=c392 para=c392 -=h14
+40 beside_singleton p0 i=c345 o=c350 ls=c392 para=c392 -=h14
+41 beside_singleton p0 i=c346 o=c345 ls=c392 para=c392 -=h15
+42 beside_singleton p0 i=c346 o=c345 ls=c392 para=c392 -=h15
+43 beside_singleton p0 i=c346 o=c346 ls=c392 para=c392 -=h16
+44 beside_cons p0 i=c346 i1=c345 i2=c345 o=c346 o1=c345 o2=c345 ls=c392 head=c392 tail=c392 -=h8 -=h30
+44 beside_cons p0 i=c346 i1=c345 i2=c345 o=c346 o1=c345 o2=c345 ls=c392 head=c392 tail=c392 -=h9 -=h28
+44 beside_cons p0 i=c346 i1=c345 i2=c345 o=c346 o1=c345 o2=c345 ls=c392 head=c392 tail=c392 -=h9 -=h29
+44 beside_singleton p0 i=c346 o=c346 ls=c392 para=c392 -=h17
+45 beside_cons p0 i=c346 i1=c345 i2=c345 o=c346 o1=c345 o2=c345 ls=c392 head=c392 tail=c392 -=h9 -=h28
+45 beside_cons p0 i=c346 i1=c345 i2=c345 o=c346 o1=c345 o2=c345 ls=c392 head=c392 tail=c392 -=h9 -=h29
+45 beside_singleton p0 i=c346 o=c346 ls=c392 para=c392 -=h17
+46 beside_cons p0 i=c346 i1=c345 i2=c345 o=c347 o1=c345 o2=c346 ls=c392 head=c392 tail=c392 -=h8 -=h32
+46 beside_cons p0 i=c346 i1=c345 i2=c345 o=c347 o1=c345 o2=c346 ls=c392 head=c392 tail=c392 -=h9 -=h31
+46 beside_cons p0 i=c346 i1=c345 i2=c345 o=c347 o1=c346 o2=c345 ls=c392 head=c392 tail=c392 -=h10 -=h28
+46 beside_cons p0 i=c346 i1=c345 i2=c345 o=c347 o1=c346 o2=c345 ls=c392 head=c392 tail=c392 -=h10 -=h29
+47 beside_cons p0 i=c346 i1=c345 i2=c345 o=c347 o1=c345 o2=c346 ls=c392 head=c392 tail=c392 -=h9 -=h31
+47 beside_cons p0 i=c346 i1=c345 i2=c345 o=c347 o1=c346 o2=c345 ls=c392 head=c392 tail=c392 -=h10 -=h28
+47 beside_cons p0 i=c346 i1=c345 i2=c345 o=c347 o1=c346 o2=c345 ls=c392 head=c392 tail=c392 -=h10 -=h29
+48 beside_cons p0 i=c346 i1=c345 i2=c345 o=c348 o1=c345 o2=c347 ls=c392 head=c392 tail=c392 -=h8 -=h34
+48 beside_cons p0 i=c346 i1=c345 i2=c345 o=c348 o1=c345 o2=c347 ls=c392 head=c392 tail=c392 -=h9 -=h33
+48 beside_cons p0 i=c346 i1=c345 i2=c345 o=c348 o1=c346 o2=c346 ls=c392 head=c392 tail=c392 -=h10 -=h31
+48 beside_cons p0 i=c346 i1=c345 i2=c345 o=c348 o1=c347 o2=c345 ls=c392 head=c392 tail=c392 -=h11 -=h28
+48 beside_cons p0 i=c346 i1=c345 i2=c345 o=c348 o1=c347 o2=c345 ls=c392 head=c392 tail=c392 -=h11 -=h29
+48 beside_singleton p0 i=c346 o=c348 ls=c392 para=c392 -=h18
+49 beside_cons p0 i=c346 i1=c345 i2=c345 o=c348 o1=c345 o2=c347 ls=c392 head=c392 tail=c392 -=h9 -=h33
+49 beside_cons p0 i=c346 i1=c345 i2=c345 o=c348 o1=c346 o2=c346 ls=c392 head=c392 tail=c392 -=h10 -=h31
+49 beside_cons p0 i=c346 i1=c345 i2=c345 o=c348 o1=c347 o2=c345 ls=c392 head=c392 tail=c392 -=h11 -=h28
+49 beside_cons p0 i=c346 i1=c345 i2=c345 o=c348 o1=c347 o2=c345 ls=c392 head=c392 tail=c392 -=h11 -=h29
+49 beside_singleton p0 i=c346 o=c348 ls=c392 para=c392 -=h18
+50 beside_cons p0 i=c346 i1=c345 i2=c345 o=c349 o1=c345 o2=c348 ls=c392 head=c392 tail=c392 -=h8 -=h36
+50 beside_cons p0 i=c346 i1=c345 i2=c345 o=c349 o1=c345 o2=c348 ls=c392 head=c392 tail=c392 -=h9 -=h35
+50 beside_cons p0 i=c346 i1=c345 i2=c345 o=c349 o1=c346 o2=c347 ls=c392 head=c392 tail=c392 -=h10 -=h33
+50 beside_cons p0 i=c346 i1=c345 i2=c345 o=c349 o1=c347 o2=c346 ls=c392 head=c392 tail=c392 -=h11 -=h31
+50 beside_cons p0 i=c346 i1=c345 i2=c345 o=c349 o1=c348 o2=c345 ls=c392 head=c392 tail=c392 -=h12 -=h28
+50 beside_cons p0 i=c346 i1=c345 i2=c345 o=c349 o1=c348 o2=c345 ls=c392 head=c392 tail=c392 -=h12 -=h29
+51 beside_cons p0 i=c346 i1=c345 i2=c345 o=c349 o1=c345 o2=c348 ls=c392 head=c392 tail=c392 -=h9 -=h35
+51 beside_cons p0 i=c346 i1=c345 i2=c345 o=c349 o1=c346 o2=c347 ls=c392 head=c392 tail=c392 -=h10 -=h33
+51 beside_cons p0 i=c346 i1=c345 i2=c345 o=c349 o1=c347 o2=c346 ls=c392 head=c392 tail=c392 -=h11 -=h31
+51 beside_cons p0 i=c346 i1=c345 i2=c345 o=c349 o1=c348 o2=c345 ls=c392 head=c392 tail=c392 -=h12 -=h28
+51 beside_cons p0 i=c346 i1=c345 i2=c345 o=c349 o1=c348 o2=c345 ls=c392 head=c392 tail=c392 -=h12 -=h29
+52 beside_cons p0 i=c346 i1=c345 i2=c345 o=c350 o1=c345 o2=c349 ls=c392 head=c392 tail=c392 -=h8 -=h38
+52 beside_cons p0 i=c346 i1=c345 i2=c345 o=c350 o1=c345 o2=c349 ls=c392 head=c392 tail=c392 -=h9 -=h37
+52 beside_cons p0 i=c346 i1=c345 i2=c345 o=c350 o1=c346 o2=c348 ls=c392 head=c392 tail=c392 -=h10 -=h35
+52 beside_cons p0 i=c346 i1=c345 i2=c345 o=c350 o1=c347 o2=c347 ls=c392 head=c392 tail=c392 -=h11 -=h33
+52 beside_cons p0 i=c346 i1=c345 i2=c345 o=c350 o1=c348 o2=c346 ls=c392 head=c392 tail=c392 -=h12 -=h31
+52 beside_cons p0 i=c346 i1=c345 i2=c345 o=c350 o1=c349 o2=c345 ls=c392 head=c392 tail=c392 -=h13 -=h28
+52 beside_cons p0 i=c346 i1=c345 i2=c345 o=c350 o1=c349 o2=c345 ls=c392 head=c392 tail=c392 -=h13 -=h29
+53 beside_cons p0 i=c346 i1=c345 i2=c345 o=c350 o1=c345 o2=c349 ls=c392 head=c392 tail=c392 -=h9 -=h37
+53 beside_cons p0 i=c346 i1=c345 i2=c345 o=c350 o1=c346 o2=c348 ls=c392 head=c392 tail=c392 -=h10 -=h35
+53 beside_cons p0 i=c346 i1=c345 i2=c345 o=c350 o1=c347 o2=c347 ls=c392 head=c392 tail=c392 -=h11 -=h33
+53 beside_cons p0 i=c346 i1=c345 i2=c345 o=c350 o1=c348 o2=c346 ls=c392 head=c392 tail=c392 -=h12 -=h31
+53 beside_cons p0 i=c346 i1=c345 i2=c345 o=c350 o1=c349 o2=c345 ls=c392 head=c392 tail=c392 -=h13 -=h28
+53 beside_cons p0 i=c346 i1=c345 i2=c345 o=c350 o1=c349 o2=c345 ls=c392 head=c392 tail=c392 -=h13 -=h29
+54 beside_singleton p0 i=c347 o=c345 ls=c392 para=c392 -=h19
+55 beside_singleton p0 i=c347 o=c345 ls=c392 para=c392 -=h19
+56 beside_cons p0 i=c347 i1=c345 i2=c346 o=c346 o1=c345 o2=c345 ls=c392 head=c392 tail=c392 -=h8 -=h42
+56 beside_cons p0 i=c347 i1=c345 i2=c346 o=c346 o1=c345 o2=c345 ls=c392 head=c392 tail=c392 -=h9 -=h41
+56 beside_cons p0 i=c347 i1=c346 i2=c345 o=c346 o1=c345 o2=c345 ls=c392 head=c392 tail=c392 -=h15 -=h28
+56 beside_cons p0 i=c347 i1=c346 i2=c345 o=c346 o1=c345 o2=c345 ls=c392 head=c392 tail=c392 -=h15 -=h29
+57 beside_cons p0 i=c347 i1=c345 i2=c346 o=c346 o1=c345 o2=c345 ls=c392 head=c392 tail=c392 -=h9 -=h41
+57 beside_cons p0 i=c347 i1=c346 i2=c345 o=c346 o1=c345 o2=c345 ls=c392 head=c392 tail=c392 -=h15 -=h28
+57 beside_cons p0 i=c347 i1=c346 i2=c345 o=c346 o1=c345 o2=c345 ls=c392 head=c392 tail=c392 -=h15 -=h29
+58 beside_singleton p0 i=c347 o=c347 ls=c392 para=c392 -=h20
+59 beside_cons p0 i=c347 i1=c345 i2=c346 o=c347 o1=c345 o2=c346 ls=c392 head=c392 tail=c392 -=h8 -=h45
+59 beside_cons p0 i=c347 i1=c345 i2=c346 o=c347 o1=c345 o2=c346 ls=c392 head=c392 tail=c392 -=h9 -=h43
+59 beside_cons p0 i=c347 i1=c345 i2=c346 o=c347 o1=c345 o2=c346 ls=c392 head=c392 tail=c392 -=h9 -=h44
+59 beside_cons p0 i=c347 i1=c345 i2=c346 o=c347 o1=c346 o2=c345 ls=c392 head=c392 tail=c392 -=h10 -=h41
+59 beside_cons p0 i=c347 i1=c346 i2=c345 o=c347 o1=c345 o2=c346 ls=c392 head=c392 tail=c392 -=h15 -=h31
+59 beside_cons p0 i=c347 i1=c346 i2=c345 o=c347 o1=c346 o2=c345 ls=c392 head=c392 tail=c392 -=h16 -=h30
+59 beside_cons p0 i=c347 i1=c346 i2=c345 o=c347 o1=c346 o2=c345 ls=c392 head=c392 tail=c392 -=h17 -=h28
+59 beside_cons p0 i=c347 i1=c346 i2=c345 o=c347 o1=c346 o2=c345 ls=c392 head=c392 tail=c392 -=h17 -=h29
+59 beside_singleton p0 i=c347 o=c347 ls=c392 para=c392 -=h21
+60 beside_cons p0 i=c347 i1=c345 i2=c346 o=c347 o1=c345 o2=c346 ls=c392 head=c392 tail=c392 -=h9 -=h43
+60 beside_cons p0 i=c347 i1=c345 i2=c346 o=c347 o1=c345 o2=c346 ls=c392 head=c392 tail=c392 -=h9 -=h44
+60 beside_cons p0 i=c347 i1=c345 i2=c346 o=c347 o1=c346 o2=c345 ls=c392 head=c392 tail=c392 -=h10 -=h41
+60 beside_cons p0 i=c347 i1=c346 i2=c345 o=c347 o1=c345 o2=c346 ls=c392 head=c392 tail=c392 -=h15 -=h31
+60 beside_cons p0 i=c347 i1=c346 i2=c345 o=c347 o1=c346 o2=c345 ls=c392 head=c392 tail=c392 -=h17 -=h28
+60 beside_cons p0 i=c347 i1=c346 i2=c345 o=c347 o1=c346 o2=c345 ls=c392 head=c392 tail=c392 -=h17 -=h29
+60 beside_singleton p0 i=c347 o=c347 ls=c392 para=c392 -=h21
+61 beside_cons p0 i=c347 i1=c345 i2=c346 o=c348 o1=c345 o2=c347 ls=c392 head=c392 tail=c392 -=h8 -=h47
+61 beside_cons p0 i=c347 i1=c345 i2=c346 o=c348 o1=c345 o2=c347 ls=c392 head=c392 tail=c392 -=h9 -=h46
+61 beside_cons p0 i=c347 i1=c345 i2=c346 o=c348 o1=c346 o2=c346 ls=c392 head=c392 tail=c392 -=h10 -=h43
+61 beside_cons p0 i=c347 i1=c345 i2=c346 o=c348 o1=c346 o2=c346 ls=c392 head=c392 tail=c392 -=h10 -=h44
+61 beside_cons p0 i=c347 i1=c345 i2=c346 o=c348 o1=c347 o2=c345 ls=c392 head=c392 tail=c392 -=h11 -=h41
+61 beside_cons p0 i=c347 i1=c346 i2=c345 o=c348 o1=c345 o2=c347 ls=c392 head=c392 tail=c392 -=h15 -=h33
+61 beside_cons p0 i=c347 i1=c346 i2=c345 o=c348 o1=c346 o2=c346 ls=c392 head=c392 tail=c392 -=h16 -=h32
+61 beside_cons p0 i=c347 i1=c346 i2=c345 o=c348 o1=c346 o2=c346 ls=c392 head=c392 tail=c392 -=h17 -=h31
+62 beside_cons p0 i=c347 i1=c345 i2=c346 o=c348 o1=c345 o2=c347 ls=c392 head=c392 tail=c392 -=h9 -=h46
+62 beside_cons p0 i=c347 i1=c345 i2=c346 o=c348 o1=c346 o2=c346 ls=c392 head=c392 tail=c392 -=h10 -=h43
+62 beside_cons p0 i=c347 i1=c345 i2=c346 o=c348 o1=c346 o2=c346 ls=c392 head=c392 tail=c392 -=h10 -=h44
+62 beside_cons p0 i=c347 i1=c345 i2=c346 o=c348 o1=c347 o2=c345 ls=c392 head=c392 tail=c392 -=h11 -=h41
+62 beside_cons p0 i=c347 i1=c346 i2=c345 o=c348 o1=c345 o2=c347 ls=c392 head=c392 tail=c392 -=h15 -=h33
+62 beside_cons p0 i=c347 i1=c346 i2=c345 o=c348 o1=c346 o2=c346 ls=c392 head=c392 tail=c392 -=h17 -=h31
+63 beside_cons p0 i=c347 i1=c345 i2=c346 o=c349 o1=c345 o2=c348 ls=c392 head=c392 tail=c392 -=h8 -=h49
+63 beside_cons p0 i=c347 i1=c345 i2=c346 o=c349 o1=c345 o2=c348 ls=c392 head=c392 tail=c392 -=h9 -=h48
+63 beside_cons p0 i=c347 i1=c345 i2=c346 o=c349 o1=c346 o2=c347 ls=c392 head=c392 tail=c392 -=h10 -=h46
+63 beside_cons p0 i=c347 i1=c345 i2=c346 o=c349 o1=c347 o2=c346 ls=c392 head=c392 tail=c392 -=h11 -=h43
+63 beside_cons p0 i=c347 i1=c345 i2=c346 o=c349 o1=c347 o2=c346 ls=c392 head=c392 tail=c392 -=h11 -=h44
+63 beside_cons p0 i=c347 i1=c345 i2=c346 o=c349 o1=c348 o2=c345 ls=c392 head=c392 tail=c392 -=h12 -=h41
+63 beside_cons p0 i=c347 i1=c346 i2=c345 o=c349 o1=c345 o2=c348 ls=c392 head=c392 tail=c392 -=h15 -=h35
+63 beside_cons p0 i=c347 i1=c346 i2=c345 o=c349 o1=c346 o2=c347 ls=c392 head=c392 tail=c392 -=h16 -=h34
+63 beside_cons p0 i=c347 i1=c346 i2=c345 o=c349 o1=c346 o2=c347 ls=c392 head=c392 tail=c392 -=h17 -=h33
+63 beside_cons p0 i=c347 i1=c346 i2=c345 o=c349 o1=c348 o2=c345 ls=c392 head=c392 tail=c392 -=h18 -=h28
+63 beside_cons p0 i=c347 i1=c346 i2=c345 o=c349 o1=c348 o2=c345 ls=c392 head=c392 tail=c392 -=h18 -=h29
+64 beside_cons p0 i=c347 i1=c345 i2=c346 o=c349 o1=c345 o2=c348 ls=c392 head=c392 tail=c392 -=h9 -=h48
+64 beside_cons p0 i=c347 i1=c345 i2=c346 o=c349 o1=c346 o2=c347 ls=c392 head=c392 tail=c392 -=h10 -=h46
+64 beside_cons p0 i=c347 i1=c345 i2=c346 o=c349 o1=c347 o2=c346 ls=c392 head=c392 tail=c392 -=h11 -=h43
+64 beside_cons p0 i=c347 i1=c345 i2=c346 o=c349 o1=c347 o2=c346 ls=c392 head=c392 tail=c392 -=h11 -=h44
+64 beside_cons p0 i=c347 i1=c345 i2=c346 o=c349 o1=c348 o2=c345 ls=c392 head=c392 tail=c392 -=h12 -=h41
+64 beside_cons p0 i=c347 i1=c346 i2=c345 o=c349 o1=c345 o2=c348 ls=c392 head=c392 tail=c392 -=h15 -=h35
+64 beside_cons p0 i=c347 i1=c346 i2=c345 o=c349 o1=c346 o2=c347 ls=c392 head=c392 tail=c392 -=h17 -=h33
+64 beside_cons p0 i=c347 i1=c346 i2=c345 o=c349 o1=c348 o2=c345 ls=c392 head=c392 tail=c392 -=h18 -=h28
+64 beside_cons p0 i=c347 i1=c346 i2=c345 o=c349 o1=c348 o2=c345 ls=c392 head=c392 tail=c392 -=h18 -=h29
+65 beside_cons p0 i=c347 i1=c345 i2=c346 o=c350 o1=c345 o2=c349 ls=c392 head=c392 tail=c392 -=h8 -=h51
+65 beside_cons p0 i=c347 i1=c345 i2=c346 o=c350 o1=c345 o2=c349 ls=c392 head=c392 tail=c392 -=h9 -=h50
+65 beside_cons p0 i=c347 i1=c345 i2=c346 o=c350 o1=c346 o2=c348 ls=c392 head=c392 tail=c392 -=h10 -=h48
+65 beside_cons p0 i=c347 i1=c345 i2=c346 o=c350 o1=c347 o2=c347 ls=c392 head=c392 tail=c392 -=h11 -=h46
+65 beside_cons p0 i=c347 i1=c345 i2=c346 o=c350 o1=c348 o2=c346 ls=c392 head=c392 tail=c392 -=h12 -=h43
+65 beside_cons p0 i=c347 i1=c345 i2=c346 o=c350 o1=c348 o2=c346 ls=c392 head=c392 tail=c392 -=h12 -=h44
+65 beside_cons p0 i=c347 i1=c345 i2=c346 o=c350 o1=c349 o2=c345 ls=c392 head=c392 tail=c392 -=h13 -=h41
+65 beside_cons p0 i=c347 i1=c346 i2=c345 o=c350 o1=c345 o2=c349 ls=c392 head=c392 tail=c392 -=h15 -=h37
+65 beside_cons p0 i=c347 i1=c346 i2=c345 o=c350 o1=c346 o2=c348 ls=c392 head=c392 tail=c392 -=h16 -=h36
+65 beside_cons p0 i=c347 i1=c346 i2=c345 o=c350 o1=c346 o2=c348 ls=c392 head=c392 tail=c392 -=h17 -=h35
+65 beside_cons p0 i=c347 i1=c346 i2=c345 o=c350 o1=c348 o2=c346 ls=c392 head=c392 tail=c392 -=h18 -=h31
+66 beside_cons p0 i=c347 i1=c345 i2=c346 o=c350 o1=c345 o2=c349 ls=c392 head=c392 tail=c392 -=h9 -=h50
+66 beside_cons p0 i=c347 i1=c345 i2=c346 o=c350 o1=c346 o2=c348 ls=c392 head=c392 tail=c392 -=h10 -=h48
+66 beside_cons p0 i=c347 i1=c345 i2=c346 o=c350 o1=c347 o2=c347 ls=c392 head=c392 tail=c392 -=h11 -=h46
+66 beside_cons p0 i=c347 i1=c345 i2=c346 o=c350 o1=c348 o2=c346 ls=c392 head=c392 tail=c392 -=h12 -=h43
+66 beside_cons p0 i=c347 i1=c345 i2=c346 o=c350 o1=c348 o2=c346 ls=c392 head=c392 tail=c392 -=h12 -=h44
+66 beside_cons p0 i=c347 i1=c345 i2=c346 o=c350 o1=c349 o2=c345 ls=c392 head=c392 tail=c392 -=h13 -=h41
+66 beside_cons p0 i=c347 i1=c346 i2=c345 o=c350 o1=c345 o2=c349 ls=c392 head=c392 tail=c392 -=h15 -=h37
+66 beside_cons p0 i=c347 i1=c346 i2=c345 o=c350 o1=c346 o2=c348 ls=c392 head=c392 tail=c392 -=h17 -=h35
+66 beside_cons p0 i=c347 i1=c346 i2=c345 o=c350 o1=c348 o2=c346 ls=c392 head=c392 tail=c392 -=h18 -=h31
+67 beside_singleton p0 i=c348 o=c345 ls=c392 para=c392 -=h22
+68 beside_cons p0 i=c348 i1=c345 i2=c347 o=c346 o1=c345 o2=c345 ls=c392 head=c392 tail=c392 -=h8 -=h55
+68 beside_cons p0 i=c348 i1=c345 i2=c347 o=c346 o1=c345 o2=c345 ls=c392 head=c392 tail=c392 -=h9 -=h54
+68 beside_cons p0 i=c348 i1=c346 i2=c346 o=c346 o1=c345 o2=c345 ls=c392 head=c392 tail=c392 -=h15 -=h41
+68 beside_cons p0 i=c348 i1=c347 i2=c345 o=c346 o1=c345 o2=c345 ls=c392 head=c392 tail=c392 -=h19 -=h28
+68 beside_cons p0 i=c348 i1=c347 i2=c345 o=c346 o1=c345 o2=c345 ls=c392 head=c392 tail=c392 -=h19 -=h29
+68 beside_singleton p0 i=c348 o=c346 ls=c392 para=c392 -=h23
+69 beside_cons p0 i=c348 i1=c345 i2=c347 o=c347 o1=c345 o2=c346 ls=c392 head=c392 tail=c392 -=h8 -=h57
+69 beside_cons p0 i=c348 i1=c345 i2=c347 o=c347 o1=c345 o2=c346 ls=c392 head=c392 tail=c392 -=h9 -=h56
+69 beside_cons p0 i=c348 i1=c345 i2=c347 o=c347 o1=c346 o2=c345 ls=c392 head=c392 tail=c392 -=h10 -=h54
+69 beside_cons p0 i=c348 i1=c346 i2=c346 o=c347 o1=c345 o2=c346 ls=c392 head=c392 tail=c392 -=h15 -=h43
+69 beside_cons p0 i=c348 i1=c346 i2=c346 o=c347 o1=c345 o2=c346 ls=c392 head=c392 tail=c392 -=h15 -=h44
+69 beside_cons p0 i=c348 i1=c346 i2=c346 o=c347 o1=c346 o2=c345 ls=c392 head=c392 tail=c392 -=h16 -=h42
+69 beside_cons p0 i=c348 i1=c346 i2=c346 o=c347 o1=c346 o2=c345 ls=c392 head=c392 tail=c392 -=h17 -=h41
+69 beside_cons p0 i=c348 i1=c347 i2=c345 o=c347 o1=c345 o2=c346 ls=c392 head=c392 tail=c392 -=h19 -=h31
+70 beside_cons p0 i=c348 i1=c345 i2=c347 o=c348 o1=c345 o2=c347 ls=c392 head=c392 tail=c392 -=h8 -=h60
+70 beside_cons p0 i=c348 i1=c345 i2=c347 o=c348 o1=c345 o2=c347 ls=c392 head=c392 tail=c392 -=h9 -=h58
+70 beside_cons p0 i=c348 i1=c345 i2=c347 o=c348 o1=c345 o2=c347 ls=c392 head=c392 tail=c392 -=h9 -=h59
+70 beside_cons p0 i=c348 i1=c345 i2=c347 o=c348 o1=c346 o2=c346 ls=c392 head=c392 tail=c392 -=h10 -=h56
+70 beside_cons p0 i=c348 i1=c345 i2=c347 o=c348 o1=c347 o2=c345 ls=c392 head=c392 tail=c392 -=h11 -=h54
+70 beside_cons p0 i=c348 i1=c346 i2=c346 o=c348 o1=c345 o2=c347 ls=c392 head=c392 tail=c392 -=h15 -=h46
+70 beside_cons p0 i=c348 i1=c346 i2=c346 o=c348 o1=c346 o2=c346 ls=c392 head=c392 tail=c392 -=h16 -=h45
+70 beside_cons p0 i=c348 i1=c346 i2=c346 o=c348 o1=c346 o2=c346 ls=c392 head=c392 tail=c392 -=h17 -=h43
+70 beside_cons p0 i=c348 i1=c346 i2=c346 o=c348 o1=c346 o2=c346 ls=c392 head=c392 tail=c392 -=h17 -=h44
+70 beside_cons p0 i=c348 i1=c347 i2=c345 o=c348 o1=c345 o2=c347 ls=c392 head=c392 tail=c392 -=h19 -=h33
+70 beside_cons p0 i=c348 i1=c347 i2=c345 o=c348 o1=c347 o2=c345 ls=c392 head=c392 tail=c392 -=h20 -=h30
+70 beside_cons p0 i=c348 i1=c347 i2=c345 o=c348 o1=c347 o2=c345 ls=c392 head=c392 tail=c392 -=h21 -=h28
+70 beside_cons p0 i=c348 i1=c347 i2=c345 o=c348 o1=c347 o2=c345 ls=c392 head=c392 tail=c392 -=h21 -=h29
+70 beside_singleton p0 i=c348 o=c348 ls=c392 para=c392 -=h24
+71 beside_cons p0 i=c348 i1=c345 i2=c347 o=c349 o1=c345 o2=c348 ls=c392 head=c392 tail=c392 -=h8 -=h62
+71 beside_cons p0 i=c348 i1=c345 i2=c347 o=c349 o1=c345 o2=c348 ls=c392 head=c392 tail=c392 -=h9 -=h61
+71 beside_cons p0 i=c348 i1=c345 i2=c347 o=c349 o1=c346 o2=c347 ls=c392 head=c392 tail=c392 -=h10 -=h58
+71 beside_cons p0 i=c348 i1=c345 i2=c347 o=c349 o1=c346 o2=c347 ls=c392 head=c392 tail=c392 -=h10 -=h59
+71 beside_cons p0 i=c348 i1=c345 i2=c347 o=c349 o1=c347 o2=c346 ls=c392 head=c392 tail=c392 -=h11 -=h56
+71 beside_cons p0 i=c348 i1=c345 i2=c347 o=c349 o1=c348 o2=c345 ls=c392 head=c392 tail=c392 -=h12 -=h54
+71 beside_cons p0 i=c348 i1=c346 i2=c346 o=c349 o1=c345 o2=c348 ls=c392 head=c392 tail=c392 -=h15 -=h48
+71 beside_cons p0 i=c348 i1=c346 i2=c346 o=c349 o1=c346 o2=c347 ls=c392 head=c392 tail=c392 -=h16 -=h47
+71 beside_cons p0 i=c348 i1=c346 i2=c346 o=c349 o1=c346 o2=c347 ls=c392 head=c392 tail=c392 -=h17 -=h46
+71 beside_cons p0 i=c348 i1=c346 i2=c346 o=c349 o1=c348 o2=c345 ls=c392 head=c392 tail=c392 -=h18 -=h41
+71 beside_cons p0 i=c348 i1=c347 i2=c345 o=c349 o1=c345 o2=c348 ls=c392 head=c392 tail=c392 -=h19 -=h35
+71 beside_cons p0 i=c348 i1=c347 i2=c345 o=c349 o1=c347 o2=c346 ls=c392 head=c392 tail=c392 -=h20 -=h32
+71 beside_cons p0 i=c348 i1=c347 i2=c345 o=c349 o1=c347 o2=c346 ls=c392 head=c392 tail=c392 -=h21 -=h31
+72 beside_cons p0 i=c348 i1=c345 i2=c347 o=c350 o1=c345 o2=c349 ls=c392 head=c392 tail=c392 -=h8 -=h64
+72 beside_cons p0 i=c348 i1=c345 i2=c347 o=c350 o1=c345 o2=c349 ls=c392 head=c392 tail=c392 -=h9 -=h63
+72 beside_cons p0 i=c348 i1=c345 i2=c347 o=c350 o1=c346 o2=c348 ls=c392 head=c392 tail=c392 -=h10 -=h61
+72 beside_cons p0 i=c348 i1=c345 i2=c347 o=c350 o1=c347 o2=c347 ls=c392 head=c392 tail=c392 -=h11 -=h58
+72 beside_cons p0 i=c348 i1=c345 i2=c347 o=c350 o1=c347 o2=c347 ls=c392 head=c392 tail=c392 -=h11 -=h59
+72 beside_cons p0 i=c348 i1=c345 i2=c347 o=c350 o1=c348 o2=c346 ls=c392 head=c392 tail=c392 -=h12 -=h56
+72 beside_cons p0 i=c348 i1=c345 i2=c347 o=c350 o1=c349 o2=c345 ls=c392 head=c392 tail=c392 -=h13 -=h54
+72 beside_cons p0 i=c348 i1=c346 i2=c346 o=c350 o1=c345 o2=c349 ls=c392 head=c392 tail=c392 -=h15 -=h50
+72 beside_cons p0 i=c348 i1=c346 i2=c346 o=c350 o1=c346 o2=c348 ls=c392 head=c392 tail=c392 -=h16 -=h49
+72 beside_cons p0 i=c348 i1=c346 i2=c346 o=c350 o1=c346 o2=c348 ls=c392 head=c392 tail=c392 -=h17 -=h48
+72 beside_cons p0 i=c348 i1=c346 i2=c346 o=c350 o1=c348 o2=c346 ls=c392 head=c392 tail=c392 -=h18 -=h43
+72 beside_cons p0 i=c348 i1=c346 i2=c346 o=c350 o1=c348 o2=c346 ls=c392 head=c392 tail=c392 -=h18 -=h44
+72 beside_cons p0 i=c348 i1=c347 i2=c345 o=c350 o1=c345 o2=c349 ls=c392 head=c392 tail=c392 -=h19 -=h37
+72 beside_cons p0 i=c348 i1=c347 i2=c345 o=c350 o1=c347 o2=c347 ls=c392 head=c392 tail=c392 -=h20 -=h34
+72 beside_cons p0 i=c348 i1=c347 i2=c345 o=c350 o1=c347 o2=c347 ls=c392 head=c392 tail=c392 -=h21 -=h33
+73 beside_cons p0 i=c348 i1=c345 i2=c347 o=c351 o1=c346 o2=c350 ls=c392 head=c392 tail=c392 -=h10 -=h65
+73 beside_cons p0 i=c348 i1=c345 i2=c347 o=c351 o1=c347 o2=c349 ls=c392 head=c392 tail=c392 -=h11 -=h63
+73 beside_cons p0 i=c348 i1=c345 i2=c347 o=c351 o1=c348 o2=c348 ls=c392 head=c392 tail=c392 -=h12 -=h61
+73 beside_cons p0 i=c348 i1=c345 i2=c347 o=c351 o1=c349 o2=c347 ls=c392 head=c392 tail=c392 -=h13 -=h58
+73 beside_cons p0 i=c348 i1=c345 i2=c347 o=c351 o1=c349 o2=c347 ls=c392 head=c392 tail=c392 -=h13 -=h59
+73 beside_cons p0 i=c348 i1=c345 i2=c347 o=c351 o1=c350 o2=c346 ls=c392 head=c392 tail=c392 -=h14 -=h56
+73 beside_cons p0 i=c348 i1=c346 i2=c346 o=c351 o1=c346 o2=c350 ls=c392 head=c392 tail=c392 -=h16 -=h53
+73 beside_cons p0 i=c348 i1=c346 i2=c346 o=c351 o1=c346 o2=c350 ls=c392 head=c392 tail=c392 -=h17 -=h52
+73 beside_cons p0 i=c348 i1=c346 i2=c346 o=c351 o1=c348 o2=c348 ls=c392 head=c392 tail=c392 -=h18 -=h48
+73 beside_cons p0 i=c348 i1=c347 i2=c345 o=c351 o1=c347 o2=c349 ls=c392 head=c392 tail=c392 -=h20 -=h38
+73 beside_cons p0 i=c348 i1=c347 i2=c345 o=c351 o1=c347 o2=c349 ls=c392 head=c392 tail=c392 -=h21 -=h37
+74 beside_singleton p0 i=c349 o=c345 ls=c392 para=c392 -=h25
+75 beside_singleton p0 i=c350 o=c345 ls=c392 para=c392 -=h26
+76 beside_singleton p0 i=c351 o=c345 ls=c392 para=c392 -=h27
+77 learner p0 i=c348 o=c345 request=c337 ls=c337 epochs=c345 loss=c364 opti=c392 sched=c363 loss_f=h78 scheduler=h80 model=h3
+77 learner p0 i=c348 o=c345 request=c337 ls=c337 epochs=c345 loss=c364 opti=c392 sched=c384 loss_f=h78 scheduler=h81 model=h3
+78 cross_entropy_loss p0 loss=c364
+79 adam_optimizer p0 optimizer=c352
+79 sgd_optimizer p0 optimizer=c387
+80 cosine_annealing_lr p0 opti=c392 sched=c363 optimizer=h79
+81 no_scheduler p0 opti=c392 sched=c384 optimizer=h79
+
+[witnesses]
+swaplaw1 triple_two_entries_nothing_after False
+swaplaw1 triple_two_entries_more_after True
+swaplaw1 triple_three_entries_nothing_after True
+swaplaw1 triple_three_entries_more_after True
+swaplaw1 triple_that_does_not_close True
+swaplaw2 first_pair_nothing_after False
+swaplaw2 first_pair_more_after False
+swaplaw2 first_pair_that_does_not_close True
+swaplaw3 involution_nothing_after False
+swaplaw3 involution_more_after False
+swaplaw3 involution_that_does_not_close True
+swaplaw4 second_pair_nothing_after False
+swaplaw4 second_pair_more_after False
+swaplaw4 second_pair_that_does_not_close True
