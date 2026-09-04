@@ -60,7 +60,8 @@ def test_cifar_head_target_forces_convolutional_front_end():
     trees = list(search_space.enumerate_trees(target, max_count=30))
     assert trees, "the CIFAR head target should synthesize"
     cnn_count, total = _cnn_share(trees)
-    assert cnn_count == total, f"expected every candidate to be convolutional, got {cnn_count}/{total}"
+    assert cnn_count == total, (
+        f"expected every candidate to be convolutional, got {cnn_count}/{total}")
 
 
 def test_the_command_line_offers_exactly_the_targets_the_experiment_can_resolve():
@@ -119,3 +120,29 @@ def test_resume_from_without_baseline_is_rejected_before_the_search_is_built(mon
                          "--csv-path", str(tmp_path / "run.csv")])
 
     assert called == [], "the run started despite the rejected argument combination"
+
+
+def test_load_cifar10_does_not_fetch_anything_by_default(tmp_path):
+    """A missing dataset raises where the run starts, and leaves the directory as it found it.
+
+    torchvision's own default is not to download either. This one had been turned around, which
+    put a fetch of the whole archive on the path of every caller that did not think about it,
+    including two that run for hours before they read the data.
+    """
+    with pytest.raises(RuntimeError):
+        experiment.load_cifar10(str(tmp_path))
+
+    assert list(tmp_path.iterdir()) == [], "a failed load left something behind"
+
+
+def test_a_fetch_of_the_dataset_has_to_be_asked_for(monkeypatch, tmp_path):
+    """The command line carries the flag through, and it is off unless it is given."""
+    seen = {}
+    monkeypatch.setattr(experiment, "run_experiment",
+                        lambda *a, **k: (seen.update(k), ("result", 0.0))[1])
+
+    experiment.main(["--csv-path", str(tmp_path / "a.csv")])
+    assert seen["download"] is False
+
+    experiment.main(["--csv-path", str(tmp_path / "b.csv"), "--download"])
+    assert seen["download"] is True

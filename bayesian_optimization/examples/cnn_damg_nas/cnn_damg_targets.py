@@ -492,6 +492,16 @@ def make_vgg11_bn_target(positions=VGG11_BN_POSITIONS, epochs: int = 50, optimiz
 
     Returns:
         The target type.
+
+    Note:
+        The default of both is None, and a None slot is a wildcard and not a default value. With
+        the optimizer and the schedule left open, the space carries one term per recipe instead of
+        one term per network. The repository offers two optimizers and two schedules, so on the
+        pinned VGG-11-BN chain four terms describe the same network, and three of them train it
+        with a recipe that was not asked for. Pinning both takes those terms out of the space and
+        leaves every network in it, which makes it a decision about what is being searched for and
+        not an optimization: a caller looking for an architecture under a fixed recipe passes
+        both, and a caller looking for an architecture together with its recipe leaves them open.
     """
     # Built in one Constructor("Learner", ...) rather than by intersecting two of them: the target is
     # matched against the learner's suffix, and `C(A) & C(B)` is not the same query as `C(A & B)`.

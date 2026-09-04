@@ -46,7 +46,7 @@ from bayesian_optimization.examples.cnn_damg_nas.cnn_damg_experiment_utils impor
 )
 from bayesian_optimization.examples.cnn_damg_nas.cnn_damg_network_algebras import (
     P50_CORRECTED_CIFAR,
-    pytorch_model_algebra,
+    pytorch_components_algebra,
 )
 from bayesian_optimization.examples.cnn_damg_nas.cnn_damg_reference_architectures import (
     cifar10_vgg11_bn_repo,
@@ -61,7 +61,15 @@ EXPECTED_PARAMETERS = 9_225_984 - 2_752 + 5_130
 
 
 def build_target(epochs: int, learning_rate: float, momentum: float, weight_decay: float):
-    """The reference learner as a query: this structure, this optimizer, this schedule.
+    """The reference learner as a query: this structure, this loss, this optimizer, this schedule.
+
+    Every slot is pinned, the loss included. One combinator answers the loss slot, but it carries
+    a parameter and offers that parameter at two reductions, mean and sum, so an open slot leaves
+    the choice to the enumeration rather than making it. The two are not interchangeable: at a
+    batch of 128 the sum reduction scales every gradient by 128. The order in which the two arrive
+    is not part of the contract of ``enumerate_trees``, which states that the term order is not
+    specified, so a target that leaves the slot open trains whichever term the enumeration happens
+    to put first.
 
     Args:
         epochs (int): Epochs to train, which also becomes the schedule's T_max.
@@ -79,7 +87,8 @@ def build_target(epochs: int, learning_rate: float, momentum: float, weight_deca
                                               & Constructor("output", Literal(10))
                                               & Constructor("structure",
                                                             Literal(cifar10_vgg11_bn_structure())))
-                       & Constructor("Loss", Constructor("type", Literal(None)))
+                       & Constructor("Loss", Constructor(
+                           "type", Literal(CNNrepository.CrossEntropyLoss(reduction="mean"))))
                        & Constructor("Optimizer", Constructor("type", Literal(optimizer)))
                        & Constructor("Scheduler", Constructor(
                            "type", Literal(CNNrepository.CosineAnnealingLR())))
@@ -98,6 +107,10 @@ def main():
                         help="How many independent trainings of the same term.  Their spread is "
                              "the only thing that says whether a later difference is a difference.")
     parser.add_argument("--data-dir", default=DATA_DIR)
+    parser.add_argument("--download", action="store_true",
+                        help="Fetch CIFAR-10 into --data-dir if it is not there.  Without it a "
+                             "missing dataset fails before the synthesis instead of pulling the "
+                             "archive in the middle of the run.")
     parser.add_argument("--json-path", default="results/vgg11_bn_reference.json")
     args = parser.parse_args()
 
@@ -118,15 +131,17 @@ def main():
     tree = next(iter(space.enumerate_trees(target)))
     print(f"Synthesis: {time.time() - started:.1f}s", flush=True)
 
-    n_params = sum(p.numel() for p in tree.interpret(pytorch_model_algebra()).parameters())
+    model, loss_fn = tree.interpret(pytorch_components_algebra())[:2]
+    n_params = sum(p.numel() for p in model.parameters())
     if n_params != EXPECTED_PARAMETERS:
         raise SystemExit(
             f"the synthesized term has {n_params:,} parameters, not the {EXPECTED_PARAMETERS:,} of "
             f"vgg11_bn. The label set or the structure has drifted, and training this term would "
             f"measure a different architecture than the one this run claims to anchor")
-    print(f"Term: {n_params:,} parameters, matches torchvision vgg11_bn", flush=True)
+    print(f"Term: {n_params:,} parameters, matches torchvision vgg11_bn, "
+          f"loss reduction {loss_fn.reduction}", flush=True)
 
-    train_set, test_set = load_cifar10(args.data_dir)
+    train_set, test_set = load_cifar10(args.data_dir, download=args.download)
     x_full, y_full = dataset_to_tensors(train_set, device)
     x_test, y_test = dataset_to_tensors(test_set, device)
     x, y, x_val, y_val = split_train_validation(x_full, y_full, val_fraction=args.val_fraction)
@@ -149,6 +164,9 @@ def main():
 
         with open(args.json_path, "w") as handle:
             json.dump({"expected_parameters": EXPECTED_PARAMETERS, "n_params": n_params,
+                       # Read off the term rather than off the target, so that the anchor says
+                       # which loss it was trained with instead of which loss was asked for.
+                       "loss_reduction": loss_fn.reduction,
                        "epochs": args.epochs, "learning_rate": args.learning_rate,
                        "momentum": args.momentum, "weight_decay": args.weight_decay,
                        "batch_size": args.batch_size, "val_fraction": args.val_fraction,

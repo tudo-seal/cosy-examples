@@ -54,3 +54,99 @@ def test_the_target_of_the_tool_synthesizes_a_term_of_that_size():
 
     model = tree.interpret(pytorch_model_algebra())
     assert sum(p.numel() for p in model.parameters()) == reference.EXPECTED_PARAMETERS
+
+
+# ---------------------------------------------------------------------------
+# What the three slots of the reference target admit.
+#
+# The structure is fully concrete, so each of these spaces is finite and small enough to enumerate
+# completely. That is what makes the counts below say anything: a count over a prefix of an
+# enumeration would depend on an order that ``enumerate_trees`` does not promise, while a closed
+# count of a finite space depends on nothing.
+# ---------------------------------------------------------------------------
+
+def _closed_target(loss, optimizer, scheduler, epochs=50):
+    """The reference structure with the three learner slots set to whatever is passed."""
+    from cosy.core.types import Constructor, Literal
+
+    from bayesian_optimization.examples.cnn_damg_nas.cnn_damg_reference_architectures import (
+        cifar10_vgg11_bn_structure,
+    )
+
+    return Constructor("Learner", Constructor("DAG",
+                                              Constructor("input", Literal(3072))
+                                              & Constructor("output", Literal(10))
+                                              & Constructor("structure",
+                                                            Literal(cifar10_vgg11_bn_structure())))
+                       & Constructor("Loss", Constructor("type", Literal(loss)))
+                       & Constructor("Optimizer", Constructor("type", Literal(optimizer)))
+                       & Constructor("Scheduler", Constructor("type", Literal(scheduler)))
+                       & Constructor("epochs", Literal(epochs)))
+
+
+def _inhabitants(target, epochs=50):
+    from cosy.core import Synthesizer
+
+    from bayesian_optimization.examples.cnn_damg_nas.cnn_damg_reference_architectures import (
+        cifar10_vgg11_bn_repo,
+    )
+
+    repo = cifar10_vgg11_bn_repo(epochs=epochs)
+    space = Synthesizer(repo.specification(), {}).construct_solution_space(target).prune()
+    return list(space.enumerate_trees(target, max_count=20))
+
+
+def test_the_target_of_the_tool_has_exactly_one_inhabitant():
+    """The tool trains the term it describes, and there is no second term it could have trained."""
+    trees = _inhabitants(reference.build_target(50, 0.1, 0.9, 5e-4))
+    assert len(trees) == 1
+    assert trees[0].size == 734
+
+
+def test_an_open_loss_slot_would_admit_both_reductions_of_the_same_network():
+    """This is what the pinned slot buys, and it is why the slot cannot stay open.
+
+    Both terms describe the same network, same size and same parameter count, and they differ in
+    one leaf. At a batch of 128 the sum reduction scales every gradient by 128, so the two do not
+    train alike, and nothing in the run would say which one it got.
+    """
+    from bayesian_optimization.examples.cnn_damg_nas.cnn_damg_network_algebras import (
+        pytorch_components_algebra,
+    )
+    from bayesian_optimization.examples.cnn_damg_nas.cnn_damg_repo import CNNrepository
+
+    optimizer = CNNrepository.SGD(learning_rate=0.1, momentum=0.9, weight_decay=5e-4)
+    trees = _inhabitants(_closed_target(None, optimizer, CNNrepository.CosineAnnealingLR()))
+
+    assert len(trees) == 2
+    assert {tree.size for tree in trees} == {734}
+    reductions = {tree.interpret(pytorch_components_algebra())[1].reduction for tree in trees}
+    assert reductions == {"mean", "sum"}
+
+
+def test_an_open_recipe_puts_one_term_per_recipe_into_the_space():
+    """Four terms of one network, which is the count ``make_vgg11_bn_target`` documents.
+
+    The optimizer slot and the schedule slot are independent, so leaving both open multiplies the
+    terms of every network by the product of what the repository offers there. What this holds
+    down is that product: two optimizers times two schedules on this structure. It falls when the
+    repository gains or loses one of the four, and that number is what a search of this space
+    spends three quarters of its draws on.
+    """
+    from bayesian_optimization.examples.cnn_damg_nas.cnn_damg_repo import CNNrepository
+    from bayesian_optimization.examples.cnn_damg_nas.cnn_damg_term_algebras import (
+        pretty_term_algebra,
+    )
+
+    loss = CNNrepository.CrossEntropyLoss(reduction="mean")
+    trees = _inhabitants(_closed_target(loss, None, None))
+
+    assert len(trees) == 4
+    assert {tree.size for tree in trees} == {734}
+    recipes = set()
+    for tree in trees:
+        pretty = tree.interpret(pretty_term_algebra())
+        optimizer = "Adam" if "CNNrepository.Adam(" in pretty else "SGD"
+        schedule = "none" if "CNNrepository.NoScheduler(" in pretty else "cosine"
+        recipes.add((optimizer, schedule))
+    assert recipes == {("Adam", "cosine"), ("Adam", "none"), ("SGD", "cosine"), ("SGD", "none")}

@@ -187,12 +187,17 @@ CIFAR10_MEAN = (0.4914, 0.4822, 0.4465)
 CIFAR10_STD = (0.2470, 0.2435, 0.2616)
 
 
-def load_cifar10(data_dir: str = DATA_DIR, download: bool = True):
+def load_cifar10(data_dir: str = DATA_DIR, download: bool = False):
     """Load the CIFAR-10 train and test splits.
+
+    A fetch is something a caller asks for. With the default, a missing or incomplete archive
+    raises before anything else happens, which is what a run wants: the alternative is a fetch of
+    the whole dataset starting somewhere in the middle of a search that has already been going for
+    hours, into a directory that may not be the one that was meant.
 
     Args:
         data_dir (str): Where torchvision keeps the archive. (Default value = DATA_DIR)
-        download (bool): Whether a missing archive may be fetched. (Default value = True)
+        download (bool): Whether a missing archive may be fetched. (Default value = False)
 
     Returns:
         tuple: The train and test datasets.
@@ -218,7 +223,7 @@ def run_experiment(n_pre_samples: int, n_iterations: int, population_size: int,
                     size_bound: int = DEFAULT_SIZE_BOUND, baseline: bool = False,
                     crossover_rate: float = DEFAULT_CROSSOVER_RATE,
                     mutation_rate: float = DEFAULT_MUTATION_RATE,
-                    data_dir: str = DATA_DIR, verbose: bool = True,
+                    data_dir: str = DATA_DIR, download: bool = False, verbose: bool = True,
                     protocol: str = "corrected", val_fraction: float = 0.1,
                     batch_size: int = BATCH_SIZE, repeats: int = 1,
                     acquisition_hard_limit: float = ACQUISITION_HARD_LIMIT_SECONDS,
@@ -258,6 +263,8 @@ def run_experiment(n_pre_samples: int, n_iterations: int, population_size: int,
             into the same artifacts.  Costs n_iterations extra trainings, not n_pre_samples +
             n_iterations: the initial design is evaluated once and shared. (Default value = False)
         data_dir (str): Where torchvision keeps the CIFAR-10 archive. (Default value = DATA_DIR)
+        download (bool): Whether a missing archive may be fetched. Off, so that a run fails at its
+            start rather than fetching the dataset once it is under way. (Default value = False)
         verbose (bool): Passed through to the loop. (Default value = True)
         repeats (int): How many trainings every candidate's objective value averages over. 1 is a
             single training. Above 1 the trainings are seeded 0 to repeats - 1, so the average is
@@ -278,7 +285,7 @@ def run_experiment(n_pre_samples: int, n_iterations: int, population_size: int,
     if device.type == "cuda":
         print(f"  GPU: {torch.cuda.get_device_name(0)}")
 
-    train_set, test_set = load_cifar10(data_dir)
+    train_set, test_set = load_cifar10(data_dir, download=download)
     x_full, y_full = dataset_to_tensors(train_set, device)
     x_test, y_test = dataset_to_tensors(test_set, device)
 
@@ -610,6 +617,10 @@ def build_parser() -> argparse.ArgumentParser:
                              "legitimate duration too, so a cell whose acquisition is genuinely "
                              "expensive needs it raised rather than left at the default.")
     parser.add_argument("--data-dir", type=str, default=DATA_DIR)
+    parser.add_argument("--download", action="store_true",
+                        help="Fetch CIFAR-10 into --data-dir if it is not there.  Without it a "
+                             "missing dataset fails at the start of the run instead of pulling "
+                             "the archive in the middle of it.")
     parser.add_argument("--csv-path", type=str, default=None,
                         help="Defaults to results/cifar_experiment_<unix timestamp>.csv")
     return parser
@@ -654,7 +665,7 @@ def main(argv=None):
         sampling=args.sampling, size_bound=args.size_bound,
         baseline=args.baseline, crossover_rate=args.crossover_rate,
         mutation_rate=args.mutation_rate, kernel=args.kernel,
-        data_dir=args.data_dir, protocol=args.protocol,
+        data_dir=args.data_dir, download=args.download, protocol=args.protocol,
         val_fraction=args.val_fraction,
         batch_size=args.batch_size, repeats=args.repeats,
         acquisition_hard_limit=args.acquisition_hard_limit,
