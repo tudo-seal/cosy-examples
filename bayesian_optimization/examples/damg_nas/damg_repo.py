@@ -145,7 +145,7 @@ class DAMGrepository:
 
     def __init__(self,
                  linear_feature_dimensions: list[int], constant_values: list[int], learning_rate_values: list[float],
-                 n_epoch_values: list[int], dimensions=None):
+                 n_epoch_values: list[int], dimensions=None, max_parallel_width: int = 3):
         self.dimensions: list[int] = list(range(1, max(linear_feature_dimensions) + 1) if (dimensions is None or
                                                                            (dimensions is not None and
                                                                             max(dimensions) <
@@ -156,6 +156,11 @@ class DAMGrepository:
         self.n_epoch_values = n_epoch_values
         self.constant_values = (constant_values if 1 in constant_values and 0 in constant_values
                                 else constant_values + [0, 1])
+        # How many components may sit beside each other in one parallel composition.  A count of
+        # components, so it belongs to no dimension: the widest composition the targets in
+        # damg_targets.py ask for is three wide, and the widest linear feature a target may name
+        # says nothing about that.  See `specification` for where it is used.
+        self.max_parallel_width = max_parallel_width
 
     # We will interpret every combinator as a pytorch nn.module. We will treat combinators and their interpretations as
     # parametric functions. Our repository will therefore model the Para-construction on a symmetric monoidal category.
@@ -1121,7 +1126,18 @@ class DAMGrepository:
         labels = self.Label(self.dimensions, self.linear_feature_dimensions, self.constant_values)
         para_labels = self.Para(labels, self.dimensions)
         #print("linear" in para_labels)
-        paratuples = self.ParaTuples(para_labels, max_length=max(self.dimensions))
+        # `max_length` bounds the length of a parallel composition, so the bound belongs to the
+        # component count and not to `self.dimensions`, whose largest element is a feature width.
+        # The two happened to be interchangeable at the sizes this example runs at, and they are
+        # not the same quantity: raising the largest linear feature to 64 would ask ParaTuples to
+        # enumerate compositions of up to 64 components.
+        #
+        # What this bounds is the enumeration of the group, and only that.  The membership check
+        # asks of each component whether it is a Para value and reads no length at all, so a
+        # composition wider than the bound is still a member and a target may still name one.
+        # Making the bound bind the space would mean teaching that check to read it, which is a
+        # decision about what the search covers rather than about what this line names.
+        paratuples = self.ParaTuples(para_labels, max_length=self.max_parallel_width)
         paratupletuples = self.ParaTupleTuples(paratuples)
         dimension = DataGroup("dimension", self.dimensions)
         dimension_with_None = DataGroup("dimension_with_None", list(self.dimensions) + [None])
