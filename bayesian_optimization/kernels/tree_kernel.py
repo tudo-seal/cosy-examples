@@ -167,6 +167,29 @@ class SubsetTreeKernel(StructuredKernelBase[T], Generic[T]):
     filling a hole raises the score from zero to one.  Keeping one implementation means the
     surrogate and the initializer cannot drift apart on what a subset tree is.
 
+    On terms of a hundred nodes the normalized Gram matrix of this kernel can already be
+    numerically the identity.  A position contributes the product over its children of one plus
+    their own contribution, so almost all of a term's self-similarity sits in the fragments that
+    reach down from its top, and a balanced binary term of 127 nodes scores 2.1e11 against itself.
+    A shared fragment has to match at every position it spans, so one differing production removes
+    every fragment through it, and where two terms differ decides the entry as much as how large
+    they are: on that same term a changed leaf symbol still leaves 0.62, while a changed symbol at
+    the root leaves 8.8e-06.  Ten such terms that differ in the symbols nearest their root give an
+    off-diagonal mean of 7e-05 with every eigenvalue within 2e-3 of one.  Both counts are whole
+    numbers well inside what a double holds exactly, so this is the kernel's arithmetic and not a
+    rounding effect, and a surrogate conditioned on such a matrix reproduces the terms it has
+    observed and predicts the prior mean everywhere else.  See
+    ``test_the_subset_tree_gram_matrix_collapses_on_large_terms``.
+
+    Where a search space sits on that scale is read off its own terms, which is what
+    :func:`~bayesian_optimization.diagnostics.read_gram` reports as ``off_diagonal_mean`` and
+    ``condition_number``.  Neither parameter below reaches the mechanism.  ``normalize`` divides
+    by the self-similarities and the collapse is that quotient, so switching it off leaves the raw
+    scale in without moving the ratios.  A ``tree_transformation`` changes which terms are scored
+    rather than how they are scored, and a fold that shrinks the terms can move where a space sits
+    without changing that.  What damps the large fragments a self-similarity is built from is a
+    decay below one, and cosy's ``k_sst`` fixes the decay at one.
+
     Parameters
     ----------
     normalize:

@@ -3,6 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 from cosy.core.tree import Tree
+from cosy.search.kernels import k_sst
 from grakel.kernels import VertexHistogram
 from sklearn.gaussian_process import GaussianProcessRegressor
 
@@ -286,6 +287,76 @@ def test_a_leaf_roots_no_subset_tree():
     leaf = Tree("a")
     assert kernel.diag([leaf])[0] == 0.0
     assert kernel([leaf])[0, 0] == 0.0
+
+
+def _balanced(depth: int, code: int = 0) -> Tree:
+    """Return a balanced binary term whose internal symbols are the bits of ``code``.
+
+    The bits are read in preorder, so bit zero is the root and the bits after it fall on its
+    leftmost descendants. Small codes therefore differ where the subset trees are concentrated.
+    """
+    positions = iter(range(2**depth))
+
+    def build(level: int) -> Tree:
+        if level == 0:
+            return Tree("a")
+        symbol = "g" if (code >> next(positions)) & 1 else "f"
+        return Tree(symbol, (build(level - 1), build(level - 1)))
+
+    return build(depth)
+
+
+def _change_the_leftmost_leaf(tree: Tree) -> Tree:
+    """Return the term with its leftmost leaf carrying another symbol."""
+    if not tree.children:
+        return Tree("b")
+    return Tree(tree.root, (_change_the_leftmost_leaf(tree.children[0]), *tree.children[1:]))
+
+
+def test_the_subset_tree_gram_matrix_collapses_on_large_terms():
+    """On terms of a hundred nodes the normalized subset-tree matrix is numerically the identity.
+
+    A position scores the product over its children of one plus their own score, so the
+    self-similarity of a term grows exponentially in the positions that have children, while two
+    different terms share only the fragments that agree everywhere they reach. Each normalized
+    entry is the quotient of those two counts, and at this size that quotient is 7e-05. A
+    surrogate conditioned on such a matrix carries nothing from one observation to the next.
+    """
+    terms = [_balanced(6, code) for code in range(10)]
+    assert len(set(terms)) == 10
+    assert terms[0].size == 127
+
+    matrix = SubsetTreeKernel(normalize=True)(terms)
+    off_diagonal = matrix[~np.eye(len(terms), dtype=bool)]
+    eigenvalues = np.linalg.eigvalsh((matrix + matrix.T) / 2)
+
+    assert off_diagonal.mean() == pytest.approx(6.94e-05, rel=1e-2)
+    assert off_diagonal.max() < 1e-2
+    assert np.max(np.abs(eigenvalues - 1.0)) < 2e-3
+
+    self_similarity = k_sst(terms[0], terms[0])
+    shared = k_sst(terms[0], terms[1])
+    assert self_similarity == pytest.approx(2.1e11, rel=1e-2)
+    assert self_similarity.is_integer(), "the collapse is the ratio of two counts, not a rounding"
+    assert shared.is_integer(), "the shared count is exact as well, so the quotient is too"
+
+
+def test_where_two_terms_differ_decides_the_subset_tree_entry():
+    """One changed symbol costs a term the fragments that ran through that symbol's position.
+
+    The count at a position is the product over its children, so the fragments rooted near the
+    top carry nearly all of a term's self-similarity, and a production that differs there removes
+    all of them. Size alone therefore does not say where a space sits, which is why the two
+    numbers below are nearly five decades apart on terms of one and the same size.
+    """
+    base = _balanced(6)
+    kernel = SubsetTreeKernel(normalize=True)
+
+    at_a_leaf = kernel([base], [_change_the_leftmost_leaf(base)])[0, 0]
+    at_the_root = kernel([base], [Tree("g", base.children)])[0, 0]
+
+    assert at_a_leaf == pytest.approx(0.616, rel=1e-2)
+    assert at_the_root == pytest.approx(8.8e-06, rel=1e-2)
 
 
 def test_model_selection_moves_the_level_weights(tree_corpus):
