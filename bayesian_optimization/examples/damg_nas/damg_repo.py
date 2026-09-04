@@ -375,6 +375,20 @@ class DAMGrepository:
         name = "ParaTuples"
 
         def __init__(self, para, max_length=3):
+            # `para_group` keeps the Para *group* itself, `para` materializes its enumeration.
+            # The two are not interchangeable: Para.__iter__ only ever yields fully concrete
+            # triples (and None as a whole element), while Para.__contains__ additionally accepts
+            # the partially concrete triples (l, i, None), (l, None, o), (None, i, o) and the
+            # further shapes a leaf combinator declares beside them.  Seven of the nine declare
+            # para1 to para7, and edges and swap declare para1 to para16.
+            #
+            # Membership therefore has to go through the group, see __contains__ below.  Testing
+            # against the materialized tuple instead rejects every partially concrete structure
+            # literal: such a literal is inferred from the requested target rather than enumerated
+            # from the group, so __contains__ is the only thing that ever validates it, and the
+            # rejection happens while the synthesizer enumerates substitutions for the `request`
+            # parameter of `learner`.  The target then yields no term at all and says nothing.
+            self.para_group = para
             self.para = tuple(para)
             self.max_length = max_length
             self._iter_cache = None
@@ -394,7 +408,9 @@ class DAMGrepository:
             yield from self._iter_cache
 
         def __contains__(self, value):
-            return value is None or (isinstance(value, tuple) and all(True if v is None else v in self.para for v in value))
+            return value is None or (
+                isinstance(value, tuple)
+                and all(True if v is None else v in self.para_group for v in value))
 
         # As ParaTuples defines all possible parallel compositions of components as literals, we can ensure normalforms
         # on the literal-level by normalizing them.
