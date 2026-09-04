@@ -216,3 +216,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# The CIFAR-10 archive the CNN example reads, and the artifacts one of its runs writes.
+data/
+results/
