@@ -1,16 +1,22 @@
 # The CNN repository as it was when it entered this repository.
 #
 # Written by tests/test_cnn_damg_repo_is_unchanged.py, which is also the only reader.  It holds
-# three synthesized spaces rule by rule, and the verdicts of the four swap laws on the witness
-# corpus of that module.  The three spaces are the pinned VGG-11 chain, the same chain with one
-# merged position opened to two parallel components, and a small configuration with two free
-# positions.  Together they reach every combinator of CNNrepository.specification().
+# three synthesized spaces rule by rule, the clause of every combinator, and the verdicts of the
+# four swap laws on the witness corpus of that module.  The three spaces are the pinned VGG-11
+# chain, the same chain with one merged position opened to two parallel components, and a small
+# configuration with two free positions.  Together they reach every combinator of
+# CNNrepository.specification().
 #
 # A rule is one line: the index of its non-terminal, its terminal, and one field per argument,
 # `name=h<index>` for a hole into the non-terminal of that index and `name=c<index>` for a
 # constant of that index, `-` for an argument that carries no name, and `p<count>` for the number
 # of predicates the rule carries.  The non-terminals and the constants are listed once each, as
 # JSON strings, so that a rule stays one readable line.
+#
+# A clause is one line too: the combinator, then one field per parameter and per predicate in the
+# order the clause introduces them, closed by the suffix type as a JSON string.  It is read off
+# the specification before any synthesis, which is what makes it see a conjunct that no target of
+# the three spaces ever leaves open.
 #
 # When a commit changes this file legitimately, regenerate it with
 #
@@ -1862,6 +1868,30 @@ terminals adam_optimizer batchnorm2d before_cons before_singleton beside_cons be
 79 sgd_optimizer p0 optimizer=c387
 80 cosine_annealing_lr p0 opti=c392 sched=c363 optimizer=h79
 81 no_scheduler p0 opti=c392 sched=c384 optimizer=h79
+
+[spines 22]
+adam_optimizer parameter=optimizer "Optimizer(type(<optimizer>) & type([None]))"
+batchnorm2d parameter=l parameter=i parameter=o parameter=para1 parameter=para2 parameter=para3 parameter=para4 parameter=para5 parameter=para6 parameter=para7 "DAG_component(input(<i>) & input([None]) & output(<o>) & output([None]) & structure(<para1>) & structure(<para2>) & structure(<para3>) & structure(<para4>) & structure(<para5>) & structure(<para6>) & structure(<para7>) & structure([None])) & non_ID"
+before_cons parameter=i parameter=j parameter=o parameter=request parameter=ls literals parameter=head literals parameter=tail literals parameter=x parameter=y law=on-terms law=on-terms law=on-terms law=on-terms "DAG(input(<i>) & input([None]) & output(<o>) & output([None]) & structure(<request>))"
+before_singleton parameter=i parameter=o parameter=request parameter=ls literals parameter=ls1 literals parameter=x "DAG(input(<i>) & input([None]) & output(<o>) & output([None]) & structure(<request>))"
+beside_cons parameter=i parameter=i1 parameter=i2 parameter=o parameter=o1 parameter=o2 parameter=ls literals parameter=head literals parameter=tail "DAG_component(input(<i1>) & output(<o1>) & structure(<head>)) & ID -> DAG_parallel(input(<i2>) & output(<o2>) & structure(<tail>)) & non_ID & last(non_ID) -> DAG_parallel(input(<i>) & input([None]) & output(<o>) & output([None]) & structure(<ls>)) & non_ID & last(ID) & DAG_component(input(<i1>) & output(<o1>) & structure(<head>)) & non_ID -> DAG_parallel(input(<i2>) & output(<o2>) & structure(<tail>)) & ID -> DAG_parallel(input(<i>) & input([None]) & output(<o>) & output([None]) & structure(<ls>)) & non_ID & last(non_ID) & DAG_component(input(<i1>) & output(<o1>) & structure(<head>)) & non_ID -> DAG_parallel(input(<i2>) & output(<o2>) & structure(<tail>)) & non_ID -> DAG_parallel(input(<i>) & input([None]) & output(<o>) & output([None]) & structure(<ls>)) & non_ID & last(non_ID)"
+beside_singleton parameter=i parameter=o parameter=ls literals parameter=para literals "DAG_component(input(<i>) & output(<o>) & structure(<para>)) & non_ID -> DAG_parallel(input(<i>) & input([None]) & output(<o>) & output([None]) & structure(<ls>)) & non_ID & last(non_ID) & DAG_component(input(<i>) & output(<o>) & structure(<para>)) & ID -> DAG_parallel(input(<i>) & input([None]) & output(<o>) & output([None]) & structure(<ls>)) & ID"
+conv2d parameter=l parameter=i parameter=o parameter=para1 parameter=para2 parameter=para3 parameter=para4 parameter=para5 parameter=para6 parameter=para7 "DAG_component(input(<i>) & input([None]) & output(<o>) & output([None]) & structure(<para1>) & structure(<para2>) & structure(<para3>) & structure(<para4>) & structure(<para5>) & structure(<para6>) & structure(<para7>) & structure([None])) & non_ID"
+copy parameter=l parameter=i parameter=o parameter=para1 parameter=para2 parameter=para3 parameter=para4 parameter=para5 parameter=para6 parameter=para7 "DAG_component(input(<i>) & input([None]) & output(<o>) & output([None]) & structure(<para1>) & structure(<para2>) & structure(<para3>) & structure(<para4>) & structure(<para5>) & structure(<para6>) & structure(<para7>) & structure([None])) & non_ID"
+cosine_annealing_lr parameter=opti parameter=sched parameter=optimizer "Scheduler(type(<sched>) & type([None]) & Optimizer(type(<opti>)))"
+cross_entropy_loss parameter=loss "Loss(type(<loss>) & type([None]))"
+edges parameter=io parameter=para1 parameter=para2 parameter=para3 parameter=para4 parameter=para5 parameter=para6 parameter=para7 parameter=para8 parameter=para9 parameter=para10 parameter=para11 parameter=para12 parameter=para13 parameter=para14 parameter=para15 parameter=para16 "DAG_component(input(<io>) & input([None]) & output(<io>) & output([None]) & structure(<para1>) & structure(<para2>) & structure(<para3>) & structure(<para4>) & structure(<para5>) & structure(<para6>) & structure(<para7>) & structure(<para8>) & structure(<para9>) & structure(<para10>) & structure(<para11>) & structure(<para12>) & structure(<para13>) & structure(<para14>) & structure(<para15>) & structure(<para16>) & structure([None])) & ID"
+learner parameter=i parameter=o parameter=request parameter=ls parameter=epochs parameter=loss parameter=opti parameter=sched parameter=loss_f parameter=scheduler parameter=model "Learner(DAG(input(<i>) & output(<o>) & structure(<request>)) & Loss(type(<loss>)) & Optimizer(type(<opti>)) & Scheduler(type(<sched>)) & epochs(<epochs>) & epochs([None]))"
+linear_layer parameter=l parameter=i parameter=o parameter=para1 parameter=para2 parameter=para3 parameter=para4 parameter=para5 parameter=para6 parameter=para7 "DAG_component(input(<i>) & input([None]) & output(<o>) & output([None]) & structure(<para1>) & structure(<para2>) & structure(<para3>) & structure(<para4>) & structure(<para5>) & structure(<para6>) & structure(<para7>) & structure([None])) & non_ID"
+maxpool2d parameter=l parameter=i parameter=o parameter=para1 parameter=para2 parameter=para3 parameter=para4 parameter=para5 parameter=para6 parameter=para7 "DAG_component(input(<i>) & input([None]) & output(<o>) & output([None]) & structure(<para1>) & structure(<para2>) & structure(<para3>) & structure(<para4>) & structure(<para5>) & structure(<para6>) & structure(<para7>) & structure([None])) & non_ID"
+no_scheduler parameter=opti parameter=sched parameter=optimizer "Scheduler(type(<sched>) & type([None]) & Optimizer(type(<opti>)))"
+product parameter=l parameter=i parameter=o parameter=para1 parameter=para2 parameter=para3 parameter=para4 parameter=para5 parameter=para6 parameter=para7 "DAG_component(input(<i>) & input([None]) & output(<o>) & output([None]) & structure(<para1>) & structure(<para2>) & structure(<para3>) & structure(<para4>) & structure(<para5>) & structure(<para6>) & structure(<para7>) & structure([None])) & non_ID"
+relu parameter=l parameter=i parameter=o parameter=para1 parameter=para2 parameter=para3 parameter=para4 parameter=para5 parameter=para6 parameter=para7 "DAG_component(input(<i>) & input([None]) & output(<o>) & output([None]) & structure(<para1>) & structure(<para2>) & structure(<para3>) & structure(<para4>) & structure(<para5>) & structure(<para6>) & structure(<para7>) & structure([None])) & non_ID"
+sgd_optimizer parameter=optimizer "Optimizer(type(<optimizer>) & type([None]))"
+sigmoid parameter=l parameter=i parameter=o parameter=para1 parameter=para2 parameter=para3 parameter=para4 parameter=para5 parameter=para6 parameter=para7 "DAG_component(input(<i>) & input([None]) & output(<o>) & output([None]) & structure(<para1>) & structure(<para2>) & structure(<para3>) & structure(<para4>) & structure(<para5>) & structure(<para6>) & structure(<para7>) & structure([None])) & non_ID"
+sum parameter=l parameter=i parameter=o parameter=para1 parameter=para2 parameter=para3 parameter=para4 parameter=para5 parameter=para6 parameter=para7 "DAG_component(input(<i>) & input([None]) & output(<o>) & output([None]) & structure(<para1>) & structure(<para2>) & structure(<para3>) & structure(<para4>) & structure(<para5>) & structure(<para6>) & structure(<para7>) & structure([None])) & non_ID"
+swap parameter=io parameter=n parameter=m parameter=para1 parameter=para2 parameter=para3 parameter=para4 parameter=para5 parameter=para6 parameter=para7 parameter=para8 parameter=para9 parameter=para10 parameter=para11 parameter=para12 parameter=para13 parameter=para14 parameter=para15 parameter=para16 "DAG_component(input(<io>) & input([None]) & output(<io>) & output([None]) & structure(<para1>) & structure(<para2>) & structure(<para3>) & structure(<para4>) & structure(<para5>) & structure(<para6>) & structure(<para7>) & structure(<para8>) & structure(<para9>) & structure(<para10>) & structure(<para11>) & structure(<para12>) & structure(<para13>) & structure(<para14>) & structure(<para15>) & structure(<para16>) & structure([None])) & non_ID"
+tanh parameter=l parameter=i parameter=o parameter=para1 parameter=para2 parameter=para3 parameter=para4 parameter=para5 parameter=para6 parameter=para7 "DAG_component(input(<i>) & input([None]) & output(<o>) & output([None]) & structure(<para1>) & structure(<para2>) & structure(<para3>) & structure(<para4>) & structure(<para5>) & structure(<para6>) & structure(<para7>) & structure([None])) & non_ID"
 
 [witnesses]
 swaplaw1 triple_two_entries_nothing_after False

@@ -7,7 +7,7 @@ This module is that test.  It is scaffolding for the migration of the CNN exampl
 with its last commit.
 
 It compares against a record frozen at migration, in ``data/cnn_damg_repo_at_migration.txt``, so it
-holds two things and nothing else.
+holds three things and nothing else.
 
 The rules.  For three synthesized spaces it holds every non-terminal with its rules, and every rule
 with its terminal and its argument list, a hole written as the non-terminal it comes from and a
@@ -16,9 +16,18 @@ argument type changes.  Both sides are built in the same process against the sam
 upstream change to how a type prints moves the current side and the frozen side apart and has to be
 regenerated, which is the price for a record that stays readable.
 
+The clause spines.  A rule records what a target asked for, and all three targets below are pinned,
+so a conjunct that only an open target would need is a conjunct no rule of theirs carries.  Turning
+the ``output([None])`` of ``linear_layer`` into ``output([0])`` leaves all three spaces character
+for character identical, and that is no equivalence: a target that leaves the output slot open no
+longer reaches the combinator.  The second axis is therefore the clause itself, read off
+``CNNrepository.specification()`` before any synthesis.  Per combinator it holds the parameters and
+the predicates in the order the clause introduces them, closed by the suffix type, which carries
+every conjunct verbatim.
+
 The verdicts of the four swap laws.  A rule carries its predicates as closures, so the rule record
 cannot look into them.  Switching a law off entirely leaves all three spaces character-identical.
-The second axis is therefore a corpus of hand-built witnesses, each a pair of subterms that the law
+The third axis is therefore a corpus of hand-built witnesses, each a pair of subterms that the law
 either rejects or admits, with the verdict frozen beside it.
 
 Three spaces, because each is blind where the others see.  The pinned VGG-11 chain is the space the
@@ -55,6 +64,7 @@ from bayesian_optimization.examples.cnn_damg_nas.cnn_damg_targets import (
     make_variance_target,
     make_vgg11_bn_target,
 )
+from tests.programs import clause_spine
 
 FROZEN = Path(__file__).with_name("data") / "cnn_damg_repo_at_migration.txt"
 
@@ -140,6 +150,52 @@ def shape_of(space):
             rules.append((str(rule.terminal), arguments, len(rule.predicates)))
         shape[str(nonterminal)] = sorted(rules)
     return shape
+
+
+def spine_of(clause):
+    """Return one combinator's clause as a tuple of entries, the suffix type last.
+
+    :func:`tests.programs.clause_spine` walks the clause and yields a tuple per parameter, per
+    predicate and one for the suffix.  Writing each of them as a single string is what lets the
+    record hold a spine on one line and lets a failure point into the entry that moved.
+
+    Args:
+        clause (Specification): One combinator's specification, as the builder leaves it.
+
+    Returns:
+        tuple: One string per entry, closing with the rendered suffix type.
+    """
+    entries = []
+    for entry in clause_spine(clause):
+        kind = entry[0]
+        if kind == "parameter":
+            entries.append(f"parameter={entry[1]}")
+        elif kind == "constraint on the literals":
+            entries.append("literals")
+        elif kind == "law":
+            # A law stated as a relation on states carries the abstraction it was determinized
+            # over, and two laws that differ only there are two different laws.
+            entries.append("law=on-terms" if entry[2] is None else f"law=on-states:{entry[2]}")
+        elif kind == "suffix":
+            entries.append(entry[1])
+        else:
+            raise ValueError(f"a clause spine entry this record cannot hold: {entry!r}")
+    return tuple(entries)
+
+
+@cache
+def _spines():
+    """Read every clause of the repository, before any synthesis touches it.
+
+    A spine holds parameter names, predicate kinds and the suffix type, and none of those carries a
+    value from the configuration: both configurations of this module give the same spine for every
+    combinator.  The reference repository therefore stands for both.
+
+    Returns:
+        dict: Per combinator name, its spine as :func:`spine_of` renders it.
+    """
+    return {name: spine_of(clause)
+            for name, clause in cifar10_vgg11_bn_repo().specification().items()}
 
 
 # --------------------------------------------------------------------------- the witness corpus
@@ -325,16 +381,22 @@ HEADER = """\
 # The CNN repository as it was when it entered this repository.
 #
 # Written by tests/test_cnn_damg_repo_is_unchanged.py, which is also the only reader.  It holds
-# three synthesized spaces rule by rule, and the verdicts of the four swap laws on the witness
-# corpus of that module.  The three spaces are the pinned VGG-11 chain, the same chain with one
-# merged position opened to two parallel components, and a small configuration with two free
-# positions.  Together they reach every combinator of CNNrepository.specification().
+# three synthesized spaces rule by rule, the clause of every combinator, and the verdicts of the
+# four swap laws on the witness corpus of that module.  The three spaces are the pinned VGG-11
+# chain, the same chain with one merged position opened to two parallel components, and a small
+# configuration with two free positions.  Together they reach every combinator of
+# CNNrepository.specification().
 #
 # A rule is one line: the index of its non-terminal, its terminal, and one field per argument,
 # `name=h<index>` for a hole into the non-terminal of that index and `name=c<index>` for a
 # constant of that index, `-` for an argument that carries no name, and `p<count>` for the number
 # of predicates the rule carries.  The non-terminals and the constants are listed once each, as
 # JSON strings, so that a rule stays one readable line.
+#
+# A clause is one line too: the combinator, then one field per parameter and per predicate in the
+# order the clause introduces them, closed by the suffix type as a JSON string.  It is read off
+# the specification before any synthesis, which is what makes it see a conjunct that no target of
+# the three spaces ever leaves open.
 #
 # When a commit changes this file legitimately, regenerate it with
 #
@@ -346,11 +408,12 @@ HEADER = """\
 """
 
 
-def _render(shapes, verdicts):
+def _render(shapes, spines, verdicts):
     """Render the frozen record.
 
     Args:
         shapes (dict): Per cell, the shape :func:`shape_of` returns.
+        spines (dict): Per combinator, the spine :func:`spine_of` returns.
         verdicts (list): ``(law, key, verdict)`` per witness.
 
     Returns:
@@ -395,6 +458,21 @@ def _render(shapes, verdicts):
                     fields.append(f"{written}={slot}")
                 lines.append(f"{name_index[name]} {terminal} " + " ".join(fields))
     lines.append("")
+    lines.append(f"[spines {len(spines)}]")
+    for name in sorted(spines):
+        entries = spines[name]
+        for entry in (name,) + entries[:-1]:
+            # The suffix is the last entry and goes in as a JSON string, so it may hold anything.
+            # The fields before it may not, since the line is read back by splitting on spaces and
+            # on the first quote.  No combinator or parameter of the repository breaks that, and if
+            # one ever does, this stops rather than writing a record that cannot be read.
+            if any(character.isspace() for character in entry) or '"' in entry:
+                raise ValueError(
+                    f"the record cannot hold the clause of {name!r} with an entry {entry!r}: "
+                    "a clause has to fit on one line")
+        prefix = " ".join((name,) + entries[:-1])
+        lines.append(f"{prefix} {json.dumps(entries[-1])}")
+    lines.append("")
     lines.append("[witnesses]")
     lines.extend(f"{law} {key} {verdict}" for law, key, verdict in verdicts)
     lines.append("")
@@ -405,17 +483,21 @@ def _parse(text):
     """Read the frozen record back, and check it against its own header.
 
     The per-cell header states the number of non-terminals, the number of rules and the terminals
-    reached.  Checking the body against it turns a truncated or hand-edited record into an error
-    that names the file, rather than into a rule comparison that reports the damage as drift.
+    reached, and the spine header states how many clauses follow.  Checking the body against them
+    turns a truncated or hand-edited record into an error that names the file, rather than into a
+    comparison that reports the damage as drift.
 
     Args:
         text (str): The file contents.
 
     Returns:
-        tuple: The shapes per cell and the verdicts as ``{(law, key): bool}``.
+        tuple: The shapes per cell, the spines per combinator, and the verdicts as
+        ``{(law, key): bool}``.
     """
     shapes = {cell: {} for cell in CELLS}
     declared = {}
+    spines = {}
+    declared_spines = None
     verdicts = {}
     names, constants, cell = [], [], None
     section = None
@@ -427,6 +509,8 @@ def _parse(text):
             section = head[0]
             if section in ("nonterminals", "constants", "rules", "cell"):
                 cell = head[1]
+            if section == "spines":
+                declared_spines = int(head[1])
             if section == "nonterminals":
                 names = []
             if section == "constants":
@@ -453,6 +537,10 @@ def _parse(text):
                      None if argument_name == "-" else argument_name))
             shapes[cell].setdefault(names[int(index)], []).append(
                 (terminal, tuple(arguments), predicates))
+        elif section == "spines":
+            name, rest = line.split(" ", 1)
+            fields, _, suffix = rest.partition('"')
+            spines[name] = tuple(fields.split()) + (json.loads('"' + suffix),)
         elif section == "witnesses":
             law, key, verdict = line.split(" ")
             verdicts[(law, key)] = verdict == "True"
@@ -472,7 +560,11 @@ def _parse(text):
             raise ValueError(
                 f"{FROZEN} does not agree with its own header for {cell}: it states "
                 f"{stated} and holds {found}")
-    return shapes, verdicts
+    if declared_spines != len(spines):
+        raise ValueError(
+            f"{FROZEN} does not agree with its own header on the clauses: it states "
+            f"{declared_spines} and holds {len(spines)}")
+    return shapes, spines, verdicts
 
 
 def _short(text, limit=90):
@@ -551,6 +643,51 @@ def _drift(frozen, current, cell):
     return "\n".join(lines)
 
 
+def _entry_difference(before, after, limit=45):
+    """Say how two entries of a clause differ, and where.
+
+    The suffix type of a clause runs to several hundred characters and two of them differ in a few,
+    so a long entry is shown from twenty characters before the first one that moved rather than
+    whole.
+
+    Returns:
+        str: The two entries, or the neighborhood of their first difference.
+    """
+    if len(before) <= limit and len(after) <= limit:
+        return f"{before} -> {after}"
+    common = 0
+    while common < min(len(before), len(after)) and before[common] == after[common]:
+        common += 1
+    start = max(0, common - 20)
+    return (f"from character {start}: {_short(before[start:], limit)} -> "
+            f"{_short(after[start:], limit)}")
+
+
+def _spine_drift(frozen, current, combinator):
+    """Describe how the current clause differs from the frozen one, or return the empty string.
+
+    It names the entries that moved and nothing else, so a clause whose suffix runs to several
+    hundred characters does not arrive whole in the failure message.
+    """
+    lines = []
+    for position in range(max(len(frozen), len(current))):
+        before = frozen[position] if position < len(frozen) else None
+        after = current[position] if position < len(current) else None
+        if before == after:
+            continue
+        if before is None:
+            lines.append(f"  entry {position} is new:  {_short(after, 45)}")
+        elif after is None:
+            lines.append(f"  entry {position} is gone: {_short(before, 45)}")
+        else:
+            lines.append(f"  entry {position}: {_entry_difference(before, after)}")
+    if not lines:
+        return ""
+    if len(lines) > 3:
+        lines = lines[:3] + [f"  and {len(lines) - 3} more entries differ"]
+    return "\n".join([f"the clause of {combinator} is not the one that was frozen"] + lines)
+
+
 @cache
 def _frozen():
     """Read the frozen record once, or fail with the command that writes it."""
@@ -573,8 +710,31 @@ def test_the_synthesized_rules_are_the_ones_that_were_frozen(cell):
     Args:
         cell (str): The space to check.
     """
-    frozen, _ = _frozen()
+    frozen, _, _ = _frozen()
     drift = _drift(frozen[cell], build(cell), cell)
+    assert not drift, drift
+
+
+@pytest.mark.parametrize("combinator", sorted(_spines()))
+def test_the_clause_of_every_combinator_is_the_one_that_was_frozen(combinator):
+    """One clause, parameter by parameter and predicate by predicate, suffix type included.
+
+    The three spaces build from pinned targets, so a conjunct that only an open target would need
+    is in no rule of theirs, and changing it moves none of the three.  This axis reads the clause
+    instead, before any synthesis, so it sees that conjunct.  A law that was dropped, added or
+    attached to another combinator lands here too.
+
+    A combinator the specification lost does not reach this test, since it is parametrized over
+    what the specification declares.  The rules comparison catches it, because every declared
+    combinator is reached by one of the three spaces, which is what the reach test keeps true.
+
+    Args:
+        combinator (str): The name of the combinator in ``CNNrepository.specification()``.
+    """
+    _, frozen, _ = _frozen()
+    assert combinator in frozen, (
+        f"{FROZEN} holds no clause for {combinator}, which the specification declares")
+    drift = _spine_drift(frozen[combinator], _spines()[combinator], combinator)
     assert not drift, drift
 
 
@@ -608,7 +768,7 @@ def test_the_swap_laws_decide_their_witnesses_the_way_they_did(law, key, purpose
         head (Tree): The layer the composition puts first.
         tail (Tree): The composition it is put in front of.
     """
-    _, verdicts = _frozen()
+    _, _, verdicts = _frozen()
     was = verdicts[(law, key)]
     now = getattr(CNNrepository, law)(head, tail)
     assert now == was, (
@@ -619,6 +779,7 @@ if __name__ == "__main__":
     FROZEN.parent.mkdir(exist_ok=True)
     FROZEN.write_text(_render(
         {cell: build(cell) for cell in CELLS},
+        _spines(),
         [(law, key, getattr(CNNrepository, law)(head, tail))
          for law, key, _, head, tail in WITNESSES]))
     print(f"wrote {FROZEN} ({FROZEN.stat().st_size} bytes)")
