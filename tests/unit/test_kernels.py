@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import time
+
 import numpy as np
 import pytest
 from cosy.core.tree import Tree
-from cosy.search.kernels import k_sst
+from cosy.search.kernels import k_sst, k_st, normalized
 from grakel.kernels import VertexHistogram
 from sklearn.gaussian_process import GaussianProcessRegressor
 
@@ -250,6 +252,195 @@ def test_the_gradient_is_available_where_there_are_hyperparameters(tree_corpus):
     assert gradient.shape == (len(tree_corpus), len(tree_corpus), 2)
     assert np.all(np.isfinite(gradient))
     assert np.allclose(K, K.T, atol=1e-8)
+
+
+def _chain(depth: int, leaf: str) -> Tree:
+    """Return a unary chain of ``depth`` symbols above ``leaf``."""
+    term: Tree = Tree(leaf)
+    for index in reversed(range(depth)):
+        term = Tree(f"c{index}", (term,))
+    return term
+
+
+def _subterm_corpus() -> list[Tree]:
+    """Return one term per shape on which two counts of shared subterms could disagree.
+
+    A single node is the smallest term there is, and the one term the subset-tree kernel scores
+    zero, so the subtree kernel has to answer for it alone. A chain and a star are the two
+    extremes of shape. The pairs one leaf apart are what a counting kernel has
+    to separate, the repetitions are what a multiset counts and a set would not, the swapped
+    arguments are what the word ordered in the name of this kernel means, and the last three
+    terms carry roots that are not strings, because a signature is built from whatever the roots
+    are.
+
+    The chain stays far below the interpreter's recursion limit. The class recurses once per
+    level where cosy's count iterates over a stack, so a deeper chain would measure that limit
+    rather than the agreement of the two counts.
+    """
+    shared = Tree("f", (Tree("a"), Tree("b")))
+    star = tuple(Tree(f"L{index}") for index in range(40))
+    return [
+        Tree("a"),
+        Tree("a"),  # the same term once more, as a second object
+        _chain(60, "end"),
+        _chain(60, "other end"),  # the same chain, one leaf apart
+        Tree("s", star),
+        Tree("s", (*star[:-1], Tree("ZZ"))),  # the same star, one leaf apart
+        Tree("s", tuple(Tree("L") for _ in star)),  # the same leaf forty times
+        shared,
+        Tree("f", (Tree("b"), Tree("a"))),  # the arguments swapped
+        Tree("f", (Tree("a"), Tree("a"))),
+        Tree("g", (shared, shared)),  # one subterm at two positions
+        Tree("g", (shared, Tree("f", (Tree("a"), Tree("c"))))),
+        Tree("h", (Tree("f", (Tree("a"),)),) * 3),
+        Tree("u", (Tree("s", star[:10]),)),
+        Tree(3, (Tree(4), Tree(5))),  # roots that are not strings
+        Tree(3, (Tree(4), Tree(6))),
+        Tree(("level", 1), (Tree(("level", 2)),)),
+    ]
+
+
+def test_the_subtree_kernel_counts_what_cosy_counts():
+    """``OrderedRootedSubtreeKernel`` has to give cosy's ``k_st`` entry for entry.
+
+    That holds for every form the class is called in, and the square matrix, the cross matrix and
+    the diagonal are all asked for below.
+
+    cosy already counts the subterms two terms share, and this class counts them a second time,
+    from signatures and one sparse product, because a Gram matrix wants the count once per term
+    rather than once per pair. What the second count may buy is the shape of the computation, not
+    a second definition of what a subtree kernel counts. ``SubsetTreeKernel`` cannot drift from
+    cosy, since it calls ``k_sst`` outright, and this one can, so the agreement is asserted.
+
+    The values on cosy's chain terms are already held against a closed form by
+    ``test_the_counting_kernel_shows_the_scale_spread_the_chapter_names``. Sorting the child
+    signatures leaves every value of that closed form unchanged, so what it does not hold is the
+    sibling order this kernel is named for.
+
+    The comparison is exact rather than approximate. Both routes add up integer subterm counts,
+    which a double carries exactly at these sizes, and both divide by the square root of the same
+    product, so a difference in the last bit would already be a difference in what was counted.
+    """
+    corpus = _subterm_corpus()
+    cosine = normalized(k_st)
+
+    raw = OrderedRootedSubtreeKernel(normalize=False)(corpus)
+    assert np.array_equal(raw, [[k_st(left, right) for right in corpus] for left in corpus])
+
+    matrix = OrderedRootedSubtreeKernel(normalize=True)(corpus)
+    assert np.array_equal(matrix, [[cosine(left, right) for right in corpus] for left in corpus])
+
+    # A Gaussian process calls the cross form on every prediction, and it reaches the sparse
+    # product with two separately prepared argument lists instead of one shared list.
+    half = len(corpus) // 2
+    cross = OrderedRootedSubtreeKernel(normalize=True)(corpus[:half], corpus[half:])
+    assert np.array_equal(
+        cross, [[cosine(left, right) for right in corpus[half:]] for left in corpus[:half]]
+    )
+
+    assert np.array_equal(
+        OrderedRootedSubtreeKernel(normalize=False).diag(corpus),
+        [k_st(term, term) for term in corpus],
+    )
+
+
+def test_the_subtree_kernel_sees_the_argument_order():
+    """``f(a, b)`` and ``f(b, a)`` are different terms and must not score as identical.
+
+    The signature of a position is its symbol together with the signatures of its children in
+    order, and that order is what the name of this kernel promises. The two terms below share
+    their two leaves and nothing else, so the count is two out of three. Dropping that order,
+    by sorting the child signatures, would count the roots as shared as well and call the terms
+    equal, and the rest of the suite stays green when it does.
+    """
+    first = Tree("f", (Tree("a"), Tree("b")))
+    second = Tree("f", (Tree("b"), Tree("a")))
+
+    assert k_st(first, second) == 2.0
+    assert OrderedRootedSubtreeKernel(normalize=False)([first], [second])[0, 0] == 2.0
+    assert OrderedRootedSubtreeKernel(normalize=True)([first], [second])[0, 0] == 2.0 / 3.0
+
+
+def test_a_fold_moves_the_terms_and_not_the_count():
+    """A ``tree_transformation`` decides which terms are scored, never how they are scored.
+
+    The three tree kernels of the DAMG example each pass a fold, so this is not the unused half
+    of the class. Under a fold the terms compared are the folded ones, and every entry still has
+    to be what cosy gives for those.
+    """
+    corpus = _subterm_corpus()
+    fold = _truncate(2)
+    cosine = normalized(k_st)
+
+    folded = OrderedRootedSubtreeKernel(normalize=True, tree_transformation=fold)(corpus)
+    assert np.array_equal(
+        folded, [[cosine(fold(left), fold(right)) for right in corpus] for left in corpus]
+    )
+    assert not np.array_equal(folded, OrderedRootedSubtreeKernel(normalize=True)(corpus))
+
+
+def _shifted_term(index: int, depth: int = 6) -> Tree:
+    """Return a binary term of ``2**depth`` leaves whose leaf symbols are shifted by ``index``.
+
+    Each position above the leaves carries a symbol of its own, so few of the subterms repeat:
+    the term returned for ``index`` zero has 95 distinct subterms among its 127 positions.
+    Repetition is what flatters the batch form, since it shrinks the feature counters the sparse
+    product runs on while a walk over both terms of a pair stays as long as the terms are. Little
+    repetition is therefore the harder case for the measurement below, though not the hardest.
+    """
+    positions = iter(range(2 ** (depth + 1)))
+
+    def build(level: int) -> Tree:
+        position = next(positions)
+        if level == 0:
+            return Tree(f"leaf{(position + index) % 47}")
+        return Tree(f"node{position}", (build(level - 1), build(level - 1)))
+
+    return build(depth)
+
+
+def test_the_batch_form_beats_one_cosy_call_per_pair():
+    """Counting the subterms a second time is only worth it if a Gram matrix gets cheaper.
+
+    ``OrderedRootedSubtreeKernel`` re-derives what cosy's ``k_st`` already counts, and the matrix
+    is the whole reason: the class walks each term once and multiplies two sparse count matrices,
+    while a pairwise route walks both terms of every pair. The extraction therefore grows with
+    the number of terms and the pairwise work with its square.
+
+    The route measured against is a careful pairwise one, raw ``k_st`` over the upper triangle
+    with each self-similarity taken once. That is fewer calls than ``SubsetTreeKernel`` makes
+    with ``k_sst`` for the same matrix, since that one fills the whole rectangle and adds a
+    self-similarity list for each side, 960 calls against 495 on thirty terms. On the terms below
+    the class came out about four times faster, and the assertion asks only that it win, since
+    the margin depends on how much the terms repeat.
+    """
+    terms = [_shifted_term(index) for index in range(30)]
+    assert terms[0].size == 127
+
+    def batched() -> float:
+        start = time.perf_counter()
+        OrderedRootedSubtreeKernel(normalize=True)(terms)
+        return time.perf_counter() - start
+
+    def per_pair() -> float:
+        start = time.perf_counter()
+        size = len(terms)
+        self_similarities = [k_st(term, term) for term in terms]
+        matrix = np.empty((size, size))
+        for row in range(size):
+            for column in range(row, size):
+                value = k_st(terms[row], terms[column])
+                divisor = np.sqrt(self_similarities[row] * self_similarities[column])
+                matrix[row, column] = matrix[column, row] = value / divisor
+        return time.perf_counter() - start
+
+    batch_seconds = min(batched() for _ in range(3))
+    pair_seconds = min(per_pair() for _ in range(3))
+
+    assert batch_seconds < pair_seconds, (
+        f"the batch form took {batch_seconds:.3f} s where one call per pair took "
+        f"{pair_seconds:.3f} s"
+    )
 
 
 def test_the_subset_tree_kernel_compares_productions_not_symbols():
