@@ -4,8 +4,6 @@ Algebren für ODErepository ausgelagert.
 Die Funktionen hier nehmen das `repo`-Objekt entgegen und geben die jeweiligen Algebra-Dicts zurück.
 """
 
-import math
-
 import numpy as np
 import torch
 import torch.nn as nn
@@ -496,24 +494,17 @@ class CopyModule(nn.Module):
         return x.expand(*x.shape[:-1], self.o).clone()
 
 
-# Sinnvoller Strafwert: groß genug, um als "schlecht" erkennbar zu sein,
-# klein genug, um Skalierungen (log1p, MinMax) nicht zu sprengen.
-_NON_FINITE_LOSS_PENALTY = 1e6
-
-
-def _sanitize_loss(value: float) -> float:
-    """Map non-finite losses (NaN/Inf) to a finite penalty value.
-
-    Reasons NaN/Inf can occur for nn.MSELoss:
-      * Gradient explosion (e.g. ProductModule, high lr, deep nets)
-      * NaN propagating through parameters after a single Inf gradient step
-      * float32 overflow when predictions diverge
-    Returning a non-finite value would break downstream consumers
-    (sklearn GP-fit raises 'Input y contains infinity').
-    """
-    if not math.isfinite(value):
-        return _NON_FINITE_LOSS_PENALTY
-    return value
+# A non-finite training loss is reported as measured, and this file substitutes no number for it.
+# A substitute would have to be a penalty, and no constant is one: a regression loss is unbounded
+# above, so a network that trained badly can score worse than the constant, and the diverged
+# network then ranks ahead of it.  The sign convention does not save it: the loop maximizes and a
+# minimizing objective enters negated (see ``AcquisitionFunction`` in
+# ``bayesian_optimization.acquisition_function``), and negating preserves the order.
+#
+# Letting the value propagate makes the failure a failure.  ``bayesian_optimization.bo`` refuses a
+# non-finite observation wherever one can enter, so a diverged evaluation stops the run there
+# instead of entering the surrogate, which a single non-finite observation makes undefined at
+# every term rather than at one.
 
 
 def learner(i, open_model, loss_fn, optim, n_epochs, x, y, x_test, y_test):
@@ -531,9 +522,9 @@ def learner(i, open_model, loss_fn, optim, n_epochs, x, y, x_test, y_test):
             test = pred.reshape_as(y)
             loss = loss_fn(test, y)
             if not torch.isfinite(loss):
-                # Training has diverged; stop early to keep params usable
-                # for the test-time evaluation below (which will then likely
-                # also produce a non-finite loss and trigger the sanitizer).
+                # The numerics have diverged.  Stop early, because further steps only spend time
+                # on parameters that are already non-finite.  The test-time evaluation below still
+                # runs and still reports what it measures.
                 break
             loss.backward()
             optimizer.step()
@@ -542,7 +533,7 @@ def learner(i, open_model, loss_fn, optim, n_epochs, x, y, x_test, y_test):
         y_pred = model(x_test).ravel()
         test = y_pred.reshape_as(y_test)
         loss = loss_fn(test, y_test)
-        return _sanitize_loss(loss.item())
+        return loss.item()
 
     # Having interpreted each combinator as its corresponding pytorch nn.module above allows the
     # pytorch_function_algebra to interpret a Tree directly as a callable learning pipeline for the
