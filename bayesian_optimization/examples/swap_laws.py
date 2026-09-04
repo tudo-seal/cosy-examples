@@ -57,78 +57,69 @@ class SwapLaws:
 
     @staticmethod
     def swaplaw1(head: Tree[str], tail: Tree[str]) -> bool:
+        """Forbid before(swap(m, n), before(beside(x, y), swap(p, q))), x : (n, p), y : (m, q).
+
+        The pattern is the left-hand side of the swap law, whose right-hand side is beside(y, x):
+        two layers that cross their wires, run two subterms past each other, and cross back are the
+        same diagram as the two subterms side by side in the other order. Synthesizing both spells
+        one diagram twice.
+
+        The three layers are this combinator's left argument and the first two layers of its right
+        argument, so the pattern is checked at every position of a sequential composition. The
+        recursive applications inside the right argument check the positions further along.
+
+        Args:
+            head (Tree): The layer this combinator composes to the left.
+            tail (Tree): The sequential composition it composes to the right.
+
+        Returns:
+            bool: False if the three layers match the pattern, True otherwise.
         """
-        before(swap(m+n, m, n), before(beside(x(n,p), y(m,q)), swap(p+q, p, q)))
-        ->
-        beside(y(m,q),x(n,p))
+        if not (_tree_root_contains(head, "beside_singleton")
+                and _tree_root_contains(tail, "before_cons")):
+            return True
+        _require_children_count(head, 5)
+        _require_children_count(tail, 9)
 
-        forbid the pattern on the left-hand side of the rewrite rule by returning False if it is matched
-        """
+        first_swap = _tree_child(head, 4)
+        second_layer = _tree_child(tail, 7)
+        rest = _tree_child(tail, 8)
+        if not (_tree_root_is(first_swap, "swap")
+                and _tree_root_contains(second_layer, "beside_cons")):
+            return True
+        _require_children_count(first_swap, 19)
+        _require_children_count(second_layer, 11)
 
-        if _tree_root_contains(head, "beside_singleton") and _tree_root_contains(tail, "before_cons"):
-            _require_children_count(head, 5)
-            _require_children_count(tail, 9)
+        # The third layer is the first layer of the rest, and the rest is one layer or many.
+        if _tree_root_contains(rest, "before_singleton"):
+            _require_children_count(rest, 6)
+            third_layer = _tree_child(rest, 5)
+        elif _tree_root_contains(rest, "before_cons"):
+            _require_children_count(rest, 9)
+            third_layer = _tree_child(rest, 7)
+        else:
+            return True
 
-            left_term = _tree_child(head, 4)
-            right_head = _tree_child(tail, 7)
-            right_tail = _tree_child(tail, 8)
+        if not _tree_root_contains(third_layer, "beside_singleton"):
+            return True
+        _require_children_count(third_layer, 5)
+        closing_swap = _tree_child(third_layer, 4)
+        if not _tree_root_is(closing_swap, "swap"):
+            return True
+        _require_children_count(closing_swap, 19)
 
-            if _tree_root_is(left_term, "swap") and _tree_root_contains(right_head, "beside_cons") and _tree_root_contains(right_tail, "before_singleton"):
-                _require_children_count(left_term, 19)
-                _require_children_count(right_head, 11)
-                _require_children_count(right_tail, 6)
-
-                m = left_term.children[1]
-                n = left_term.children[2]
-                x_n = right_head.children[1]
-                x_p = right_head.children[4]
-
-                right_head_tail = right_head.children[10]
-                right_tail_term = right_tail.children[5]
-
-                if _tree_root_contains(right_head_tail, "beside_singleton") and _tree_root_contains(right_tail_term, "beside_singleton"):
-                    _require_children_count(right_head_tail, 5)
-                    _require_children_count(right_tail_term, 5)
-
-                    y_m = right_head_tail.children[0]
-                    y_q = right_head_tail.children[1]
-                    right_swap = right_tail_term.children[4]
-
-                    if _tree_root_is(right_swap, "swap"):
-                        _require_children_count(right_swap, 19)
-                        p = right_swap.children[1]
-                        q = right_swap.children[2]
-                        if m == y_m and n == x_n and p == x_p and q == y_q:
-                            return False
-
-            elif _tree_root_is(head, "swap") and _tree_root_contains(right_head, "beside_cons") and _tree_root_contains(right_tail, "before_cons"):
-                left_term = _tree_child(head, 4)
-                _require_children_count(left_term, 19)
-                _require_children_count(right_head, 11)
-                _require_children_count(right_tail, 9)
-
-                m = left_term.children[1]
-                n = left_term.children[2]
-                x_n = right_head.children[1]
-                x_p = right_head.children[4]
-                right_head_tail = right_head.children[10]
-                right_tail_head = right_tail.children[7]
-
-                if _tree_root_contains(right_head_tail, "beside_singleton") and _tree_root_contains(right_tail_head, "beside_singleton"):
-                    _require_children_count(right_head_tail, 5)
-                    _require_children_count(right_tail_head, 5)
-
-                    y_m = right_head_tail.children[0]
-                    y_q = right_head_tail.children[1]
-                    right_swap = right_tail_head.children[4]
-
-                    if _tree_root_is(right_swap, "swap"):
-                        _require_children_count(right_swap, 19)
-                        p = right_swap.children[1]
-                        q = right_swap.children[2]
-                        if m == y_m and n == x_n and p == x_p and q == y_q:
-                            return False
-        return True
+        m = first_swap.children[1]
+        n = first_swap.children[2]
+        # beside_cons binds i1 and o1 for its first entry and i2 = i - i1, o2 = o - o1 for the
+        # rest, so the sum over the entries after the first is already there and needs no descent
+        # into the tail.
+        x_n = second_layer.children[1]
+        x_p = second_layer.children[4]
+        y_m = second_layer.children[2]
+        y_q = second_layer.children[5]
+        p = closing_swap.children[1]
+        q = closing_swap.children[2]
+        return not (m == y_m and n == x_n and p == x_p and q == y_q)
 
     @staticmethod
     def swaplaw2(head: Tree[str], tail: Tree[str]) -> bool:

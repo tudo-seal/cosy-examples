@@ -13,7 +13,9 @@ This module states the *same four laws* as a finite abstraction with a relation 
 predicate is then derived as the relation after the abstraction instead of stated beside it, which
 is the condition ``cosy.core.recognizable`` calls **(REC)**, and under it
 ``cosy.search.determinize.determinize`` pushes the predicate into the non-terminals.  What comes out
-carries no predicate over a hole and is countable from the program.
+carries no predicate over a hole and is countable from the program.  Three of the four relations
+state their law as the coupled form states it.  ``R1`` states less, and ``recognizable_swap_laws``
+says how much less.
 
 **What of that is DAMG.**  The alphabet, and nothing else.  ``alpha`` and the four relations are the
 same wherever these laws are stated, and they live in

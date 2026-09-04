@@ -1895,9 +1895,9 @@ tanh parameter=l parameter=i parameter=o parameter=para1 parameter=para2 paramet
 
 [witnesses]
 swaplaw1 triple_two_entries_nothing_after False
-swaplaw1 triple_two_entries_more_after True
-swaplaw1 triple_three_entries_nothing_after True
-swaplaw1 triple_three_entries_more_after True
+swaplaw1 triple_two_entries_more_after False
+swaplaw1 triple_three_entries_nothing_after False
+swaplaw1 triple_three_entries_more_after False
 swaplaw1 triple_that_does_not_close True
 swaplaw2 first_pair_nothing_after False
 swaplaw2 first_pair_more_after False

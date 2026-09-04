@@ -7,11 +7,14 @@ forbid with a term predicate over two sibling holes: ``swaplaw1`` to ``swaplaw4`
 the child positions they read are the same numbers on both sides, and only the alphabet around them
 differs.  This module is the half that does not differ.
 
-It holds the abstraction ``alpha``, the four relations ``R1`` to ``R4`` that mirror the four laws
-statement for statement, and two factories that take the alphabet: ``make_alpha`` and
-``make_alphabet_check``.  A repository writes down the terminals its own laws never name and calls
-the factories with them.  Nothing here imports cosy: a relation reads states, which are tuples, and
-the alphabet check reads a solution space through its published methods.
+It holds the abstraction ``alpha``, the four relations ``R1`` to ``R4``, and two factories that
+take the alphabet: ``make_alpha`` and ``make_alphabet_check``.  ``R2`` to ``R4`` mirror their laws
+statement for statement.  ``R1`` mirrors the reading ``swaplaw1`` had before it was brought onto its
+rewrite rule, and its own docstring says where the two part and what closing the gap costs.
+
+A repository writes down the terminals its own laws never name and calls the factories with them.
+Nothing here imports cosy: a relation reads states, which are tuples, and the alphabet check reads a
+solution space through its published methods.
 
 **Call each factory once per repository, at module level.**
 :func:`cosy.search.determinize.determinize` collects the distinct abstractions a program states and
@@ -222,7 +225,21 @@ def _eq(a, b):
 
 
 def R1(substitution):
-    """``swaplaw1`` on states."""
+    """The reading ``swaplaw1`` had before it was brought onto its rewrite rule.
+
+    The pattern the first law forbids runs over three layers, and it takes four shapes: the third
+    layer is the last of the composition or the composition continues past it, and the middle layer
+    has two entries or more than two.  ``swaplaw1`` forbids all four.  This relation forbids the
+    first shape only, which is what the law did until it was repaired.
+
+    Bringing it level is not a change to these few lines.  It needs ``alpha`` to keep the two edge
+    sums ``beside_cons`` binds for the entries after the first, and to keep a third layer that sits
+    under a continuing composition, so the carrier grows and every count measured on it moves.
+
+    The gap is invisible in both spaces this module is used on: over the pairs the two comparison
+    test modules read off them, 384 in the DAMG one, the relation and the law agree throughout.
+    ``tests/test_cnn_damg_repo_is_unchanged.py`` holds the law's verdict on all four shapes.
+    """
     head = substitution["x"]
     tail = substitution["y"]
     if head[0] == "BS" and tail[0] == "BFC":
@@ -253,12 +270,6 @@ def R1(substitution):
                     q = right_swap[3]
                     if _eq(m, y_m) and _eq(n, x_n) and _eq(p, x_p) and _eq(q, y_q):
                         return False
-        elif head[0] == "SW":
-            # The second branch of swaplaw1 is dead code: its enclosing ``if`` already requires
-            # "beside_singleton" in head.root, and "beside_singleton" in "swap" is False for every
-            # string.  Reached, it would mean the guard analysis is wrong, so it says so.
-            msg = "swaplaw1's second branch is unreachable by construction but was reached"
-            raise AssertionError(msg)
     return True
 
 

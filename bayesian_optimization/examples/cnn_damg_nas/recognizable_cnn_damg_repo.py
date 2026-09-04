@@ -14,7 +14,8 @@ finite, bottom-up computable abstraction ``alpha`` from terms into a finite set,
 over its values, and the predicate *derived* as ``R`` after ``alpha`` instead of stated beside it.
 That is the class of recognizable tree relations, and ``cosy.search.determinize.determinize`` pushes
 a predicate of that class into the non-terminals.  What comes out carries no predicate over a hole
-and is countable from the program.
+and is countable from the program.  Three of the four relations state their law as the coupled form
+states it.  ``R1`` states less, and ``recognizable_swap_laws`` says how much less.
 
 **What of that is CNN.**  The alphabet, and nothing else.  ``alpha`` and the four relations are the
 same wherever these laws are stated, and they live in
