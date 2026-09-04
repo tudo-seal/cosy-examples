@@ -18,9 +18,10 @@ carries no predicate over a hole and is countable from the program.
 **What of that is DAMG.**  The alphabet, and nothing else.  ``alpha`` and the four relations are the
 same wherever these laws are stated, and they live in
 ``bayesian_optimization/examples/recognizable_swap_laws.py``, which
-``cnn_damg_nas/recognizable_cnn_damg_repo.py`` reads too.  The four laws stand in the two
-repositories character for character, so what is written here is the list of terminals the laws
-never name, and a subclass of ``DAMGrepository`` that attaches the laws the other way round.
+``cnn_damg_nas/recognizable_cnn_damg_repo.py`` reads too.  Both repositories inherit the four laws
+from ``bayesian_optimization/examples/swap_laws.py``, so what is written here is the list of
+terminals the laws never name, and a subclass of ``DAMGrepository`` that attaches the laws the other
+way round.
 
 **Why this is a second class rather than a change to DAMGrepository.**  The coupled form is the one
 a user writes, and it is the form ``damg_example.py`` runs, so it stays.  What the two forms differ

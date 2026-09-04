@@ -1,7 +1,8 @@
 """Hand-built pairs of subterms that the four swap laws reject, and near misses they admit.
 
-``cnn_damg_nas`` and ``damg_nas`` state the same four swap laws, character for character, as term
-predicates over two sibling holes of ``before_cons``.  A pair a law rejects never appears in a
+``cnn_damg_nas`` and ``damg_nas`` inherit the same four swap laws from
+``bayesian_optimization/examples/swap_laws.py``, as term predicates over two sibling holes of
+``before_cons``.  A pair a law rejects never appears in a
 synthesized space, because a term is only derived once every predicate on it has said True, so a
 comparison that reads pairs off a space sees only pairs every law admitted.  A relation that
 returned True on everything would pass such a comparison.  The pairs below are the answer to that,

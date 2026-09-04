@@ -3,9 +3,9 @@
 ``cnn_damg_nas/cnn_damg_repo.py`` and ``damg_nas/damg_repo.py`` both forbid the left-hand sides of
 the rewrite rules of the theory their combinators build terms of, and four of those rules they
 forbid with a term predicate over two sibling holes: ``swaplaw1`` to ``swaplaw4``, attached to
-``before_cons``.  The four laws stand in the two files character for character, so the arities they
-require and the child positions they read are the same numbers on both sides, and only the alphabet
-around them differs.  This module is the half that does not differ.
+``before_cons``.  Both inherit those four from ``swap_laws.py``, so the arities they require and
+the child positions they read are the same numbers on both sides, and only the alphabet around them
+differs.  This module is the half that does not differ.
 
 It holds the abstraction ``alpha``, the four relations ``R1`` to ``R4`` that mirror the four laws
 statement for statement, and two factories that take the alphabet: ``make_alpha`` and
