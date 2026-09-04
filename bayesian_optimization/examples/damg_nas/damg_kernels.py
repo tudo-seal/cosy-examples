@@ -1,4 +1,3 @@
-import re
 from typing import Callable
 
 import networkx as nx
@@ -20,16 +19,44 @@ from bayesian_optimization.utils import to_grakel_graph, to_indexed_nx_digraph
 # ============================================================================
 
 def as_DAMG(t: Tree, verbose=False):
-    if verbose:
-        edgelist, posA = t.interpret(edgelist_algebra(verbose))
-    else:
-        edgelist = t.interpret(edgelist_algebra(verbose))
+    """Convert a term into the labeled multigraph of the network it denotes.
+
+    The edge-list algebra names a node by its symbol followed by its layout coordinate, because a
+    name is what an edge list has instead of an identity: two instances of one layer have to be
+    two nodes.  The kernel wants the opposite, two instances of one layer sharing one label, so
+    the coordinate is stripped again for the ``symbol`` attribute, while the node keeps its full
+    name as its identity.
+
+    The strip used to be a regular expression matching a ``)`` followed by a pair of decimals.
+    That pattern fits the hierarchy 1 naming, ``str((layer, i, o)) + str(id)``, and fits nothing
+    else: from hierarchy 2 the algebra names a node ``"node" + str(id)``, with no ``)`` in front
+    of the coordinate, so nothing was stripped and the label *was* the drawing position.  Two
+    architectures of the same shape whose nodes sat at different positions then shared no label at
+    all, and ``damg_kernel_2`` and ``damg_kernel_3`` compared drawings rather than node types.
+
+    Nothing has to be guessed: the algebra returns the map from node name to coordinate, so the
+    suffix to strip is the one it names there.  ``removesuffix`` and not a slice, because the
+    frame nodes (``input``, the loss, the optimizer, the epoch marker) stand in that map with a
+    position for plotting while carrying no coordinate in their name, and for them the strip has
+    to be a no-op.
+
+    Args:
+        t (Tree): The term.
+        verbose (bool): Also return the multigraph, the position map and the relabeling.
+            (Default value = False)
+
+    Returns:
+        The grakel graph generator, and under ``verbose`` the multigraph, the positions and the
+        relabeling beside it.
+    """
+    # The positions name the suffix, so the algebra is always asked for them.  ``verbose`` decides
+    # what is handed back, not what is computed.
+    edgelist, posA = t.interpret(edgelist_algebra(True))
 
     G = nx.MultiDiGraph()
     G.add_edges_from(edgelist)
 
-    relabel = {n: re.sub(r"[)][(][-]*[0-9]*[.][0-9]*[,]\s[-]*[0-9]*[.][0-9]*[)]", ")", n)
-               for n in G.nodes()}
+    relabel = {n: (n.removesuffix(str(posA[n])) if n in posA else n) for n in G.nodes()}
 
     for n in G.nodes():
         G.nodes[n]['symbol'] = relabel[n]
@@ -88,9 +115,12 @@ noisy_hierarchical_tree_kernel_12 = Sum(hierarchical_tree_kernel_12, WhiteKernel
 noisy_hierarchical_tree_kernel_13 = Sum(hierarchical_tree_kernel_13, WhiteKernel(noise_level=1e-2, noise_level_bounds=(1e-12, 1e2)))
 
 
-wl_kernel_1 = WeisfeilerLehmanKernel(n_iter=1.0, normalize=True,to_grakel_graph=as_hierarchical_tree_graph(1))
-wl_kernel_2 = WeisfeilerLehmanKernel(n_iter=1.0, normalize=True, to_grakel_graph=as_hierarchical_tree_graph(2))
-wl_kernel_3 = WeisfeilerLehmanKernel(n_iter=1.0, normalize=True, to_grakel_graph=as_hierarchical_tree_graph(3))
+wl_kernel_1 = WeisfeilerLehmanKernel(h=1, normalize=True,
+                                      to_grakel_graph=as_hierarchical_tree_graph(1))
+wl_kernel_2 = WeisfeilerLehmanKernel(h=1, normalize=True,
+                                      to_grakel_graph=as_hierarchical_tree_graph(2))
+wl_kernel_3 = WeisfeilerLehmanKernel(h=1, normalize=True,
+                                      to_grakel_graph=as_hierarchical_tree_graph(3))
 
 weighted_wl_kernel_1 = Product(ConstantKernel(0.01, constant_value_bounds=(1e-10, 1e10)), wl_kernel_1)
 weighted_wl_kernel_2 = Product(ConstantKernel(0.01, constant_value_bounds=(1e-10, 1e10)), wl_kernel_2)
@@ -117,9 +147,9 @@ noisy_hierarchical_wl_kernel_13 = Sum(hierarchical_wl_kernel_13, WhiteKernel(noi
 Hierarchy 1 and 2 are basically just relabelings for DAMGs. Therefore, we don't consider the combination of 1 and 2 as
 the structure doesn't change.
 """
-damg_kernel_1 = WeisfeilerLehmanKernel(n_iter=1.0, normalize=True,to_grakel_graph=as_hierarchical_damg(1))
-damg_kernel_2 = WeisfeilerLehmanKernel(n_iter=1.0, normalize=True, to_grakel_graph=as_hierarchical_damg(2))
-damg_kernel_3 = WeisfeilerLehmanKernel(n_iter=1.0, normalize=True, to_grakel_graph=as_hierarchical_damg(3))
+damg_kernel_1 = WeisfeilerLehmanKernel(h=1, normalize=True, to_grakel_graph=as_hierarchical_damg(1))
+damg_kernel_2 = WeisfeilerLehmanKernel(h=1, normalize=True, to_grakel_graph=as_hierarchical_damg(2))
+damg_kernel_3 = WeisfeilerLehmanKernel(h=1, normalize=True, to_grakel_graph=as_hierarchical_damg(3))
 
 weighted_damg_kernel_1 = Product(ConstantKernel(0.01, constant_value_bounds=(1e-10, 1e10)),
                                  damg_kernel_1)

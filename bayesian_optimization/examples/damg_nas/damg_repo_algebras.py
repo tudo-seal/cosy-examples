@@ -132,7 +132,11 @@ def edgelist_learner(model, loss, optimizer, epochs, verbose=False):
         edgelist, to_outputs, pos_A = f((-5.5, -3.8), ["input" for _ in range(0, inputs)])
         edgelist = edgelist + [(o, loss) for o in to_outputs] + [(loss, optimizer)] + [(optimizer, f"epochs({epochs})")]
         if verbose:
-            output_x = max([x for x, y in pos_A.values()]) + 2.5
+            # A chain whose only link is a swap places no node at all, and then there is no
+            # rightmost node to put the frame behind.  The frame then starts one step to the right
+            # of the input, which is where it starts behind a single node as well.
+            placed_x = [x for x, y in pos_A.values()]
+            output_x = (max(placed_x) if placed_x else -5.5) + 2.5
             pos_A = pos_A | {"input": (-5.5, -3.8), "output": (output_x, -3.8),
                              loss: (output_x + 2.5, -3.8), optimizer: (output_x + 5.0, -3.8),
                              f"epochs({epochs})": (output_x + 5, -3.5)}
