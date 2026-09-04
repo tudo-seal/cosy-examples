@@ -115,12 +115,21 @@ noisy_hierarchical_tree_kernel_12 = Sum(hierarchical_tree_kernel_12, WhiteKernel
 noisy_hierarchical_tree_kernel_13 = Sum(hierarchical_tree_kernel_13, WhiteKernel(noise_level=1e-2, noise_level_bounds=(1e-12, 1e2)))
 
 
-wl_kernel_1 = WeisfeilerLehmanKernel(h=1, normalize=True,
-                                      to_grakel_graph=as_hierarchical_tree_graph(1))
-wl_kernel_2 = WeisfeilerLehmanKernel(h=1, normalize=True,
-                                      to_grakel_graph=as_hierarchical_tree_graph(2))
-wl_kernel_3 = WeisfeilerLehmanKernel(h=1, normalize=True,
-                                      to_grakel_graph=as_hierarchical_tree_graph(3))
+# h is the number of relabeling rounds, counted on top of the comparison of the initial labels,
+# and h=0 is a plain histogram over those labels.  A round costs a full relabeling of every graph
+# and it is not a hyperparameter the marginal likelihood can adjust, so one is spent only where a
+# histogram is blind to a difference that matters.
+#
+# These three read the folded term itself, where a label is a combinator symbol, and there the
+# histogram still tells most terms apart.  Over the first forty terms of target_len_3 it leaves
+# 17.9 percent of the pairs at exactly 1.0 on granularity 2 and 3, against 13.8 percent with one
+# round, and none at all on granularity 1.  So no round.
+wl_kernel_1 = WeisfeilerLehmanKernel(h=0, normalize=True,
+                                     to_grakel_graph=as_hierarchical_tree_graph(1))
+wl_kernel_2 = WeisfeilerLehmanKernel(h=0, normalize=True,
+                                     to_grakel_graph=as_hierarchical_tree_graph(2))
+wl_kernel_3 = WeisfeilerLehmanKernel(h=0, normalize=True,
+                                     to_grakel_graph=as_hierarchical_tree_graph(3))
 
 weighted_wl_kernel_1 = Product(ConstantKernel(0.01, constant_value_bounds=(1e-10, 1e10)), wl_kernel_1)
 weighted_wl_kernel_2 = Product(ConstantKernel(0.01, constant_value_bounds=(1e-10, 1e10)), wl_kernel_2)
@@ -147,7 +156,20 @@ noisy_hierarchical_wl_kernel_13 = Sum(hierarchical_wl_kernel_13, WhiteKernel(noi
 Hierarchy 1 and 2 are basically just relabelings for DAMGs. Therefore, we don't consider the combination of 1 and 2 as
 the structure doesn't change.
 """
-damg_kernel_1 = WeisfeilerLehmanKernel(h=1, normalize=True, to_grakel_graph=as_hierarchical_damg(1))
+# Here the round count differs by granularity, because what a node label carries differs by
+# granularity.  At granularity 1 the label is the layer with its dimensions, and the histogram
+# alone already separates: the first forty terms of target_len_3 give forty different label
+# multisets, and no off-diagonal entry of the Gram matrix reaches 1.0 without a round.  From
+# granularity 2 the layer is folded away and every node is called node, so a histogram counts
+# nodes and nothing else, and those same forty terms leave one single multiset.  Two
+# architectures over two nodes, A before B against A beside B, score 1.0 without a round, 0.668
+# with one and 0.502 with two.
+#
+# That the coarse granularities need a round is new, because it was never visible: while the
+# strip missed them, see as_DAMG, their labels were drawing positions, and a histogram looked
+# discriminating there because two graphs shared a label exactly when they placed a node at the
+# same spot.
+damg_kernel_1 = WeisfeilerLehmanKernel(h=0, normalize=True, to_grakel_graph=as_hierarchical_damg(1))
 damg_kernel_2 = WeisfeilerLehmanKernel(h=1, normalize=True, to_grakel_graph=as_hierarchical_damg(2))
 damg_kernel_3 = WeisfeilerLehmanKernel(h=1, normalize=True, to_grakel_graph=as_hierarchical_damg(3))
 
