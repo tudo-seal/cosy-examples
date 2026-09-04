@@ -141,6 +141,105 @@ def test_a_design_without_repeats_is_returned_untouched():
     assert sampler.streams == 0
 
 
+# --- when the two novelty tests disagree ------------------------------------------------------
+class _OneShot:
+    """Offers one term, so a test can hand the fallback exactly what it must not accept."""
+
+    def __init__(self, term):
+        self.term = term
+
+    def sample(self, _query):
+        yield self.term
+
+    def __repr__(self):
+        return "_OneShot"
+
+
+def test_a_label_that_hashes_against_its_own_equality_is_reported():
+    """The fallback rejects a repeat with a set, and a set can only see what the labels hash by.
+
+    Here two labels compare equal and hash apart, so the set does not recognize the term it is
+    handed and this scan does. The design would gain a repeated training point, which is the one
+    thing the function exists to prevent, so it stops instead.
+    """
+
+    class _ByName:
+        def __init__(self, name):
+            self.name = name
+
+        def __eq__(self, other):
+            return isinstance(other, _ByName) and self.name == other.name
+
+        def __hash__(self):
+            return id(self)
+
+    kept, drawn = Tree(_ByName("x")), Tree(_ByName("x"))
+    assert drawn == kept
+    assert drawn not in {kept}
+    with pytest.raises(RuntimeError, match="already in the initial design"):
+        _distinct_dataset([kept], _OneShot(drawn), object(), 2)
+
+
+def test_a_label_that_compares_asymmetrically_is_reported():
+    """The two tests ask the same question in opposite directions.
+
+    A set asks whether the term it holds equals the candidate, and this scan asks whether the
+    candidate equals the term it holds. A label that answers the two differently reaches the
+    branch with a hash that is identical for both terms and therefore beyond suspicion.
+    """
+
+    class _Asymmetric:
+        def __init__(self, tag, accepts):
+            self.tag = tag
+            self.accepts = frozenset(accepts)
+
+        def __eq__(self, other):
+            return isinstance(other, _Asymmetric) and other.tag in self.accepts
+
+        def __hash__(self):
+            return 0
+
+    strict = _Asymmetric("strict", {"strict"})
+    lenient = _Asymmetric("lenient", {"strict", "lenient"})
+    assert hash(strict) == hash(lenient)
+    kept, drawn = Tree(strict), Tree(lenient)
+    assert drawn == kept
+    assert drawn not in {kept}
+    with pytest.raises(RuntimeError, match="already in the initial design"):
+        _distinct_dataset([kept], _OneShot(drawn), object(), 2)
+
+
+def test_a_label_changed_after_its_term_was_built_is_reported():
+    """A term takes its hash in its constructor and never again, so a label may outrun it.
+
+    The label keeps the usual contract at every moment: it compares by its value and hashes by the
+    same value. What goes stale is the term's hash, taken before the value changed, and that is
+    enough for the set to miss a term this scan finds.
+    """
+
+    class _Knob:
+        def __init__(self, value):
+            self.value = value
+
+        def __eq__(self, other):
+            return isinstance(other, _Knob) and self.value == other.value
+
+        def __hash__(self):
+            return hash(self.value)
+
+    knob = _Knob(1)
+    kept = Tree(knob)
+    knob.value = 2
+    twin = _Knob(2)
+    assert knob == twin
+    assert hash(knob) == hash(twin)
+    drawn = Tree(twin)
+    assert drawn == kept
+    assert drawn not in {kept}
+    with pytest.raises(RuntimeError, match="already in the initial design"):
+        _distinct_dataset([kept], _OneShot(drawn), object(), 2)
+
+
 # --- the count the run reports ----------------------------------------------------------------
 def _drawing_loop():
     """A loop over the expression space whose sampler repeats terms.

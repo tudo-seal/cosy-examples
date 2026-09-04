@@ -140,9 +140,11 @@ def _distinct_dataset(
     replace the informed design with the model-agnostic one.  Only the places a repeat occupied
     are filled again.
 
-    Structural comparison throughout (``Tree.__eq__``).  ``Tree`` caches its hash on the instance
-    and the cached value survives a pickle, so a set is not a decision this project makes about
-    term identity.  See :func:`~bayesian_optimization.initial_sampling.distinct_prefix`.
+    Structural comparison here (``Tree.__eq__``), while the fallback rejects a repeat with a set.
+    The two answer alike as long as every label hashes consistently with its equality, compares
+    symmetrically, and does not change after its term is built, so the scan is a check on the
+    fallback rather than a second answer about identity.  See
+    :func:`~bayesian_optimization.initial_sampling.distinct_prefix`.
 
     Args:
         drawn (Sequence[Any]): What the initializer returned.
@@ -155,7 +157,10 @@ def _distinct_dataset(
 
     Raises:
         RuntimeError: If a replacement cannot be drawn.  ``_sample_fallback_tree`` raises on an
-            exhausted space, and a design topped up with repeats is what this prevents.
+            exhausted space, and a design topped up with repeats is what this prevents.  Also if a
+            drawn replacement turns out to equal a term the fallback's set had passed it against,
+            which takes a label that hashes against its own equality, compares asymmetrically, or
+            changed after its term was built.
     """
     kept: list[Any] = []
     repeats = 0
@@ -168,8 +173,11 @@ def _distinct_dataset(
         replacement = _sample_fallback_tree(sampler, query, set(kept))
         if any(replacement == other for other in kept):
             msg = (
-                "the fallback returned a term already in the initial design.  Its novelty test "
-                "is hash-based and Tree caches its hash, so the two disagreed about identity"
+                "the fallback returned a term already in the initial design.  It rejects a "
+                "repeat with a set, which asks kept == candidate, while this scan asks "
+                "candidate == kept, and a term hashes once when it is built.  So a label in one "
+                "of these terms hashes against its own equality, compares asymmetrically, or "
+                "changed after its term was built"
             )
             raise RuntimeError(msg)
         kept.append(replacement)

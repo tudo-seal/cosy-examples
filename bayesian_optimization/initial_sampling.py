@@ -141,10 +141,10 @@ def distinct_prefix(
     drawn: list[Tree[Any]] = []
     rejected = 0
     for looked_at, candidate in enumerate(sampler.sample(query), start=1):
-        # Structural comparison, not a set: ``Tree`` caches its hash on the instance and the cached
-        # value travels through a pickle, so two structurally equal terms that reached this process
-        # by different routes hash differently.  ``Tree.__eq__`` compares the size first, so the
-        # scan short-circuits on almost every pair and the design is small either way.
+        # Structural comparison, not a set: a term hashes once when it is built and from its
+        # labels alone, and nothing here requires a label to hash consistently with its equality
+        # or to stay unchanged afterwards.  ``Tree.__eq__`` compares the size first, so the scan
+        # short-circuits on almost every pair and the design is small either way.
         if any(candidate == kept for kept in drawn):
             rejected += 1
         else:
