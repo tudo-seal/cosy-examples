@@ -272,12 +272,8 @@ def test_optimize_refuses_a_negative_budget_before_it_evaluates_anything(bo_fact
             ValueError,
             "batch",
         ),
-        (
-            {"acquisition_function": "UpperConfidenceBound"},
-            {"acquisition_fitness_mode": "Batch"},
-            ValueError,
-            "batch",
-        ),
+        ({}, {"acquisition_fitness_mode": "Batch"}, ValueError, "fitness mode"),
+        ({}, {"acquisition_fitness_mode": None}, ValueError, "fitness mode"),
         ({"acquisition_function": ["ExpectedImprovement"]}, {}, ValueError, "one of"),
     ],
 )
@@ -293,10 +289,11 @@ def test_optimize_refuses_a_configuration_no_pass_could_use_before_it_evaluates_
     is built for means training that many networks and then aborting.  That is the reason the
     budget is checked here, and it does not stop at the budget.
 
-    Two of the cases are near misses rather than plain typos.  ``"Batch"`` is not the batch mode,
-    and the adapter scores every mode that is not ``"batch"`` one candidate at a time, so an upper
-    confidence bound under it has to be refused exactly as under ``"single"``.  A name that is not
-    even a string is refused for being an unknown name, not for being unhashable.
+    Three of the cases are near misses rather than plain typos.  ``"Batch"`` names no mode, and
+    a mode that is not a string names none either, so both are refused whatever the acquisition
+    is.  They used to be scored one candidate at a time and to fail only where that scoring was
+    impossible.  A name that is not even a string is refused for being an unknown name, not for
+    being unhashable.
     """
     bo = bo_factory(**configuration)
     calls: list[Any] = []
@@ -324,7 +321,8 @@ def test_a_zero_budget_runs_under_any_acquisition_setting(bo_factory, tree_corpu
 
     The check above asks what the run will use, not what the object carries.  A budget of zero is
     the initial design on its own, and it answers from that design under any acquisition setting
-    whatsoever, as it did before there was a check.
+    whatsoever, as it did before there was a check.  The fitness mode goes the same way: no
+    pass scores a population here, so this run reads no mode either, not even a mistyped one.
     """
     bo = bo_factory(acquisition_function="ei", ucb_beta=0.0, pi_margin=-1.0)
 
@@ -333,6 +331,7 @@ def test_a_zero_budget_runs_under_any_acquisition_setting(bo_factory, tree_corpu
         budget=0,
         x0=tree_corpus[:3],
         y0=[1.0, 2.0, 0.5],
+        acquisition_fitness_mode="btach",
     )
 
     assert result["iterations"] == 0
@@ -354,6 +353,48 @@ def test_a_pass_still_refuses_an_acquisition_assigned_after_the_run_started(
 
     with pytest.raises(ValueError, match="ei"):
         bo.suggest()
+
+
+def test_an_unbounded_acquisition_runs_under_the_mode_the_search_defaults_to(
+    bo_factory, tree_corpus
+):
+    """The mode the evolutionary search itself defaults to is the batch mode, and it runs.
+
+    ``"auto"`` used to be scored one candidate at a time, and an upper confidence bound cannot be
+    scored that way: asked alone, an already-evaluated candidate has no score of its own
+    generation to sit below.  So the one word a caller was most likely to write, because it is
+    what the search writes, was the one word under which that acquisition could not run, and the
+    refusal it earned offered ``"batch"`` as the remedy for a mode that had asked for nothing
+    else.
+    """
+    bo = bo_factory(acquisition_function="UpperConfidenceBound")
+
+    result = bo.optimize(
+        objective=_objective_by_size,
+        budget=2,
+        x0=tree_corpus[:3],
+        y0=[1.0, 2.0, 0.5],
+        acquisition_fitness_mode="auto",
+    )
+
+    assert result["iterations"] == 2
+
+
+def test_suggest_reads_the_mode_before_it_fits_the_surrogate(bo_factory, tree_corpus):
+    """A pass fits the Gaussian process on the distinct pairs of the dataset before it maximizes.
+
+    The maximization is what reads the mode, and it runs only after that fit, so a mode outside
+    the three would be refused once the fit had already been paid.  It costs no evaluation of the
+    objective, but it is a fit whose result is thrown away, and the mode is an argument of this
+    call rather than something the pass discovers.
+    """
+    bo = bo_factory()
+    bo.initialize(x0=tree_corpus[:3], y0=[1.0, 2.0, 0.5])
+
+    with pytest.raises(ValueError, match="fitness mode"):
+        bo.suggest(acquisition_fitness_mode="btach")
+
+    assert bo.surrogate is None, "the surrogate was fitted before the mode was read"
 
 
 def test_optimize_passes_gp_params_through(bo_factory, tree_corpus):

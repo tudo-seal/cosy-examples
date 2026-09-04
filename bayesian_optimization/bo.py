@@ -26,7 +26,11 @@ from .acquisition_function import (
     require_beta,
     require_margin,
 )
-from .acquisition_optimizer import AcquisitionOptimizer, unbounded_below_message
+from .acquisition_optimizer import (
+    AcquisitionOptimizer,
+    resolve_fitness_mode,
+    unbounded_below_message,
+)
 from .diagnostics import (
     AcquisitionRun,
     TraceRecord,
@@ -777,7 +781,7 @@ class BayesianOptimization(Generic[NT, T, G]):
     def suggest(
         self,
         *,
-        acquisition_fitness_mode: Literal["single", "batch"] = "batch",
+        acquisition_fitness_mode: Literal["auto", "single", "batch"] = "batch",
         verbose: bool = False,
         record_population: bool = False,
     ) -> Suggestion:
@@ -793,7 +797,11 @@ class BayesianOptimization(Generic[NT, T, G]):
         Parameters
         ----------
         acquisition_fitness_mode:
-            Whether the evolutionary algorithm scores its population one at a time or in batches.
+            How the evolutionary algorithm is to score its population: ``"batch"`` a generation
+            at a time, ``"single"`` one candidate at a time, ``"auto"`` whichever of the two the
+            adapter would pick, which is ``"batch"``.  A fourth value is refused rather than
+            scored one candidate at a time.  See
+            :func:`~bayesian_optimization.acquisition_optimizer.resolve_fitness_mode`.
         verbose:
             Log the suggestion.
         record_population:
@@ -818,8 +826,10 @@ class BayesianOptimization(Generic[NT, T, G]):
             contract.  ``_sample_fallback_tree`` raises on its own account when the bounded space
             is exhausted.
         ValueError
-            If the dataset gives one term two different values, or if the configured acquisition
-            is not one of the three this class knows.
+            If the dataset gives one term two different values, if the configured acquisition
+            is not one of the three this class knows, if ``acquisition_fitness_mode`` is not one
+            of the three modes, or if it asks for ``"single"`` and that acquisition has no lower
+            bound to floor the terms already evaluated against.
         """
         if self._bo_state not in (BOState.INITIALIZED, BOState.OBSERVED):
             raise RuntimeError(
@@ -827,6 +837,11 @@ class BayesianOptimization(Generic[NT, T, G]):
             )
         if self.optimizer is None:
             raise RuntimeError(_NO_OPTIMIZER)
+
+        # The mode is read here rather than at the maximization that uses it, which runs only
+        # after the surrogate has been fitted on the distinct pairs of the dataset.  A mode
+        # outside the three would otherwise be refused once that fit had already been paid.
+        fitness_mode = resolve_fitness_mode(acquisition_fitness_mode)
 
         if verbose:
             enable_verbose_logging()
@@ -896,10 +911,10 @@ class BayesianOptimization(Generic[NT, T, G]):
         generations: list[Any] = []
         if record_population:
             candidate, population, generations = acq_opt.maximize_with_population(
-                af, self._query(), mode=acquisition_fitness_mode
+                af, self._query(), mode=fitness_mode
             )
         else:
-            candidate = acq_opt.maximize(af, self._query(), mode=acquisition_fitness_mode)
+            candidate = acq_opt.maximize(af, self._query(), mode=fitness_mode)
 
         if candidate is None:
             raise RuntimeError("Optimizer did not return a candidate.")
@@ -1524,7 +1539,7 @@ class BayesianOptimization(Generic[NT, T, G]):
     # -------------------------------------------------------------------------
 
     def _check_pass_configuration(
-        self, acquisition_fitness_mode: Literal["single", "batch"]
+        self, acquisition_fitness_mode: Literal["auto", "single", "batch"]
     ) -> None:
         """Refuse a configuration no pass of this run could use, before the design is drawn.
 
@@ -1554,14 +1569,15 @@ class BayesianOptimization(Generic[NT, T, G]):
         here either, and pays the whole design as before.
 
         Args:
-            acquisition_fitness_mode (Literal["single", "batch"]): How the evolutionary algorithm
-                will be asked to score its population.
+            acquisition_fitness_mode (Literal["auto", "single", "batch"]): How the evolutionary
+                algorithm will be asked to score its population.
 
         Raises:
             RuntimeError: If no evolutionary algorithm was configured.
             ValueError: If the acquisition is not one of the three, if the parameter of the
-                acquisition this run would build lies outside its range, or if that acquisition
-                cannot be scored the way ``acquisition_fitness_mode`` asks.
+                acquisition this run would build lies outside its range, if the mode is not one
+                of the three modes, or if that acquisition cannot be scored the way
+                ``acquisition_fitness_mode`` asks.
         """
         if self.optimizer is None:
             raise RuntimeError(_NO_OPTIMIZER)
@@ -1579,11 +1595,12 @@ class BayesianOptimization(Generic[NT, T, G]):
         elif name == "ProbabilityOfImprovement":
             require_margin(self.pi_margin)
 
-        # AcquisitionOptimizer._objective takes the batch path for the string "batch" and scores
-        # everything else one candidate at a time.  So the mode is read here as that same
-        # question, batch or not batch: asked the other way round, a mode of "Batch" or of "" or
-        # of None would pass here and be scored one candidate at a time all the same.
-        if acquisition_fitness_mode != "batch" and acquisition.lower_bound is None:
+        # The mode is resolved by the same function the maximization resolves it with, so that
+        # what this refusal reads and what the run would use are one value.  Read as the plain
+        # question "is this the string batch", it would refuse an upper confidence bound under
+        # "auto", which is a mode that puts it on the batch path.
+        mode = resolve_fitness_mode(acquisition_fitness_mode)
+        if mode != "batch" and acquisition.lower_bound is None:
             raise ValueError(unbounded_below_message(name, "acquisition_fitness_mode"))
 
     def optimize(
@@ -1597,7 +1614,7 @@ class BayesianOptimization(Generic[NT, T, G]):
         gp_params: dict[str, Any] | None = None,
         alpha: float = _JITTER,
         verbose: bool = False,
-        acquisition_fitness_mode: Literal["single", "batch"] = "batch",
+        acquisition_fitness_mode: Literal["auto", "single", "batch"] = "batch",
         record_population: bool = False,
     ) -> dict[str, Any]:
         """Run the closed Bayesian optimization loop and return its result.
@@ -1636,7 +1653,7 @@ class BayesianOptimization(Generic[NT, T, G]):
         verbose:
             Log one line per pass.
         acquisition_fitness_mode:
-            Whether the evolutionary algorithm scores its population one at a time or in batches.
+            How the evolutionary algorithm is to score its population.  See :meth:`suggest`.
         record_population:
             Keep the final population of each acquisition maximization.  See :meth:`suggest`.
             Over a whole loop only the last one survives, which is what the frontier read needs:
@@ -1656,9 +1673,10 @@ class BayesianOptimization(Generic[NT, T, G]):
         ValueError
             If ``budget`` is negative, or, where the run has passes to run, if the acquisition
             those passes would maximize is not one of the three, carries a parameter outside its
-            range, or cannot be scored the way ``acquisition_fitness_mode`` asks.  All of these
-            are checked before the initial design is drawn, so that a typo costs no evaluation of
-            the objective.  Also for the dataset conditions of :meth:`initialize`.
+            range, or cannot be scored the way ``acquisition_fitness_mode`` asks, or if that mode
+            is not one of the three modes.  All of these are checked before the initial design is
+            drawn, so that a typo costs no evaluation of the objective.  Also for the dataset
+            conditions of :meth:`initialize`.
         RuntimeError
             If this instance has already run.  One instance runs one loop, and a second run needs
             :meth:`reset` in between, which is also what restarts the default initializer's

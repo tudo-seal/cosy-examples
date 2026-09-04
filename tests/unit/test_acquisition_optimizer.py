@@ -6,6 +6,7 @@ The properties below are the ones the layer promises in its docstrings.
 """
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -144,10 +145,32 @@ class RecordingSearch:
 
     def __init__(self) -> None:
         self.calls: list[tuple[Any, str]] = []
+        self.objectives: list[Any] = []
 
     def evolutionary_best(self, query: Any, objective: Any, mode: str) -> Any:
         self.calls.append((query, mode))
+        self.objectives.append(objective)
         return _NOVEL_A
+
+    def evolutionary_stream(self, query: Any, objective: Any, mode: str) -> Any:
+        """Yield one generation, with the fields the record of a generation reads."""
+        self.calls.append((query, mode))
+        self.objectives.append(objective)
+        population = [_NOVEL_A, _NOVEL_B]
+        scores = (
+            objective(population)
+            if mode == "batch"
+            else {candidate: objective(candidate) for candidate in population}
+        )
+        yield SimpleNamespace(
+            generation=0,
+            population=population,
+            offspring=[],
+            fitness=scores,
+            best=_NOVEL_A,
+            best_fitness=scores[_NOVEL_A],
+            last_improvement=0,
+        )
 
 
 @pytest.mark.parametrize("mode", ["batch", "single"])
@@ -160,3 +183,64 @@ def test_the_requested_mode_reaches_the_search(mode):
 
     assert result is _NOVEL_A
     assert search.calls == [("a query", mode)]
+
+
+@pytest.mark.parametrize("mode", ["auto", "batch"])
+def test_the_mode_the_search_defaults_to_is_the_batch_mode(mode):
+    """Both ``"auto"`` and ``"batch"`` reach the search as ``"batch"``, with the batch objective.
+
+    ``"auto"`` is the mode the search itself defaults to, and it means: score a generation in one
+    call where the fitness function takes a list.  The objective handed over is written here, and
+    the batch one is what that reading selects, so the answer is known before the search is
+    called.  It used to fall through to the single-sample objective instead, which returns the
+    same scores in the same order and rebuilds the training side of the kernel matrix once per
+    candidate to do it.
+
+    The search is told the resolved mode rather than the word asked for, so what it makes of
+    ``"auto"`` cannot disagree with the objective it was handed.
+    """
+    search = RecordingSearch()
+    af = ProbabilityOfImprovement(gp=_NEGATIVE, incumbent=0.0, known_points={_KNOWN})
+
+    result = AcquisitionOptimizer(search).maximize(af, query="a query", mode=mode)
+
+    assert result is _NOVEL_A
+    assert search.calls == [("a query", "batch")]
+    scores = search.objectives[0]([_NOVEL_A, _NOVEL_B])
+    assert set(scores) == {_NOVEL_A, _NOVEL_B}, "the batch objective takes a whole generation"
+
+
+@pytest.mark.parametrize("mode", ["auto", "batch"])
+def test_the_population_entry_resolves_the_mode_as_well(mode):
+    """Both entries read the mode, and a caller cannot be asked to know which one resolves it."""
+    search = RecordingSearch()
+    af = ProbabilityOfImprovement(gp=_NEGATIVE, incumbent=0.0, known_points={_KNOWN})
+
+    best, population, generations = AcquisitionOptimizer(search).maximize_with_population(
+        af, query="a query", mode=mode
+    )
+
+    assert best is _NOVEL_A
+    assert population == [_NOVEL_A, _NOVEL_B]
+    assert len(generations) == 1
+    assert search.calls == [("a query", "batch")]
+
+
+@pytest.mark.parametrize("mode", ["btach", "BATCH", "single ", "", None, 1, ["batch"]])
+def test_a_mode_outside_the_three_is_refused_before_the_search_runs(mode):
+    """A mode this adapter cannot serve is an error, not a reason to take the other path.
+
+    Every value but ``"batch"`` used to build the single-sample objective and reach the search
+    unchanged.  The two objectives answer alike, so nothing in the run distinguished a mistyped
+    ``"batch"`` from a deliberate ``"single"``, and the misreading only ever cost time.
+
+    A value that cannot be hashed is refused for not naming a mode rather than for not being
+    hashable, which is what a membership test against a set would have made of it.
+    """
+    search = RecordingSearch()
+    af = ProbabilityOfImprovement(gp=_NEGATIVE, incumbent=0.0, known_points={_KNOWN})
+
+    with pytest.raises(ValueError, match="fitness mode"):
+        AcquisitionOptimizer(search).maximize(af, query="a query", mode=mode)
+
+    assert search.calls == [], "the mode is read before anything is evaluated"

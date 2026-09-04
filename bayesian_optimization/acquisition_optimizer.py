@@ -143,6 +143,42 @@ def _make_acquisition_objective_single(
     return objective
 
 
+def resolve_fitness_mode(mode: Any) -> Literal["single", "batch"]:
+    """Answer which of the two scoring paths a requested fitness mode asks for.
+
+    The driver knows three modes, and the one it defaults to is ``"auto"``: score a generation in
+    one call where the annotation of the fitness function it was handed says that function takes
+    a list, and one candidate at a time otherwise.  That question is settled here before it can
+    be asked, because this module writes both of those functions, and the annotation selects the
+    batch one.  So ``"auto"`` resolves to ``"batch"``, which is besides the only one of the two
+    wrappers that carries an acquisition without a lower bound over known points.  The single one
+    refuses that pairing, and takes an unbounded acquisition only where the one it is given has no
+    known point to floor.
+
+    Anything outside the three is refused rather than scored one candidate at a time.  The two
+    wrappers answer alike, so a mistyped ``"batch"`` that fell through to single-sample scoring
+    could not be told from a deliberate ``"single"`` by anything but the clock: the single path
+    rebuilds the training side of the kernel matrix once per candidate, where the batch path
+    builds it once for the whole generation.
+
+    Args:
+        mode (Any): The mode a caller asked for.  Typed as anything rather than as the three,
+            because the values this has to answer for are the ones outside the type.
+
+    Returns:
+        Literal["single", "batch"]: The wrapper to build, and the mode to hand the driver.
+
+    Raises:
+        ValueError: If mode is none of the three.
+    """
+    if mode in ("auto", "batch"):
+        return "batch"
+    if mode == "single":
+        return "single"
+    msg = f'a fitness mode is one of "auto", "single" and "batch", and {mode!r} is none of them'
+    raise ValueError(msg)
+
+
 class AcquisitionOptimizer:
     """Adapter that wraps an evolutionary optimizer to maximize an AcquisitionFunction.
 
@@ -180,7 +216,7 @@ class AcquisitionOptimizer:
         acquisition_fn: AcquisitionFunction,
         query: Any,
         *,
-        mode: Literal["single", "batch"] = "batch",
+        mode: Literal["auto", "single", "batch"] = "batch",
     ) -> Any:
         """Run the EA to maximize ``acquisition_fn`` and return the best candidate.
 
@@ -191,17 +227,28 @@ class AcquisitionOptimizer:
         query:
             The generator query naming the search space and the requested type.
         mode:
-            Whether to evaluate the EA population in ``"batch"`` or
-            ``"single"`` mode.
+            How the EA population is to be scored: ``"batch"`` a generation at a time,
+            ``"single"`` one candidate at a time, ``"auto"`` whichever of the two the annotation
+            of the objective built here selects.  The driver is told the resolved mode rather
+            than the word it was asked for, so its own reading of ``"auto"`` cannot disagree
+            with the objective it is handed.  See :func:`resolve_fitness_mode`.
 
         Returns
         -------
         Any
             The fittest candidate encountered over the whole run, not the best of the final
             generation, which is what the previous driver returned.
+
+        Raises
+        ------
+        ValueError
+            If ``mode`` is none of the three, or if it asks for ``"single"`` and
+            ``acquisition_fn`` has known points but no lower bound, which is the pairing the
+            single-sample objective refuses.
         """
+        resolved = resolve_fitness_mode(mode)
         return self.evolutionary.evolutionary_best(
-            query, self._objective(acquisition_fn, mode), mode
+            query, self._objective(acquisition_fn, resolved), resolved
         )
 
     def maximize_with_population(
@@ -209,7 +256,7 @@ class AcquisitionOptimizer:
         acquisition_fn: AcquisitionFunction,
         query: Any,
         *,
-        mode: Literal["single", "batch"] = "batch",
+        mode: Literal["auto", "single", "batch"] = "batch",
     ) -> tuple[Any, list[Any], list[GenerationRecord]]:
         """Maximize, and keep both the population that produced the answer and how it got there.
 
@@ -234,7 +281,7 @@ class AcquisitionOptimizer:
         query:
             The generator query naming the search space and the requested type.
         mode:
-            Whether to evaluate the EA population in ``"batch"`` or ``"single"`` mode.
+            How the EA population is to be scored.  See :meth:`maximize`.
 
         Returns
         -------
@@ -245,11 +292,20 @@ class AcquisitionOptimizer:
             generation and cannot distinguish a search that climbed from one that never moved.
             It is read off the states the stream already yields, so it costs nothing but the
             records themselves.
+
+        Raises
+        ------
+        ValueError
+            If ``mode`` is none of the three, or on the pairing of ``"single"`` with an
+            acquisition that has known points but no lower bound.  See :meth:`maximize`.
+        RuntimeError
+            If the stream yields no generation at all.
         """
+        resolved = resolve_fitness_mode(mode)
         final = None
         generations: list[GenerationRecord] = []
         for state in self.evolutionary.evolutionary_stream(
-            query, self._objective(acquisition_fn, mode), mode
+            query, self._objective(acquisition_fn, resolved), resolved
         ):
             final = state
             generations.append(_generation_record(state))
@@ -269,7 +325,7 @@ class AcquisitionOptimizer:
 
         Args:
             acquisition_fn (AcquisitionFunction): The acquisition to maximize.
-            mode (Literal["single", "batch"]): How the driver will call it.
+            mode (Literal["single", "batch"]): How the driver will call it, resolved already.
 
         Returns:
             Any: The fitness function, with the caching and the known-point floor of the two
