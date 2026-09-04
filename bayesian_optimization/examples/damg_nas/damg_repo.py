@@ -6,7 +6,12 @@ from cosy.core.types import Constructor, DataGroup, Group, Literal, Var
 
 from bayesian_optimization.examples.swap_laws import SwapLaws
 
-VALID_REDUCTIONS = {"mean", "sum", "none"}
+# The reductions a loss value may carry.  The loss group below offers both of them, and a
+# reduction accepted here without being offered reaches no term: a target that names it builds a
+# solution space with no derivation in it instead of being refused.  torch has a third reduction,
+# "none", which is neither offered nor accepted here.  It would have no interpretation either,
+# since it makes the loss a vector where the training loop reads a number.
+VALID_REDUCTIONS = {"mean", "sum"}
 
 
 def _is_triplet_tuple(value) -> bool:
@@ -200,7 +205,6 @@ class DAMGrepository(SwapLaws):
 
         def iter_relu(self):
             yield DAMGrepository.ReLu(inplace=False)
-            #yield ODErepository.ReLu(inplace=True)  # inplace not supported here
 
         def iter_tanh(self):
             yield DAMGrepository.Tanh()
@@ -264,12 +268,10 @@ class DAMGrepository(SwapLaws):
         def iter_mseloss(self):
             yield DAMGrepository.MSEloss(reduction="mean")
             yield DAMGrepository.MSEloss(reduction="sum")
-            #yield ODErepository.MSEloss(reduction="none")
 
         def iter_l1loss(self):
             yield DAMGrepository.L1Loss(reduction="mean")
             yield DAMGrepository.L1Loss(reduction="sum")
-            #yield ODErepository.L1Loss(reduction="none")
 
         def __iter__(self):
             yield from self.iter_mseloss()

@@ -1,7 +1,8 @@
-# -*- coding: utf-8 -*-
-"""
-Algebren für ODErepository ausgelagert.
-Die Funktionen hier nehmen das `repo`-Objekt entgegen und geben die jeweiligen Algebra-Dicts zurück.
+"""The algebras that give a synthesized term a meaning, one function per meaning.
+
+Each of them returns a dict from the name of a combinator to what that combinator stands for,
+which is the form ``Tree.interpret`` reads.  The algebras sit beside the DAMG repository rather
+than inside it, and none of them takes it as an argument.
 """
 
 import numpy as np

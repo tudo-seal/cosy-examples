@@ -6,7 +6,11 @@ from cosy.core.types import Constructor, DataGroup, Group, Literal, Var
 
 from bayesian_optimization.examples.swap_laws import SwapLaws
 
-VALID_REDUCTIONS = {"mean", "sum", "none"}
+# The reductions a loss value may carry.  The loss group below offers both of them, and a
+# reduction accepted here without being offered reaches no term: a target that names it builds a
+# solution space with no derivation in it instead of being refused.  torch has a third reduction,
+# "none", which is neither offered nor accepted here.
+VALID_REDUCTIONS = {"mean", "sum"}
 
 
 def _is_triplet_tuple(value) -> bool:
@@ -406,7 +410,6 @@ class CNNrepository(SwapLaws):
 
         def iter_relu(self):
             yield CNNrepository.ReLu(inplace=False)
-            #yield ODErepository.ReLu(inplace=True)  # inplace not supported here
 
         def iter_tanh(self):
             yield CNNrepository.Tanh()
@@ -512,12 +515,10 @@ class CNNrepository(SwapLaws):
         def iter_mseloss(self):
             yield CNNrepository.MSEloss(reduction="mean")
             yield CNNrepository.MSEloss(reduction="sum")
-            #yield ODErepository.MSEloss(reduction="none")
 
         def iter_l1loss(self):
             yield CNNrepository.L1Loss(reduction="mean")
             yield CNNrepository.L1Loss(reduction="sum")
-            #yield ODErepository.L1Loss(reduction="none")
 
         def iter_cross_entropy_loss(self):
             yield CNNrepository.CrossEntropyLoss(reduction="mean")
