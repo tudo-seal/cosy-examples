@@ -871,37 +871,7 @@ class BayesianOptimization(Generic[NT, T, G]):
         incumbent = float(np.max(np.array(self._y_list, dtype=float)))
 
         # --- Build acquisition function ---------------------------------------
-        #
-        # A *copy* of the observed set.  Handing over the live one made the acquisition a view of
-        # the loop rather than a record of this pass: the next observe() adds to it, and the same
-        # object then answers the known-point floor at the very term it had just chosen.  While a
-        # pass runs the two are equal, since nothing observes in between, so this changes no
-        # decision.  It changes what an acquisition still means once the pass is over, which is
-        # exactly what the diagnostics keep one for.
-        known_points = set(self._x_set)
-
-        af: AcquisitionFunction
-        if self.acquisition_function == "ExpectedImprovement":
-            af = ExpectedImprovement(
-                gp=model,
-                incumbent=incumbent,
-                known_points=known_points,
-            )
-        elif self.acquisition_function == "ProbabilityOfImprovement":
-            af = ProbabilityOfImprovement(
-                gp=model,
-                incumbent=incumbent,
-                known_points=known_points,
-                margin=self.pi_margin,
-            )
-        elif self.acquisition_function == "UpperConfidenceBound":
-            af = UpperConfidenceBound(
-                gp=model,
-                beta=self.ucb_beta,
-                known_points=known_points,
-            )
-        else:
-            raise ValueError(_unknown_acquisition(self.acquisition_function))
+        af = self._build_acquisition(model, incumbent)
 
         # --- Optimize acquisition function ------------------------------------
         acq_opt = AcquisitionOptimizer(self.optimizer)
@@ -924,50 +894,12 @@ class BayesianOptimization(Generic[NT, T, G]):
 
         # --- Rejection of duplicates: a deliberate deviation from the algorithm -
         #
-        # The algorithm as stated lets an evaluation repeat and removes duplicates only when
-        # conditioning the surrogate, because an evaluation may repeat and an exact observation
-        # repeats identically.  Rejecting a repeated proposal and adding a jitter to the diagonal
-        # are the two alternatives named beside it.  This implementation takes rejection: a
-        # repeated evaluation costs a call to the expensive quality measure and buys the surrogate
-        # nothing, and on a finite search space a loop that is allowed to repeat can spend a whole
-        # budget standing still.  Two mechanisms carry it.  The acquisition scores known points
-        # below every genuine candidate, and this loop replaces one that gets through anyway.
-        #
-        # This is the one place where the code knowingly departs from the algorithm as stated, and
-        # the resolution belongs on the specification side rather than here.
-        #
-        # One draw settles it.  ``_sample_fallback_tree`` returns an inhabitant outside the
-        # observed set or raises, so a retry loop here would have nothing to retry.  The bounded
-        # retry that used to stand in its place could not reach its second pass, and its error
-        # message described a state the code cannot be in.
+        # Two mechanisms carry the rejection of duplicates.  The acquisition scores known points
+        # below every genuine candidate, and a candidate that gets through anyway is replaced by a
+        # fresh draw.  ``_replace_duplicate`` draws it, and says why the deviation is deliberate.
         fallback_used = candidate in self._x_set
         if fallback_used:
-            _LOG.warning(
-                "iteration %d: the acquisition optimizer returned an already evaluated "
-                "candidate, so it is replaced with a random fallback sample.  The suggestion's "
-                "acquisition_value then describes the replacement, not the optimizer's result.  A "
-                "run in which this fires every iteration is random search, not BO.",
-                self._iteration,
-            )
-            if self._sampler is None:
-                given = "" if self.sampler is None else (
-                    "  A sampler was handed in, but it went unused: there is no query to draw "
-                    "from without a search space."
-                )
-                msg = (
-                    "the acquisition optimizer returned an already evaluated candidate and "
-                    f"there is no search space to draw a replacement from.{given}"
-                )
-                raise RuntimeError(msg)
-            candidate = _sample_fallback_tree(self._sampler, self._query(), self._x_set)
-            if candidate in self._x_set:
-                raise RuntimeError(
-                    f"the fallback sampler returned {candidate}, which has already been "
-                    f"evaluated.  Drawing a novel inhabitant or raising is the whole of its "
-                    f"contract, so this is a defect in the sampler rather than an exhausted "
-                    f"search space.  Continuing would evaluate a duplicate, which is the one "
-                    f"thing the rejection path exists to prevent."
-                )
+            candidate = self._replace_duplicate()
 
         if population is not None:
             self.last_acquisition_run = AcquisitionRun(
@@ -1000,8 +932,8 @@ class BayesianOptimization(Generic[NT, T, G]):
             "incumbent": incumbent,
             "iteration": self._iteration,
             "fallback_used": fallback_used,
-            # Zero or one: a single draw decides, see above.  The column stays because the
-            # experiment logs carry it.
+            # Zero or one: ``_replace_duplicate`` draws once and one draw settles it.  The
+            # column stays because the experiment logs carry it.
             "fallback_attempts": int(fallback_used),
             "mean_at_pick": float(mean_at_pick[0]),
             "deviation_at_pick": float(deviation_at_pick[0]),
@@ -1017,6 +949,114 @@ class BayesianOptimization(Generic[NT, T, G]):
         self._bo_state = BOState.SUGGESTED
         log_suggestion(_LOG, suggestion)
         return suggestion
+
+    def _build_acquisition(
+        self, model: GaussianProcessRegressor, incumbent: float
+    ) -> AcquisitionFunction:
+        """Build the acquisition of one pass, with the known-point floor beneath it.
+
+        The name and the two parameters are public attributes, so a pass reads them for itself
+        rather than trusting what the run started with.  A name assigned to a live object reaches
+        its refusal here, and the check a run passes before it spends anything does not stand in
+        for this one.
+
+        Args:
+            model (GaussianProcessRegressor): The surrogate this pass fitted.
+            incumbent (float): The largest observed value, which the two improvement scores
+                measure a candidate against.
+
+        Returns:
+            AcquisitionFunction: The acquisition to maximize.
+
+        Raises:
+            ValueError: If ``acquisition_function`` is not one of the three.
+        """
+        # A *copy* of the observed set.  Handing over the live one made the acquisition a view of
+        # the loop rather than a record of this pass: the next observe() adds to it, and the same
+        # object then answers the known-point floor at the very term it had just chosen.  While a
+        # pass runs the two are equal, since nothing observes in between, so this changes no
+        # decision.  It changes what an acquisition still means once the pass is over, which is
+        # exactly what the diagnostics keep one for.
+        known_points = set(self._x_set)
+
+        af: AcquisitionFunction
+        if self.acquisition_function == "ExpectedImprovement":
+            af = ExpectedImprovement(
+                gp=model,
+                incumbent=incumbent,
+                known_points=known_points,
+            )
+        elif self.acquisition_function == "ProbabilityOfImprovement":
+            af = ProbabilityOfImprovement(
+                gp=model,
+                incumbent=incumbent,
+                known_points=known_points,
+                margin=self.pi_margin,
+            )
+        elif self.acquisition_function == "UpperConfidenceBound":
+            af = UpperConfidenceBound(
+                gp=model,
+                beta=self.ucb_beta,
+                known_points=known_points,
+            )
+        else:
+            raise ValueError(_unknown_acquisition(self.acquisition_function))
+        return af
+
+    def _replace_duplicate(self) -> Any:
+        """Draw a term the loop has not evaluated yet, in place of one it already has.
+
+        The algorithm as stated lets an evaluation repeat and removes duplicates only when
+        conditioning the surrogate, because an evaluation may repeat and an exact observation
+        repeats identically.  Rejecting a repeated proposal and adding a jitter to the diagonal
+        are the two alternatives named beside it.  This implementation takes rejection: a repeated
+        evaluation costs a call to the expensive quality measure and buys the surrogate nothing,
+        and on a finite search space a loop that is allowed to repeat can spend a whole budget
+        standing still.
+
+        This is the one place where the code knowingly departs from the algorithm as stated, and
+        the resolution belongs on the specification side rather than here.
+
+        One draw settles it.  ``_sample_fallback_tree`` returns an inhabitant outside the observed
+        set or raises, so a retry loop here would have nothing to retry.  The bounded retry that
+        used to stand in its place could not reach its second pass, and its error message
+        described a state the code cannot be in.
+
+        Returns:
+            Any: A term outside the observed set.
+
+        Raises:
+            RuntimeError: If there is no search space to draw a replacement from, or if the
+                sampler returns a term that has already been evaluated.  ``_sample_fallback_tree``
+                raises on its own account when the bounded space is exhausted.
+        """
+        _LOG.warning(
+            "iteration %d: the acquisition optimizer returned an already evaluated "
+            "candidate, so it is replaced with a random fallback sample.  The suggestion's "
+            "acquisition_value then describes the replacement, not the optimizer's result.  A "
+            "run in which this fires every iteration is random search, not BO.",
+            self._iteration,
+        )
+        if self._sampler is None:
+            given = "" if self.sampler is None else (
+                "  A sampler was handed in, but it went unused: there is no query to draw "
+                "from without a search space."
+            )
+            msg = (
+                "the acquisition optimizer returned an already evaluated candidate and "
+                f"there is no search space to draw a replacement from.{given}"
+            )
+            raise RuntimeError(msg)
+        candidate = _sample_fallback_tree(self._sampler, self._query(), self._x_set)
+        if candidate in self._x_set:
+            raise RuntimeError(
+                f"the fallback sampler returned {candidate}, which has already been "
+                f"evaluated.  Drawing a novel inhabitant or raising is the whole of its "
+                f"contract, so this is a defect in the sampler rather than an exhausted "
+                f"search space.  Continuing would evaluate a duplicate, which is the one "
+                f"thing the rejection path exists to prevent."
+            )
+        return candidate
 
     def _distinct_pairs(self) -> tuple[list[Any], list[float]]:
         """Return the distinct pairs of the dataset, in order of first appearance.

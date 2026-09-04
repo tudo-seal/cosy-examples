@@ -1077,6 +1077,38 @@ def test_the_recorded_acquisition_does_not_change_after_its_pass(toy_loop):
     assert run.acquisition.known_points == set(terms[:3])
 
 
+@pytest.mark.parametrize(
+    ("name", "acquisition", "attribute", "value"),
+    [
+        ("ExpectedImprovement", ExpectedImprovement, "incumbent", 0.2),
+        ("ProbabilityOfImprovement", ProbabilityOfImprovement, "margin", 0.75),
+        ("UpperConfidenceBound", UpperConfidenceBound, "beta", 3.5),
+    ],
+)
+def test_a_pass_builds_the_acquisition_its_name_asks_for(
+    toy_loop, name, acquisition, attribute, value
+):
+    """Each of the three names builds its own class, and that class carries the parameter it reads.
+
+    Only the parameter of the acquisition a run builds is that run's parameter, so the exploration
+    parameter reaches an upper confidence bound and the margin a probability of improvement.  A
+    name wired to the wrong class, or a parameter left at its default on the way in, would score a
+    run differently rather than fail it, and the recorded acquisition is where that is readable.
+    """
+    bo, terms, values = toy_loop
+    bo.acquisition_function = name
+    bo.pi_margin = value if attribute == "margin" else 0.0
+    bo.ucb_beta = value if attribute == "beta" else 2.0
+    bo.initialize(x0=terms[:3], y0=[values[term] for term in terms[:3]])
+
+    bo.suggest(record_population=True)
+
+    run = bo.last_acquisition_run
+    assert run is not None
+    assert type(run.acquisition) is acquisition
+    assert getattr(run.acquisition, attribute) == pytest.approx(value)
+
+
 def test_the_recorded_maximisation_reads_as_a_frontier(toy_loop):
     """The fourth check on a run rather than on a fixture, which is what recording it is for."""
     bo, terms, values = toy_loop

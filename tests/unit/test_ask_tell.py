@@ -132,6 +132,21 @@ def test_duplicate_without_a_search_space_says_so(bo_factory, tree_corpus):
         bo.suggest()
 
 
+def test_a_sampler_handed_in_without_a_space_is_named_as_unused(bo_factory, tree_corpus):
+    """The refusal names the sampler a caller did pass, so that it does not read as false.
+
+    The sampler and the search space are separate arguments, and a caller may hand in the first
+    and leave the second out.  A replacement needs both, because there is no query to draw from
+    without a space, so a message that named only the space would look wrong to the one caller who
+    can see they provided a sampler.
+    """
+    bo = bo_factory(candidates=[tree_corpus[0]], sampler=object())
+    bo.initialize(x0=tree_corpus[:3], y0=[1.0, 2.0, 0.5])
+
+    with pytest.raises(RuntimeError, match="handed in, but it went unused"):
+        bo.suggest()
+
+
 def test_kernel_object_is_not_mutated_across_suggests(bo_factory, tree_corpus):
     """The kernel object a caller hands in survives every suggest unchanged.
 
