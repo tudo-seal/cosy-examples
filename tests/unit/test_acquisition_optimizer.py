@@ -21,6 +21,7 @@ from bayesian_optimization.acquisition_optimizer import (
     AcquisitionOptimizer,
     _make_acquisition_objective_batch,
     _make_acquisition_objective_single,
+    resolve_fitness_mode,
 )
 from tests.unit.test_acquisition import FixedPosterior
 
@@ -244,3 +245,132 @@ def test_a_mode_outside_the_three_is_refused_before_the_search_runs(mode):
         AcquisitionOptimizer(search).maximize(af, query="a query", mode=mode)
 
     assert search.calls == [], "the mode is read before anything is evaluated"
+
+
+# ---------------------------------------------------------------------------
+# The cache of the single objective, and what its key is
+# ---------------------------------------------------------------------------
+
+class CountingPosterior(FixedPosterior):
+    """A posterior that records how often the surrogate was actually asked."""
+
+    def __init__(self, posterior: dict[Any, tuple[float, float]]) -> None:
+        super().__init__(posterior)
+        self.calls = 0
+
+    def predict(self, X: Any, return_std: bool = False) -> Any:
+        self.calls += 1
+        return super().predict(X, return_std)
+
+
+class AsksInTurn:
+    """A search that scores the candidates it was built with, one generation each."""
+
+    def __init__(self, *candidates: Any) -> None:
+        self.candidates = candidates
+        self.scores: list[float] = []
+
+    def evolutionary_best(self, query: Any, objective: Any, mode: str) -> Any:
+        self.scores = [objective(candidate) for candidate in self.candidates]
+        return self.candidates[0]
+
+
+def _bounded(posterior: Any) -> ProbabilityOfImprovement:
+    return ProbabilityOfImprovement(gp=posterior, incumbent=0.0, known_points=set())
+
+
+def test_the_single_objective_asks_the_surrogate_once_per_candidate():
+    """A candidate that survives into the next generation is scored again and asked once.
+
+    The single-sample path pays one full surrogate call per scoring, and asking the surrogate
+    rebuilds the training side of the kernel matrix once per distinct candidate.  A search that
+    keeps no fitness cache of its own scores the same candidate once per generation it survives.
+    ``EvolutionarySearch`` does keep one for the whole run, so this cache is what holds the cost
+    down for any other search the optimizer is handed.
+    """
+    posterior = CountingPosterior({_NOVEL_A: (-5.0, 0.1)})
+    search = AsksInTurn(_NOVEL_A, _NOVEL_A)
+
+    AcquisitionOptimizer(search).maximize(_bounded(posterior), query="a query", mode="single")
+
+    assert search.scores[0] == search.scores[1]
+    assert posterior.calls == 1, "the second scoring of the same candidate must come from the cache"
+
+
+def test_the_cached_score_is_keyed_by_the_term_and_not_by_the_object():
+    """Two terms that are equal are one candidate, and the search hands over whichever it built.
+
+    A search produces its candidates by recombination, so the object that carries a term in a
+    later generation is rarely the object an earlier generation was scored on.  A cache keyed by
+    identity would miss every one of them and still look like a cache.
+    """
+    rebuilt = Tree("novel_a")
+    assert rebuilt == _NOVEL_A and rebuilt is not _NOVEL_A
+
+    posterior = CountingPosterior({_NOVEL_A: (-5.0, 0.1)})
+    search = AsksInTurn(_NOVEL_A, rebuilt)
+
+    AcquisitionOptimizer(search).maximize(_bounded(posterior), query="a query", mode="single")
+
+    assert search.scores[0] == search.scores[1]
+    assert posterior.calls == 1
+
+
+def test_the_cache_belongs_to_one_maximization_and_not_to_the_optimizer():
+    """Each maximization builds its own objective, and the scores of a pass belong to that pass.
+
+    A pass conditions the surrogate on everything observed so far, so the score of a term changes
+    from one pass to the next.  A cache that outlived its maximization would answer the second
+    pass with the numbers of the first, and the run would optimize a surrogate it no longer has.
+    """
+    posterior = CountingPosterior({_NOVEL_A: (-5.0, 0.1)})
+    optimizer = AcquisitionOptimizer(AsksInTurn(_NOVEL_A, _NOVEL_A))
+
+    optimizer.maximize(_bounded(posterior), query="a query", mode="single")
+    optimizer.maximize(_bounded(posterior), query="a query", mode="single")
+
+    assert posterior.calls == 2
+
+
+# ---------------------------------------------------------------------------
+# A stream that yields nothing
+# ---------------------------------------------------------------------------
+
+def test_a_stream_that_yields_no_generation_at_all_is_refused():
+    """No generation and no candidate are different answers, and only one of them is a result.
+
+    ``maximize`` returns whatever the search found, and ``None`` there means the search ran and
+    found nothing.  A stream that ends before its zeroth generation means it never ran, and
+    reading the population and the frontier off it would report an empty run as a finished one.
+    """
+    class Silent:
+        def evolutionary_stream(self, query: Any, objective: Any, mode: str) -> Any:
+            return iter(())
+
+    af = ProbabilityOfImprovement(gp=_NEGATIVE, incumbent=0.0, known_points={_KNOWN})
+
+    with pytest.raises(RuntimeError, match="yielded no generation at all"):
+        AcquisitionOptimizer(Silent()).maximize_with_population(af, query="a query")
+
+
+# ---------------------------------------------------------------------------
+# The three modes, read against the search that receives them
+# ---------------------------------------------------------------------------
+
+def test_resolving_auto_here_gives_what_the_search_would_have_read_itself():
+    """The three modes are the search's own, and ``auto`` is resolved before it can read it.
+
+    The search decides ``auto`` by the annotation of the fitness function it was handed: a single
+    positional parameter annotated as a collection means a whole generation per call.  Both
+    objectives are written in this package, so the answer is fixed here, and fixing it is only
+    honest while the two readings agree.  This holds them to that, on the search's own reading
+    rather than on a restatement of it.
+    """
+    from cosy.evolutionary_algorithms.evolutionary import EvolutionarySearch
+
+    af = ProbabilityOfImprovement(gp=_NEGATIVE, incumbent=0.0, known_points={_KNOWN})
+    reads_as_batch = EvolutionarySearch._looks_like_batch_fitness_function
+
+    assert resolve_fitness_mode("auto") == "batch"
+    assert reads_as_batch(_make_acquisition_objective_batch(af)) is True
+    assert reads_as_batch(_make_acquisition_objective_single(af)) is False

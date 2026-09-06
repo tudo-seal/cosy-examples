@@ -466,3 +466,26 @@ def test_the_floor_stays_strictly_below_even_where_subtracting_one_does_nothing(
     huge = -1e17
     floor = UpperConfidenceBound(gp=fitted_gp, beta=2.0).known_point_floor((huge,))
     assert floor < huge
+
+
+# ---------------------------------------------------------------------------
+# The one thing the base class does not supply
+# ---------------------------------------------------------------------------
+
+def test_an_acquisition_that_states_no_score_is_refused_where_it_would_be_used():
+    """The base class carries everything but the map from the posterior to a number.
+
+    Asking the surrogate, checking what it answered and flooring the known points are shared, and
+    a subclass adds the score.  One that adds nothing has to say so at the first candidate.  A
+    base returning zeros instead would give every candidate the same score, and the maximization
+    would answer with whichever candidate its search happened to reach first.
+    """
+    from bayesian_optimization.acquisition_function import AcquisitionFunction
+
+    term = Tree("t", ())
+    incomplete = AcquisitionFunction(FixedPosterior({term: (1.0, 0.5)}))
+
+    with pytest.raises(NotImplementedError, match="implement score"):
+        incomplete.evaluate_batch([term])
+    with pytest.raises(NotImplementedError, match="implement score"):
+        incomplete(term)
