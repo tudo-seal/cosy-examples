@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+from typing import Any
 
 import numpy as np
 import pytest
@@ -13,6 +14,7 @@ from bayesian_optimization.kernels.graph_kernel import (
     HierarchicalWLKernel,
     WeisfeilerLehmanKernel,
 )
+from bayesian_optimization.kernels.kernel_base import StructuredKernelBase
 from bayesian_optimization.kernels.tree_kernel import (
     OrderedRootedSubtreeKernel,
     SubsetTreeKernel,
@@ -791,3 +793,125 @@ def test_a_caller_writing_into_a_matrix_does_not_reach_the_cached_one():
     cold = np.asarray(kernel(terms), dtype=float)
 
     assert np.array_equal(second, cold)
+
+
+# ---------------------------------------------------------------------------
+# What the base class supplies, and what an empty input answers
+# ---------------------------------------------------------------------------
+
+class _LengthProduct(StructuredKernelBase):
+    """A kernel written the way a new one would be: two methods and nothing else.
+
+    It states the two abstract methods and no ``diag``, which is what makes it the case the base
+    class is written for.  The product of the lengths is a valid kernel, since it is an inner
+    product of one-dimensional feature vectors, so a Gaussian process on it is well defined.
+    """
+
+    def _prepare_inputs(self, X):
+        return [str(item) for item in X]
+
+    def _kernel_matrix(self, X_prepared, Y_prepared):
+        return np.array(
+            [[float(len(a) * len(b)) for b in Y_prepared] for a in X_prepared], dtype=float
+        )
+
+
+def test_a_kernel_that_states_no_diagonal_of_its_own_reads_it_off_the_full_matrix():
+    """A subclass gets a correct diagonal before it gets a cheap one.
+
+    Every kernel in this package overrides ``diag`` with a linear path, so the fallback is
+    reached only by a kernel written elsewhere.  sklearn asks for it on every prediction with a
+    standard deviation and subtracts the conditioning term from it, so a fallback that answered
+    anything else would hand the caller a variance the data never produced.
+    """
+    kernel = _LengthProduct()
+    inputs = ["ab", "cde", "f"]
+
+    assert np.allclose(kernel.diag(inputs), [4.0, 9.0, 1.0])
+    assert np.allclose(kernel.diag(inputs), np.diag(kernel(inputs)))
+
+
+@pytest.mark.parametrize("kernel_factory", KERNEL_FACTORIES, ids=KERNEL_IDS)
+def test_no_kernel_here_reports_itself_as_stationary(kernel_factory):
+    """Stationarity is invariance under a shift of the inputs, and terms admit no shift.
+
+    sklearn reads the flag where it decides what it may assume, and a kernel on structured inputs
+    has no difference of two inputs for the assumption to be about.
+    """
+    assert kernel_factory().is_stationary() is False
+    assert _LengthProduct().is_stationary() is False
+
+
+def test_a_graph_kernel_asked_about_no_terms_answers_the_empty_matrix():
+    """A cross evaluation against nothing has a shape, and the shape is what the caller reads.
+
+    grakel refuses an empty list outright, with ``parsed input is empty``, so the answer is given
+    before its backend is built.  A Gaussian process asks for exactly this shape when it predicts
+    at no candidates.
+    """
+    terms = [Tree("A", (Tree("B"),)), Tree("C")]
+    kernel: WeisfeilerLehmanKernel = WeisfeilerLehmanKernel(h=1)
+    nothing = np.array([], dtype=object)
+
+    assert kernel(terms, nothing).shape == (2, 0)
+    assert kernel(nothing, terms).shape == (0, 2)
+    assert kernel(nothing).shape == (0, 0)
+
+
+def test_a_tree_kernel_asked_about_no_terms_answers_the_empty_matrix():
+    """The same shape, on the kernel that builds its own features.
+
+    The one-sided cases are the ones with something to get wrong: the feature set comes from both
+    sides, so a cross evaluation against nothing still has columns to build a sparse matrix over
+    and no rows to fill them from.
+    """
+    terms = [Tree("A", (Tree("B"),)), Tree("C")]
+    kernel: OrderedRootedSubtreeKernel = OrderedRootedSubtreeKernel(normalize=True)
+    nothing = np.array([], dtype=object)
+
+    assert kernel(terms, nothing).shape == (2, 0)
+    assert kernel(nothing, terms).shape == (0, 2)
+    assert kernel(nothing).shape == (0, 0)
+
+
+def test_the_unnormalized_graph_kernel_reports_the_diagonal_of_its_own_matrix():
+    """Without normalization a self-similarity is a number, and it has to be computed.
+
+    Under normalization every diagonal entry is one and the read costs nothing.  Without it the
+    entry is what the base kernel counts for a term against itself, and the cheap route is one
+    single-term evaluation per term rather than the whole matrix.
+    """
+    terms = [Tree("A", (Tree("B"), Tree("C"))), Tree("D"), Tree("E", (Tree("F"),))]
+    kernel: WeisfeilerLehmanKernel = WeisfeilerLehmanKernel(h=1, normalize=False)
+
+    diagonal = kernel.diag(terms)
+
+    assert np.allclose(diagonal, np.diag(np.asarray(kernel(terms), dtype=float)))
+    assert not np.allclose(diagonal, 1.0), (
+        "the fixture has to be one that normalization would flatten, or the two branches agree"
+    )
+
+
+def _graph_without_a_generator(tree: Tree) -> Any:
+    """Translate a term the way a caller with a graph in hand would."""
+    return next(iter(to_grakel_graph(tree)))
+
+
+def test_a_translation_may_answer_with_a_graph_instead_of_a_generator_of_one():
+    """The default translation yields its graph, and a hand-written one returns it.
+
+    ``graph_from_networkx`` is a generator, so the translation this package ships hands one over
+    and the conversion has to draw from it.  A caller who builds the graph itself has no reason to
+    wrap it in a generator, and a conversion that only understood the generator would pass the
+    generator object itself to grakel as if it were a graph.
+    """
+    terms = [Tree("A", (Tree("B"), Tree("C"))), Tree("D", (Tree("B"),))]
+
+    shipped: WeisfeilerLehmanKernel = WeisfeilerLehmanKernel(h=1)
+    by_hand: WeisfeilerLehmanKernel = WeisfeilerLehmanKernel(
+        h=1, to_grakel_graph=_graph_without_a_generator
+    )
+
+    assert np.allclose(
+        np.asarray(by_hand(terms), dtype=float), np.asarray(shipped(terms), dtype=float)
+    )

@@ -271,6 +271,50 @@ def test_the_alignment_needs_more_than_one_pair():
         kernel_objective_alignment(np.eye(2) + 0.1, [1.0, 2.0])
 
 
+def test_the_alignment_needs_a_square_matrix():
+    """A kernel matrix has one row and one column per term, so one that is not square covers no set
+    of terms."""
+    with pytest.raises(ValueError, match="square"):
+        kernel_objective_alignment(np.ones((2, 3)), [1.0, 2.0, 3.0])
+
+
+def test_the_alignment_needs_one_objective_value_per_term():
+    """The matrix names the terms and the values name them again, and the two have to agree.
+
+    They are paired by position and nothing else, so a short list of values would silently align
+    the matrix against the wrong terms rather than against fewer of them.
+    """
+    with pytest.raises(ValueError, match="pairs them by position"):
+        kernel_objective_alignment(np.eye(3), [1.0, 2.0])
+
+
+def _with_diagonal(entry: float) -> np.ndarray:
+    matrix = np.eye(3)
+    matrix[1, 1] = entry
+    return matrix
+
+
+@pytest.mark.parametrize(
+    ("matrix", "values"),
+    [
+        (np.array([[1.0, np.nan, 0.0], [np.nan, 1.0, 0.0], [0.0, 0.0, 1.0]]), [1.0, 2.0, 3.0]),
+        (_with_diagonal(np.nan), [1.0, 2.0, 3.0]),
+        (np.eye(3), [1.0, float("inf"), 3.0]),
+    ],
+    ids=["off_the_diagonal", "on_the_diagonal", "objective_value"],
+)
+def test_the_alignment_refuses_a_value_that_is_not_a_number(matrix, values):
+    """A kernel matrix or an objective that is not made of numbers is refused, not ranked.
+
+    The read checks the whole matrix, and the diagonal case is why.  The pairs it ranks are the
+    distinct ones, so a ``nan`` on the diagonal never reaches the rank correlation, which does its
+    own finiteness check on what it is handed.  Such a matrix would come back as an ordinary
+    alignment, and a caller reading the number could not tell it from a measured one.
+    """
+    with pytest.raises(ValueError, match="the alignment needs finite kernel values"):
+        kernel_objective_alignment(matrix, values)
+
+
 def test_the_alignment_is_one_when_the_kernel_is_the_objective_distance():
     """The definition read back: build the kernel *from* ``-|q(t) - q(t')|`` and it aligns fully."""
     values = [0.0, 1.0, 2.5, 4.0]
@@ -318,6 +362,25 @@ def test_leaving_one_of_one_out_leaves_nothing():
         kernel=RBF(1.0), alpha=1e-6, optimizer=None
     ).fit(np.array([[0.0]]), np.array([1.0]))
     with pytest.raises(ValueError, match="no other one"):
+        read_calibration(surrogate)
+
+
+def test_the_calibration_read_refuses_a_surrogate_with_several_objectives():
+    """The read is one residual per training point, and several targets give one per target.
+
+    sklearn fits a two-column target without complaint and answers a mean per column.  Reshaping
+    that to one column would interleave the two objectives and report the residuals of a run that
+    was never made.
+    """
+    inputs = np.arange(6.0).reshape(-1, 1)
+    two_objectives = np.column_stack(
+        [np.array([0.1, 0.4, 0.9, 0.7, 0.3, 0.2]), np.arange(6.0)]
+    )
+    surrogate = GaussianProcessRegressor(
+        kernel=RBF(1.5), alpha=1e-6, optimizer=None, normalize_y=False
+    ).fit(inputs, two_objectives)
+
+    with pytest.raises(ValueError, match="written for one objective"):
         read_calibration(surrogate)
 
 
