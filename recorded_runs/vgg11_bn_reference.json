@@ -1,0 +1,45 @@
+{
+  "expected_parameters": 9228362,
+  "n_params": 9228362,
+  "epochs": 50,
+  "learning_rate": 0.1,
+  "momentum": 0.9,
+  "weight_decay": 0.0005,
+  "batch_size": 128,
+  "val_fraction": 0.1,
+  "runs": [
+    {
+      "objective_value": 0.3027096092700958,
+      "accuracy": 0.9167999625205994,
+      "test_accuracy": 0.911300003528595,
+      "n_params": 9228362,
+      "train_seconds": 138.88859295845032,
+      "diverged": false,
+      "epochs_completed": 50,
+      "seed": 0,
+      "wall_seconds": 139.16304636001587
+    },
+    {
+      "objective_value": 0.3144056499004364,
+      "accuracy": 0.9161999821662903,
+      "test_accuracy": 0.9138000011444092,
+      "n_params": 9228362,
+      "train_seconds": 136.44806051254272,
+      "diverged": false,
+      "epochs_completed": 50,
+      "seed": 1,
+      "wall_seconds": 136.72665190696716
+    },
+    {
+      "objective_value": 0.300342857837677,
+      "accuracy": 0.9179999828338623,
+      "test_accuracy": 0.91239994764328,
+      "n_params": 9228362,
+      "train_seconds": 136.34874773025513,
+      "diverged": false,
+      "epochs_completed": 50,
+      "seed": 2,
+      "wall_seconds": 136.61469292640686
+    }
+  ]
+}

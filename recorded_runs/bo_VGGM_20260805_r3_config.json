@@ -1,0 +1,158 @@
+{
+  "baseline_best_objective_value": 0.7957333127657572,
+  "baseline_evaluations": 50,
+  "batch_size": 128,
+  "bayesian_optimization": {
+    "acquisition_function": "ExpectedImprovement",
+    "acquisition_hard_limit_seconds": 14400.0,
+    "comparator": "ScalarFitnessComparator",
+    "crossover_rate": 0.9,
+    "evo_generations": 35,
+    "greater_is_better": true,
+    "initializer": "SampledInitialization",
+    "kernel": "damg",
+    "kernel_optimizer": "fmin_l_bfgs_b",
+    "mutation": "ResolutionMutation",
+    "mutation_rate": 0.15,
+    "n_iterations": 30,
+    "n_pre_samples": 20,
+    "n_restarts_kernel_optimizer": 20,
+    "objective_metric": "accuracy",
+    "parent_selection": "RankBasedSelection",
+    "population_size": 100,
+    "recombination": "SubtreeSwap",
+    "search_seed": 0,
+    "survivor_selection": "GenerousConservativeReplacement",
+    "termination": "Generations"
+  },
+  "bayesian_optimization_seconds": 75286.94025063515,
+  "best_accuracy": 0.8624666531880697,
+  "best_maximized_value": 0.8624666531880697,
+  "best_objective_value": 0.8624666531880697,
+  "bo_sampler": {
+    "counting": null,
+    "depth_bound": 1000,
+    "size_bound": null,
+    "type": "DepthBoundedRandomSampler"
+  },
+  "completed": true,
+  "csv_path": "results/bo_VGGM_20260805_r3.csv",
+  "cuda_available": true,
+  "dataset": "cifar10",
+  "device": "cuda",
+  "epochs_per_candidate": 50,
+  "gpu_name": "NVIDIA A30",
+  "initial_repeats_rejected": 0,
+  "mean_seconds_per_evaluation": 1505.7388050127029,
+  "n_evaluations": 50,
+  "run_kind": "bayesian_optimization_with_paired_baseline",
+  "search_program": {
+    "coupled_nonterminals": 641,
+    "coupled_rules": 3912,
+    "depth_bound": 1000,
+    "repository": "RecognizableCNNrepository",
+    "sampling": "depth-bounded",
+    "search_space_construction_seconds": 34.08982276916504
+  },
+  "search_space": {
+    "channel_dimensions": [
+      3,
+      6,
+      16
+    ],
+    "constant_values": [
+      0,
+      1,
+      -1
+    ],
+    "height_width_dimensions": [
+      [
+        32,
+        32
+      ],
+      [
+        28,
+        28
+      ],
+      [
+        16,
+        16
+      ],
+      [
+        14,
+        14
+      ],
+      [
+        10,
+        10
+      ],
+      [
+        8,
+        8
+      ],
+      [
+        5,
+        5
+      ]
+    ],
+    "kernel_dimensions": [
+      [
+        5,
+        5
+      ],
+      [
+        3,
+        3
+      ],
+      [
+        2,
+        2
+      ]
+    ],
+    "learning_rate_values": [
+      0.001
+    ],
+    "linear_feature_dimensions": [
+      3072,
+      4704,
+      4096,
+      1600,
+      1536,
+      1176,
+      1024,
+      768,
+      400,
+      120,
+      84,
+      10
+    ],
+    "max_lin_layer_dim": null,
+    "max_parallel_width": 2,
+    "num_feature_dimensions": 48,
+    "padding_values": [
+      0,
+      1
+    ],
+    "stride_values": [
+      1,
+      2
+    ]
+  },
+  "search_space_construction_seconds": 34.08982276916504,
+  "shared_initial_best_objective_value": 0.735866645971934,
+  "shared_initial_evaluations": 20,
+  "structure_length": null,
+  "target": "Learner(DAG(input([3072]) & output([10]) & structure([(None, ((None, 65536, 65536),), ((None, 65536, 16384),), ((None, 16384, 32768),), None, ((None, 32768, 8192),), ((None, 8192, 16384),), None, ((None, 16384, 4096),), ((None, 4096, 8192),), None, ((None, 8192, 2048),), None, ((None, 2048, 512),), ((None, 512, 10),))])) & Loss(type([CNNrepository.CrossEntropyLoss(reduction='mean')])) & Optimizer(type([None])) & Scheduler(type([None])) & epochs([50]))",
+  "target_cell": "VGGM",
+  "test_samples": 10000,
+  "torch_version": "2.13.0+cu130",
+  "total_training_seconds": 43070.6039352417,
+  "train_samples": 45000,
+  "training_repeats": 3,
+  "training_seeds": [
+    0,
+    1,
+    2
+  ],
+  "written_at": 1785987809.0434678
+}
