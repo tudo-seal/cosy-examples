@@ -105,9 +105,3 @@ ignore = [
     "F401",
     "F841",
 ]
-
-[tool.ruff.lint.per-file-ignores]
-# The example inserts the repository root into sys.path so that it runs from a plain
-# checkout. The imports that follow that insertion are what this rule flags, and the
-# one that needs it is the import of the package itself.
-"bayesian_optimization/examples/simple_nas/simple_nas.py" = ["E402"]
