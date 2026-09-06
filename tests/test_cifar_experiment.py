@@ -16,6 +16,9 @@ No test here reads a dataset, and none of them calls ``run_experiment``.
 
 from __future__ import annotations
 
+import inspect
+import json
+
 import pytest
 from cosy.core import Synthesizer
 
@@ -23,6 +26,11 @@ from bayesian_optimization.examples.cnn_damg_nas import cnn_damg_cifar_experimen
 from bayesian_optimization.examples.cnn_damg_nas.cnn_damg_experiment_utils import (
     POSITION_TARGETS,
     TARGET_LENGTHS,
+    describe_repository,
+)
+from bayesian_optimization.examples.cnn_damg_nas.cnn_damg_reference_architectures import (
+    cifar10_tutorial_repo,
+    cifar10_vgg11_bn_repo,
 )
 from bayesian_optimization.examples.cnn_damg_nas.cnn_damg_repo import CNNrepository
 from bayesian_optimization.examples.cnn_damg_nas.cnn_damg_targets import make_cifar_head_target
@@ -146,3 +154,47 @@ def test_a_fetch_of_the_dataset_has_to_be_asked_for(monkeypatch, tmp_path):
 
     experiment.main(["--csv-path", str(tmp_path / "b.csv"), "--download"])
     assert seen["download"] is True
+
+
+def test_the_record_of_a_search_space_is_read_off_the_repository_that_builds_it():
+    """The block a run records has to describe the repository the run searched, not a constant.
+
+    The recorded VGGM run is the case: it built the VGG cell and wrote the dimensions of the
+    non-VGG branch, which reads the module constants, beside a correct count of its own feature
+    widths. Nine of the eleven fields came from those constants, one from the command line and one
+    from the object. Reading all of them off the object is what keeps the halves of the block from
+    describing different searches. The two repositories here are the two shipped reference
+    architectures, which differ in more fields than the record's own pair does.
+    """
+    tutorial = cifar10_tutorial_repo()
+    vgg = cifar10_vgg11_bn_repo()
+
+    described = describe_repository(vgg)
+    assert described["kernel_dimensions"] == [[3, 3]]
+    assert described["learning_rate_values"] == [0.1]
+    assert described["max_lin_layer_dim"] == 512
+    assert described["num_feature_dimensions"] == 48
+
+    # Every field the two repositories differ in has to differ in their records too, or the
+    # record cannot tell one search from the other. num_feature_dimensions is the exception by
+    # construction: it is a count over a field rather than the field.
+    other = describe_repository(tutorial)
+    for key in described:
+        if key == "num_feature_dimensions":
+            continue
+        assert (described[key] != other[key]) == (getattr(vgg, key) != getattr(tutorial, key)), key
+    assert described["num_feature_dimensions"] != other["num_feature_dimensions"]
+
+    # And json.dump has to survive it, since that is where the block goes.
+    assert json.loads(json.dumps(described)) == described
+
+
+def test_the_metadata_of_a_run_carries_the_source_of_its_initial_design():
+    """A resumed design and a trained one look alike in a record that does not say which it was.
+
+    The field is written whether or not a run resumed, so its absence marks a record from before
+    it was written rather than a run that trained its own design. This reads the source of the
+    block rather than a record, because building one takes a dataset and a search.
+    """
+    source = inspect.getsource(experiment.run_experiment)
+    assert '"resumed_from": resume_from' in source

@@ -587,6 +587,58 @@ def describe_sampler(sampler) -> dict:
     }
 
 
+def _as_list(values: Any) -> list | None:
+    """Render an optional sequence for a record.
+
+    Args:
+        values (Any): The sequence, or None.
+
+    Returns:
+        list | None: The values as a list, or None.
+    """
+    return None if values is None else list(values)
+
+
+def describe_repository(repo: Any) -> dict:
+    """Read the search space of a run off the repository that will build it.
+
+    The block this returns used to be written from the module constants of the experiment while
+    the repository was built from a different set of them, so a run of the VGG cell recorded the
+    tutorial cell's dimensions beside a correct count of its own non-terminals. One field of that
+    block was read off the object, and it is the one that disagreed with the rest.
+
+    Args:
+        repo (Any): The repository the run searches over.
+
+    Returns:
+        dict: The parameters that decide which networks the space holds, as the repository has
+            them. ``num_feature_dimensions`` is a count and not a parameter: it is what the widths
+            close to under parallel sums, and it is what the space is large or small because of.
+    """
+    return {
+        "linear_feature_dimensions": list(repo.linear_feature_dimensions),
+        "channel_dimensions": list(repo.channel_dimensions),
+        "height_width_dimensions": [list(pair) for pair in repo.height_width_dimensions],
+        "kernel_dimensions": [list(pair) for pair in repo.kernel_dimensions],
+        "pooling_kernel_dimensions": [list(pair) for pair in repo.pooling_kernel_dimensions],
+        "stride_values": list(repo.stride_values),
+        "padding_values": list(repo.padding_values),
+        "max_parallel_width": repo.max_parallel_width,
+        "max_lin_layer_dim": repo.max_lin_layer_dim,
+        # Normalized rather than as given: the repository appends 0 and 1 if they are missing,
+        # because they are the neutral values of the sum and the product component, and the space
+        # was built from the normalized list.
+        "constant_values": list(repo.constant_values),
+        "learning_rate_values": list(repo.learning_rate_values),
+        "n_epoch_values": list(repo.n_epoch_values),
+        # None where the repository was given none, since the optimizer combinator then substitutes
+        # its own single value and a list here would claim the caller chose it.
+        "weight_decay_values": _as_list(repo.weight_decay_values),
+        "momentum_values": _as_list(repo.momentum_values),
+        "num_feature_dimensions": len(repo.feature_dimensions),
+    }
+
+
 def describe_search(evo_alg: EvolutionarySearch[Any, Any, Any]) -> dict:
     """Read a run's evolutionary configuration off the object that will run it.
 

@@ -43,6 +43,7 @@ from bayesian_optimization.examples.cnn_damg_nas.cnn_damg_experiment_utils impor
     build_acquisition_optimizer,
     build_search,
     dataset_to_tensors,
+    describe_repository,
     describe_sampler,
     describe_search,
     load_initial_design,
@@ -409,19 +410,13 @@ def run_experiment(n_pre_samples: int, n_iterations: int, population_size: int,
         "bo_sampler": describe_sampler(optimizer.sampler),
         "train_samples": int(x.shape[0]),
         "test_samples": int(x_test.shape[0]),
-        "search_space": {
-            "linear_feature_dimensions": LINEAR_FEATURE_DIMENSIONS,
-            "channel_dimensions": CHANNEL_DIMENSIONS,
-            "height_width_dimensions": HEIGHT_WIDTH_DIMENSIONS,
-            "kernel_dimensions": KERNEL_DIMENSIONS,
-            "stride_values": STRIDE_VALUES,
-            "padding_values": PADDING_VALUES,
-            "max_parallel_width": MAX_PARALLEL_WIDTH,
-            "max_lin_layer_dim": max_lin_layer_dim,
-            "constant_values": CONSTANT_VALUES,
-            "learning_rate_values": LEARNING_RATE_VALUES,
-            "num_feature_dimensions": len(repo.feature_dimensions),
-        },
+        # Read off the repository rather than off the module constants. The two disagree whenever
+        # a run builds its repository from anything else, which the VGG branch does.
+        "search_space": describe_repository(repo),
+        # Which run this one took its initial design from, or None if it trained its own. Without
+        # this field a resumed design is indistinguishable from a trained one in the record, and
+        # only the timestamps give it away.
+        "resumed_from": resume_from,
         # What the program cost to build and how large it came out, read off the objects.
         "search_program": program.provenance,
         "bayesian_optimization": {
