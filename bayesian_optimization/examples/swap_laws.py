@@ -22,15 +22,17 @@ form that can be compiled into the non-terminals.
 
 from __future__ import annotations
 
+from typing import Any
+
 from cosy.core.tree import Tree
 
 
-def _tree_root_is(tree, root_name: str) -> bool:
+def _tree_root_is(tree: Tree[Any], root_name: str) -> bool:
     # Exact root comparison for Tree nodes.
-    return tree.root == root_name
+    return bool(tree.root == root_name)
 
 
-def _tree_root_contains(tree, token: str) -> bool:
+def _tree_root_contains(tree: Tree[Any], token: str) -> bool:
     # Preserve the existing substring-based root matching used by the predicates.
     return token in tree.root
 

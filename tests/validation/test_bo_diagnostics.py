@@ -71,7 +71,8 @@ def _surrogate(
 def _squared_exponential(lengthscale: float) -> np.ndarray:
     """The kernel matrix of the figures' covariance over all eleven lengths."""
     grid = np.asarray(_LENGTHS, dtype=float)
-    return np.exp(-((grid[:, None] - grid[None, :]) ** 2) / (2.0 * lengthscale**2))
+    matrix: np.ndarray = np.exp(-((grid[:, None] - grid[None, :]) ** 2) / (2.0 * lengthscale**2))
+    return matrix
 
 
 # ---------------------------------------------------------------------------
