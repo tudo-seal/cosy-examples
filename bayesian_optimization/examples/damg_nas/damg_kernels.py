@@ -69,8 +69,28 @@ def as_DAMG(t: Tree, verbose=False):
     return gk_graph
 
 def hierarchical_tree(n: int) -> Callable[[Tree], Tree]:
+    """Build the term transformation that folds a term to a granularity.
+
+    Args:
+        n (int): The granularity, 1, 2 or 3.  Any other value is granularity 0, the term itself.
+
+    Returns:
+        Callable[[Tree], Tree]: The transformation, for a kernel to apply before it compares.
+    """
     def transform(tree: Tree) -> Tree:
-        return tree.interpret(hierarchy_algebra(n))
+        """Fold one term.
+
+        Args:
+            tree (Tree): The term.
+
+        Returns:
+            Tree: The folded term.
+        """
+        # Named rather than returned directly: every clause of a hierarchy algebra builds a Tree,
+        # so this is one, but interpret is declared to return Any, and this project runs mypy with
+        # warn_return_any.
+        folded: Tree = tree.interpret(hierarchy_algebra(n))
+        return folded
     return transform
 
 def as_hierarchical_tree_graph(n: int):

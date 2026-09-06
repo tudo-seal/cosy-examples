@@ -474,7 +474,7 @@ DEFAULT_SELECTION_PRESSURE = 1.7
 # rarer draw and an ordinary mutation replaces a smaller share, so the same rate shakes a large
 # space less than a small one.  0.03 is chosen for the architectures this example searches, whose
 # terms are large.  The two smaller example spaces of this repository sit lower still, at 0.02 in
-# simple_nas and at 0 in the DAMG example.
+# simple_nas and at 0.02 in the DAMG example.
 #
 # Convergence is untouched by the value.  The root is always a mutation point, and a mutation with
 # an exhaustive sampler maps any individual to any other with positive probability through the root,
