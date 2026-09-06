@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import logging
 
+import pytest
 from cosy.core.tree import Tree
 
 LOGGER_NAME = "bayesian_optimization"
@@ -110,7 +111,7 @@ def test_verbose_makes_output_reachable(monkeypatch, bo_factory, tree_corpus):
     bo.suggest(verbose=True)
 
     assert reachable_handlers(logger), (
-        "verbose=True set a level but attached no handler; logging.lastResort then drops every "
+        "verbose=True set a level but attached no handler. logging.lastResort then drops every "
         "INFO record at WARNING, so the flag cannot produce output"
     )
     assert logger.isEnabledFor(logging.INFO)
@@ -217,3 +218,132 @@ def test_an_absent_posterior_coordinate_is_not_reported_as_zero(caplog):
     assert "m=?" in line
     assert "s=?" in line
     assert "m=0" not in line and "s=0" not in line
+
+
+# ---------------------------------------------------------------------------
+# Where verbose output comes from: the level, the handler, and the closed loop
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def package_logger(monkeypatch):
+    """Hand a test the package logger, with its configuration put back afterwards.
+
+    ``enable_verbose_logging`` writes to a logger the whole process shares, and it writes two
+    things, the level and the handler list.  A test that reads what it did has to put both back.
+    The level goes back through ``setLevel`` rather than by assignment, because that is what also
+    drops the cached answers of ``isEnabledFor``.
+    """
+    logger = logging.getLogger(LOGGER_NAME)
+    level = logger.level
+    monkeypatch.setattr(logger, "handlers", list(logger.handlers))
+    monkeypatch.setattr(logger, "propagate", logger.propagate)
+    yield logger
+    logger.setLevel(level)
+
+
+def test_verbose_logging_keeps_the_handler_an_application_configured(package_logger):
+    """An application that configured logging itself decides where the lines go.
+
+    The flag promises reachable output, not output in this package's format, so a handler that is
+    already there is left in place and no second one is added beside it.
+    """
+    from bayesian_optimization.diagnostics import enable_verbose_logging
+
+    configured = logging.NullHandler()
+    package_logger.handlers = [configured]
+    package_logger.propagate = False
+
+    enable_verbose_logging()
+
+    assert package_logger.handlers == [configured]
+    assert package_logger.level == logging.INFO
+
+
+def test_verbose_logging_counts_a_handler_that_sits_on_an_ancestor(package_logger, monkeypatch):
+    """A record reaches an ancestor's handler too, so an ancestor's handler is one already.
+
+    ``logging.basicConfig()`` configures the root and nothing else, which is the usual way an
+    application sets logging up.  Reading this package's own handler list alone would miss it and
+    attach a second handler, and every line would then be printed twice.
+    """
+    from bayesian_optimization.diagnostics import enable_verbose_logging
+
+    monkeypatch.setattr(logging.getLogger(), "handlers", [logging.NullHandler()])
+    package_logger.handlers = []
+    package_logger.propagate = True
+
+    enable_verbose_logging()
+
+    assert package_logger.handlers == []
+    assert package_logger.level == logging.INFO
+
+
+def test_verbose_logging_attaches_one_where_the_whole_chain_carries_none(
+    package_logger, monkeypatch
+):
+    """With no handler anywhere the walk ends at the root, and only then is one attached.
+
+    This is the run of a script that never called ``logging.basicConfig()``.  ``logging`` falls
+    back to ``lastResort`` there, which is pinned at WARNING, so every line this package emits at
+    INFO is dropped and the flag produces nothing.
+    """
+    from bayesian_optimization.diagnostics import enable_verbose_logging
+
+    monkeypatch.setattr(logging.getLogger(), "handlers", [])
+    package_logger.handlers = []
+    package_logger.propagate = True
+
+    enable_verbose_logging()
+
+    assert len(package_logger.handlers) == 1
+    assert package_logger.level == logging.INFO
+
+
+def test_the_closed_loop_raises_the_level_before_it_runs_a_pass(
+    package_logger, bo_factory, tree_corpus
+):
+    """``optimize(verbose=True)`` has to make its own output reachable, whatever it then logs.
+
+    The budget is zero on purpose.  A run with passes reaches ``suggest``, which raises the level
+    itself, so it cannot say whether the closed loop did.
+    """
+    package_logger.setLevel(logging.WARNING)
+
+    bo = bo_factory()
+    bo.optimize(
+        objective=lambda _t: 1.0,
+        budget=0,
+        x0=tree_corpus[:3],
+        y0=[1.0, 2.0, 0.5],
+        verbose=True,
+    )
+
+    assert package_logger.level == logging.INFO
+
+
+def test_the_closed_loop_reports_one_line_per_pass(
+    package_logger, bo_factory, tree_corpus, caplog
+):
+    """The per-pass line is written by the closed loop and by nothing else.
+
+    ``suggest`` reports the candidate it picked.  What it cannot report is the value that came
+    back for it or how long the three steps took, because those exist only after the pass is over,
+    and a run read line by line is read on those numbers.
+    """
+    package_logger.setLevel(logging.WARNING)
+    package_logger.propagate = True
+
+    bo = bo_factory()
+    bo.optimize(
+        objective=lambda _t: 1.0,
+        budget=2,
+        x0=tree_corpus[:3],
+        y0=[1.0, 2.0, 0.5],
+        verbose=True,
+    )
+
+    lines = [r.getMessage() for r in caplog.records if r.getMessage().startswith("iter=")]
+    assert len(lines) == 2, f"one line per pass was expected, and these were logged: {lines}"
+    assert "iter=0" in lines[0] and "iter=1" in lines[1]
+    assert "y=1" in lines[0]
+    assert "t_suggest=" in lines[0] and "t_eval=" in lines[0] and "t_observe=" in lines[0]
