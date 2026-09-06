@@ -25,6 +25,7 @@ classifiers = [
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Topic :: Scientific/Engineering :: Information Analysis",
 ]
@@ -35,7 +36,7 @@ dependencies = [
     "scikit-learn==1.6.1",
     "scipy==1.12.0",
     "combinatory-synthesizer @ git+https://github.com/tudo-seal/cosy.git",
-    "grakel==0.1.10",
+    "grakel==0.1.11",
     "torch",
     "torchvision",
     "pandas",
@@ -51,6 +52,9 @@ dev = [
     "pytest",
     "hypothesis>=6.100",
     "pytest-cov>=4.1",
+    # Pinned rather than open: ruff gains rules between releases, and an unpinned one turns a
+    # clean checkout red without anything in it having changed.
+    "ruff==0.16.0",
 ]
 test = [
     "pytest",
