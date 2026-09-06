@@ -109,8 +109,9 @@ def main():
     parser.add_argument("--data-dir", default=DATA_DIR)
     parser.add_argument("--download", action="store_true",
                         help="Fetch CIFAR-10 into --data-dir if it is not there.  Without it a "
-                             "missing dataset fails before the synthesis instead of pulling the "
-                             "archive in the middle of the run.")
+                             "missing dataset fails at the archive read, after the synthesis and "
+                             "the parameter check, instead of pulling the archive in the middle "
+                             "of the run.")
     parser.add_argument("--json-path", default="results/vgg11_bn_reference.json")
     args = parser.parse_args()
 
