@@ -56,10 +56,15 @@ mypy bayesian_optimization tests
 ```
 
 Both come with the `dev` extra and both read their configuration from
-`pyproject.toml`. `mypy` covers 105 files over those two paths and reports
-no
+`pyproject.toml`. `mypy` covers 105 files over those two paths and reports no
 error, only its twenty standing notes about unchecked bodies of untyped
 functions, so a new error is one this change introduced.
+
+`.github/workflows/checks.yml` runs these two and the fast half of the suite on
+every push and every pull request, on both supported Python versions. It runs
+the same commands, so a red run there fails for the same reason it fails here.
+The slow tests are the end-to-end runs of the loop and are left to a local
+`pytest` before a change goes out.
 
 ## Two layers, held to two standards
 
