@@ -202,12 +202,16 @@ class _GrakelWeisfeilerLehmanBase(StructuredKernelBase[T], ABC):
     def _base_kernel_arguments(self) -> dict[str, Any]:
         """Return the arguments for building the base kernel on its own, at ``h = 0``.
 
-        ``sparse=False`` where the base kernel understands it, and the reason is a defect in grakel
+        ``sparse=False`` where the base kernel understands it, and the reason was a defect in grakel
         rather than a preference.  ``VertexHistogram`` decides at *fit* time whether to hold its
         features sparsely, and it does when the fitted graphs share few labels, which is what a
-        dataset of different architectures looks like.  On that path the features are integer
-        counts.  Its normalization then divides an integer matrix **in place**, which numpy refuses
-        outright: ``Cannot cast ufunc 'divide' output from float64 to int64``.
+        dataset of different architectures looks like.  Up to grakel 0.1.10 the features on that
+        path are integer counts, and the normalization then divides an integer matrix **in place**,
+        which numpy refuses outright: ``Cannot cast ufunc 'divide' output from float64 to int64``.
+        The pinned 0.1.11 builds that matrix as ``float64`` and the division goes through, so the
+        setting is no longer what stands between this kernel and that error.  It stays because the
+        dense path is the one every measurement here was taken on, and turning it off is a change
+        worth its own measurement rather than a side effect of a version bump.
 
         It only reaches us at ``h = 0``, because that is the only path handing the base kernel out
         directly.  For ``h >= 1`` grakel's own ``WeisfeilerLehman`` wraps it and accumulates in
@@ -217,8 +221,9 @@ class _GrakelWeisfeilerLehmanBase(StructuredKernelBase[T], ABC):
         until one was written for it.
 
         The dense array costs ``n_graphs x n_labels`` floats, a few megabytes at the sizes here.
-        grakel falls back to sparse on ``MemoryError``, which would bring the defect back.  That
-        fallback is louder than the alternative, which is why it is left alone rather than
+        grakel falls back to sparse on ``MemoryError``, which is the one path that still reaches
+        the sparse branch, and under a grakel older than the pin it would bring the defect back.
+        That fallback is louder than the alternative, which is why it is left alone rather than
         suppressed.
 
         Returns:
