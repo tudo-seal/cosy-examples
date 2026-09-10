@@ -1684,6 +1684,7 @@ def run_ask_tell_search(
     verbose=True,
     acquisition_hard_limit=ACQUISITION_HARD_LIMIT_SECONDS,
     resume_design=None,
+    resumed_value=None,
 ):
     """Run the loop through the ask/tell interface, logging every evaluation as it happens.
 
@@ -1717,6 +1718,12 @@ def run_ask_tell_search(
             on.  It bounds a legitimate duration, so it belongs to the cell being searched rather
             than to the code, and a large architecture at a large population can outlast the
             default. (Default value = ACQUISITION_HARD_LIMIT_SECONDS)
+        resumed_value (Callable[[dict], float] | None): How a resumed record's metrics become
+            the value the loop maximizes -- what ``f_obj`` would have returned for that term.
+            ``None`` keeps the CIFAR example's convention, ``metrics["accuracy"]`` when greater
+            is better and ``-metrics["objective_value"]`` otherwise; a caller whose objective
+            maps a record differently names its own reading here, or its resumed design seeds
+            the surrogate with a quantity the run's rows do not report.
 
     Returns:
         tuple[dict, float, dict]: The loop's result, its wall-clock duration, and the summary to
@@ -1789,10 +1796,13 @@ def run_ask_tell_search(
                         # ``metrics_by_tree`` so that nothing downstream can tell the difference.
                         metrics = resume_design[idx][1]
                         metrics_by_tree[tree] = metrics
-                        values.append(
-                            metrics["accuracy"] if greater_is_better
-                            else -metrics["objective_value"]
-                        )
+                        if resumed_value is not None:
+                            values.append(float(resumed_value(metrics)))
+                        else:
+                            values.append(
+                                metrics["accuracy"] if greater_is_better
+                                else -metrics["objective_value"]
+                            )
                         source = " (resumed)"
                     else:
                         values.append(f_obj(tree))

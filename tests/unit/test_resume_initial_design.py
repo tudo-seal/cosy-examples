@@ -120,3 +120,56 @@ def test_a_resumed_run_does_not_call_the_objective(monkeypatch, bo_factory, tmp_
     assert {tree: metrics["accuracy"] for tree, metrics in metrics_by_tree.items()} == {
         Tree("a"): 0.5, Tree("b"): 0.6, Tree("c"): 0.7
     }
+
+
+def test_a_resumed_value_is_read_the_way_the_caller_names(monkeypatch, bo_factory, tmp_path):
+    """A resumed record seeds the surrogate with what the caller's objective would have returned.
+
+    The loop cannot know how a caller's objective maps a metrics record to the value it
+    maximizes: the CIFAR example maximizes ``accuracy``, another driver maximizes its own
+    ``objective_value`` with ``greater_is_better=True``.  Left to the example's convention, a
+    resumed design of that driver would condition the surrogate on validation accuracies while
+    every row of the run says otherwise.  The pool here carries accuracies 0.5, 0.6, 0.7 and the
+    objective 1.0 throughout, so the two readings cannot be confused.
+    """
+    terms = [Tree("a"), Tree("b"), Tree("c")]
+    design = utils.load_initial_design(_pool(tmp_path, terms), expected=PROVENANCE)
+    monkeypatch.setattr(utils, "_draw_prefix", lambda optimizer, count: (list(terms), 0))
+
+    optimizer = bo_factory()
+    utils.run_ask_tell_search(
+        optimizer=optimizer,
+        f_obj=lambda tree: 0.0,
+        metrics_by_tree={},
+        as_reported=lambda v: v,
+        objective="objective_value",
+        greater_is_better=True,
+        n_pre_samples=len(terms),
+        n_iterations=0,
+        csv_path=str(tmp_path / "resumed_named.csv"),
+        pretty_algebra=dict,
+        baseline=True,
+        verbose=False,
+        resume_design=design,
+        resumed_value=lambda metrics: metrics["objective_value"],
+    )
+    assert optimizer.get_state_snapshot()["y_list"] == [1.0, 1.0, 1.0]
+
+    # the example's convention stays the default: greater is better reads the accuracy
+    by_convention = bo_factory()
+    utils.run_ask_tell_search(
+        optimizer=by_convention,
+        f_obj=lambda tree: 0.0,
+        metrics_by_tree={},
+        as_reported=lambda v: v,
+        objective="accuracy",
+        greater_is_better=True,
+        n_pre_samples=len(terms),
+        n_iterations=0,
+        csv_path=str(tmp_path / "resumed_default.csv"),
+        pretty_algebra=dict,
+        baseline=True,
+        verbose=False,
+        resume_design=design,
+    )
+    assert by_convention.get_state_snapshot()["y_list"] == [0.5, 0.6, 0.7]
