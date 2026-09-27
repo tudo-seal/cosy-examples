@@ -52,9 +52,14 @@ __all__ = [
 ]
 
 #: Written into the header so a file that is not one of these says so on the first read, rather
-#: than unpickling into something shaped almost right.
-FORMAT = "cnn_damg_term_pool"
+#: than unpickling into something shaped almost right.  A tag of its own since the pool left the
+#: CIFAR example: its records name ``bayesian_optimization.runs.term_pool.TermRecord`` now, which a
+#: checkout from before the move cannot import, and a new tag makes such a reader refuse the file
+#: on its header instead of blaming an interrupted writer at the first record.
+FORMAT = "term_pool"
 VERSION = 1
+#: The tags of pools written before the move, which this reader still reads.
+LEGACY_FORMATS: tuple[str, ...] = ("cnn_damg_term_pool",)
 
 #: The phase of a record that belongs to a training pool rather than to a run of the loop.
 POOL_PHASE = "pool"
@@ -82,6 +87,10 @@ class TermRecord:
     term: Any
     metrics: dict = field(default_factory=dict)
     repeat: int = 0
+    #: The value the loop was handed for this evaluation, which a resumed design hands it again.
+    #: ``None`` where the writer did not know it, and for every record written before the field
+    #: existed: such a record has no entry in its instance dictionary and reads the class default.
+    loop_value: float | None = None
 
 
 class TruncatedTermPool(Exception):
@@ -158,7 +167,7 @@ class TermPoolWriter:
         )
         self._file.flush()
 
-    def write(self, phase, index, term, metrics, repeat=0):
+    def write(self, phase, index, term, metrics, repeat=0, loop_value=None):
         """Append one evaluation and flush it.
 
         Args:
@@ -168,10 +177,12 @@ class TermPoolWriter:
             metrics (dict): What the evaluation returned. Copied, so that a caller which reuses
                 its dict does not rewrite records already on disk.
             repeat (int): See :class:`TermRecord`. (Default value = 0)
+            loop_value (float | None): See :class:`TermRecord`. (Default value = None)
         """
         pickle.dump(
             TermRecord(
-                phase=phase, index=index, term=term, metrics=dict(metrics), repeat=repeat
+                phase=phase, index=index, term=term, metrics=dict(metrics), repeat=repeat,
+                loop_value=loop_value,
             ),
             self._file,
         )
@@ -211,10 +222,11 @@ def read_term_pool(path):
         except EOFError as exc:
             msg = f"{path} is empty; it carries no term pool header"
             raise ValueError(msg) from exc
-        if not isinstance(header, dict) or header.get("format") != FORMAT:
+        if not isinstance(header, dict) or header.get("format") not in (FORMAT, *LEGACY_FORMATS):
+            accepted = ", ".join((FORMAT, *LEGACY_FORMATS))
             msg = (
-                f"{path} is not a {FORMAT} file; its first object is "
-                f"{type(header).__name__} {header!r:.80}"
+                f"{path} is not a {FORMAT} file (this reader accepts {accepted}); its first "
+                f"object is {type(header).__name__} {header!r:.80}"
             )
             raise ValueError(msg)
 

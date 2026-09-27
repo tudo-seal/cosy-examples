@@ -1,7 +1,8 @@
 """The machinery of a run that no search space, dataset or training framework owns.
 
 The program a run searches and its sampler, the acquisition optimizer, the step budgets, the term
-pool, the per-pass records, the acceptance checks and the resumption of an initial design.  None of
+pool, the records of a run under a caller's metric schema, the files a run writes, its neutral
+provenance, the per-pass records, the acceptance checks and the resumption of an initial design.  None of
 it imports a training framework, so a run over any space can use it.
 """
 
@@ -11,17 +12,20 @@ from .acquisition import (
     DEFAULT_SELECTION_PRESSURE,
     build_acquisition_optimizer,
 )
-from .artifacts import metadata_path_for
-from .budgets import step_budget
+from .artifacts import RunArtifacts, metadata_path_for
+from .budgets import StepBudgets, step_budget
+from .metadata import write_run_metadata
 from .records import (
     EA_CSV_COLUMNS,
     SURROGATE_CSV_COLUMNS,
     EAGenerationLogger,
+    EvaluationRecorder,
     SurrogateLogger,
     kernel_hyperparameters,
 )
 from .resume import load_initial_design
 from .run_diagnostics import write_run_diagnostics
+from .schema import LOOP_FIELDS, Column, MetricSchema, Objective
 from .search_program import (
     DEFAULT_DEPTH_BOUND,
     DEFAULT_SIZE_BOUND,
@@ -36,6 +40,7 @@ from .search_program import (
 )
 from .term_pool import (
     FORMAT,
+    LEGACY_FORMATS,
     POOL_PHASE,
     VERSION,
     TermPoolWriter,
@@ -56,13 +61,21 @@ __all__ = [
     "DETERMINIZATION_WARN_SECONDS",
     "EA_CSV_COLUMNS",
     "FORMAT",
+    "LEGACY_FORMATS",
+    "LOOP_FIELDS",
     "POOL_PHASE",
     "SPACE_CONSTRUCTION_WARN_SECONDS",
     "SURROGATE_CSV_COLUMNS",
     "VERSION",
+    "Column",
     "DeterminizedSizeUniformSampler",
     "EAGenerationLogger",
+    "EvaluationRecorder",
+    "MetricSchema",
+    "Objective",
+    "RunArtifacts",
     "SearchProgram",
+    "StepBudgets",
     "SurrogateLogger",
     "TermPoolWriter",
     "TermRecord",
@@ -79,4 +92,5 @@ __all__ = [
     "resume_term_pool",
     "step_budget",
     "write_run_diagnostics",
+    "write_run_metadata",
 ]

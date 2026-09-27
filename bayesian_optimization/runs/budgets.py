@@ -4,6 +4,7 @@ import _thread
 import contextlib
 import threading
 import time
+from dataclasses import dataclass
 
 
 @contextlib.contextmanager
@@ -89,3 +90,27 @@ def step_budget(label, expected_seconds, hard_limit_seconds=None):
                 f"{elapsed / max(expected_seconds, 1e-9):.1f}x the expected duration",
                 flush=True,
             )
+
+
+@dataclass(frozen=True)
+class StepBudgets:
+    """How long each step of a run is expected to take, in seconds, and when one is given up on.
+
+    The watchdog warns past a budget and does not stop the run, except for the acquisition's hard
+    limit.  The defaults are the CIFAR example's, sized for fifteen-minute trainings; a run whose
+    evaluations take seconds, or hours, sets its own.
+
+    Attributes:
+        space_construction (float): Building the search space. (Default value = 300)
+        determinization (float): Determinizing it for the counting sampler. (Default value = 900)
+        per_evaluation (float): One evaluation of the objective. (Default value = 900)
+        acquisition_warn (float): One acquisition maximization, warned past. (Default value = 600)
+        acquisition_hard_limit (float): One acquisition maximization, given up on.
+            (Default value = 3600)
+    """
+
+    space_construction: float = 300
+    determinization: float = 900
+    per_evaluation: float = 900
+    acquisition_warn: float = 600
+    acquisition_hard_limit: float = 3600

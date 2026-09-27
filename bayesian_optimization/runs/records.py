@@ -1,11 +1,16 @@
-"""The per-pass records of a run: the inner search's generations and the surrogate's reads."""
+"""The records of a run: one row per evaluation, the inner search's generations, the surrogate's reads."""
 
 import csv
 import json
+import os
+import time
 
 import numpy as np
 
 from bayesian_optimization.diagnostics import read_calibration, read_fit
+
+from .artifacts import _sibling_path
+from .term_pool import TermPoolWriter
 
 EA_CSV_COLUMNS = [
     "bo_iteration",      # which pass of the outer loop this inner run belongs to
@@ -218,6 +223,91 @@ class SurrogateLogger:
 
     def close(self):
         self._file.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        self.close()
+
+
+class EvaluationRecorder:
+    """Writes one CSV row and one term record per evaluation, flushed as they go.
+
+    The files stay open for the whole run on purpose: the point is that results survive a crash
+    after hours of evaluation, so every row is written and flushed when it happens rather than
+    collected and dumped at the end.  The class is its own context manager, so the ``open`` below is
+    not a leak.  Both artifacts come from one call, because the term record is the one a caller
+    would forget, and a run that omits it cannot be repaired afterwards.
+
+    The columns are the schema's (:class:`~bayesian_optimization.runs.schema.MetricSchema`), so a
+    caller records its own metrics under its own names; the term record keeps the metrics whole and
+    the value the loop was handed, which is what a resumed design hands the loop again.
+
+    Args:
+        path (str): The run's CSV.  The term records go beside it as ``<run>_terms.pickle``.
+        pretty_algebra (Callable): The algebra that renders a term into the ``structure`` column.
+        schema (MetricSchema): The columns, in order.
+        provenance (dict): Written into the term file's header. (Default value = None)
+        mode (str): ``"w"`` writes over whatever the two paths hold; ``"x"`` refuses a path that
+            exists, both files checked before either is opened, so a second start against a run
+            that is still being written truncates nothing. (Default value = "w")
+    """
+
+    def __init__(self, path, pretty_algebra, schema, provenance=None, *, mode="w"):
+        if mode not in ("w", "x"):
+            msg = f"mode is 'w' or 'x', not {mode!r}"
+            raise ValueError(msg)
+        terms_path = _sibling_path(path, "_terms.pickle")
+        if mode == "x":
+            taken = [p for p in (path, terms_path) if os.path.exists(p)]
+            if taken:
+                msg = f"a run already writes to {', '.join(taken)}; refused rather than truncated"
+                raise FileExistsError(msg)
+        self._pretty_algebra = pretty_algebra
+        self._schema = schema
+        self._file = open(path, mode, newline="")  # noqa: SIM115, see the class docstring
+        self._writer = csv.writer(self._file)
+        self._writer.writerow(schema.header)
+        self._file.flush()
+        try:
+            self._terms = TermPoolWriter(terms_path, provenance=provenance, mode=mode)
+        except BaseException:
+            # The CSV is already open here, and a caller that never got an instance back cannot
+            # close it, since there is no ``__exit__`` for an object whose ``__init__`` raised.
+            self._file.close()
+            raise
+
+    def log(self, phase, index, tree, metrics, suggestion=None, acquisition_seconds=None,
+            loop_value=None):
+        """Append one evaluation, as one CSV row and one term record.
+
+        A metric the evaluation did not report is written as an empty cell rather than raising, so
+        a partially instrumented run still records its structures.  ``suggestion`` is the
+        ``Suggestion`` that produced a pass and carries the acquisition value and the fallback
+        state; a term of the design has none, and its cells stay empty.  ``loop_value`` is the
+        value the loop was handed for this evaluation, kept in the term record.
+        """
+        structure = tree.interpret(self._pretty_algebra())
+        self._writer.writerow(self._schema.row(
+            phase=phase,
+            index=index,
+            structure=structure,
+            term_size=tree.size,
+            metrics=metrics,
+            timestamp=time.time(),
+            loop_value=loop_value,
+            suggestion=suggestion,
+            acquisition_seconds=acquisition_seconds,
+        ))
+        self._file.flush()  # persist at once, so a crash mid-run loses no completed row
+        self._terms.write(phase, index, tree, metrics, loop_value=loop_value)
+
+    def close(self):
+        try:
+            self._terms.close()
+        finally:
+            self._file.close()
 
     def __enter__(self):
         return self

@@ -121,15 +121,18 @@ from bayesian_optimization.runs.acquisition import (
 )
 from bayesian_optimization.runs.artifacts import _sibling_path, metadata_path_for
 from bayesian_optimization.runs.budgets import step_budget
+from bayesian_optimization.runs.metadata import write_run_metadata as _write_run_metadata
 from bayesian_optimization.runs.records import (
     EA_CSV_COLUMNS,
     SURROGATE_CSV_COLUMNS,
     EAGenerationLogger,
+    EvaluationRecorder,
     SurrogateLogger,
     kernel_hyperparameters,
 )
 from bayesian_optimization.runs.resume import _check_resumed_design, load_initial_design
 from bayesian_optimization.runs.run_diagnostics import write_run_diagnostics
+from bayesian_optimization.runs.schema import Column, MetricSchema, Objective
 from bayesian_optimization.runs.search_program import (
     DEFAULT_DEPTH_BOUND,
     DEFAULT_SIZE_BOUND,
@@ -256,60 +259,91 @@ def describe_repository(repo: Any) -> dict:
     }
 
 
-CSV_COLUMNS = [
-    "phase",            # "pre_sample" | "bo_step" | "random_sample"
-    "index",            # position within the initial sample, or 0-indexed BO iteration
-    "structure",        # pretty-printed term (architecture + loss + optimizer + epochs)
-    "objective_value",  # raw validation loss, exactly what the objective function returned
-    # The validation accuracy of the same trained model, which is what the search maximizes.  Loss
-    # and accuracy do not order the candidates the same way, and a lower loss can come with a lower
-    # accuracy, so both are recorded.
-    "accuracy",
-    # The held-out accuracy.  Never a search signal: ranking candidates by it selects on the split
-    # that is meant to stay untouched, and the column sits in the same row as the validation number,
-    # which makes it easy to read by accident.  Empty for runs without a test split.
-    "test_accuracy",
-    # The number of function symbols the term writes, which is the axis the loop's own sampler
-    # stratifies along.  Without it a size-uniform initial design cannot be shown to be one.
-    "term_size",
-    "n_params",         # trainable parameter count, to see whether the loop drifts to large nets
-    "train_seconds",    # wall-clock training time
-    # Whether the numerics gave out, and how far the training got before they did.  Without these a
-    # network that stopped in its first epoch is indistinguishable from one that trained through and
-    # is merely bad: the abort still yields a finite accuracy, and on logits that are all not a
-    # number ``argmax`` returns class 0, so the accuracy becomes that class's frequency.  Divergence
-    # depends on the initial weights rather than on the architecture, so it belongs in the noise
-    # column and not in the variance between architectures, and it is the one property of an
-    # evaluation that cannot be recovered once the run is over.
-    "diverged",
-    "epochs_completed",
-    # Beside the training time, because the two are the run's whole wall clock and which of them
-    # dominates decides where a run is spending itself: only the training uses the accelerator, so a
-    # run that spends most of its time here is bound by the processor however fast the card is.
-    # Empty for pre_sample rows, which have no acquisition step.
-    "acquisition_seconds",
-    # The three columns below decide how the row may be read at all.  When ``suggest()`` cannot
-    # find a novel candidate it replaces the optimizer's result with a random fallback sample, and
-    # ``acquisition_value`` then describes that replacement.  A run whose loop-pass rows all report
-    # a fallback was random search, and without these columns that is indistinguishable in the
-    # finished file from a run that was not.  Empty for pre_sample rows, which have no acquisition
-    # step.
-    "acquisition_value",
-    "fallback_used",
-    "fallback_attempts",
-    "timestamp",
-    # The four columns of a repeated measurement.  ``accuracy`` above is their mean, which is what
-    # the search optimizes, and these say what it is a mean of: how many trainings, their individual
-    # values, their spread, and whether any single one of them diverged.  A run that kept only the
-    # mean could not afterwards tell a candidate that measured 0.72 three times from one that
-    # measured 0.50, 0.72 and 0.94, and the whole reason for repeating is that those two are not the
-    # same finding.  Empty for a run with one training per candidate, where no repetition happened
-    # to describe.
-    "n_repeats",
-    "accuracy_runs",
-    "accuracy_std",
-    "diverged_runs",
-]
+def _joined(values):
+    """Render a per-repetition list into one CSV cell, or an empty cell if there is none.
+
+    Args:
+        values (Sequence | None): The per-repetition measurements.
+
+    Returns:
+        str: The values separated by single spaces, or "" when nothing was measured.
+    """
+    if not values:
+        return ""
+    return " ".join(str(value) for value in values)
+
+
+def _empty_if_none(value):
+    """Render a value that may be missing into one CSV cell.
+
+    Args:
+        value (Any): The value, or None where nothing was measured.
+
+    Returns:
+        Any: The value, or "" for None.
+    """
+    return "" if value is None else value
+
+
+CIFAR_SCHEMA = MetricSchema(
+    objective=Objective("accuracy"),
+    columns=(
+        Column("phase", field="phase"),  # "pre_sample" | "bo_step" | "random_sample"
+        Column("index", field="index"),  # position within the initial sample, or 0-indexed BO iteration
+        Column("structure", field="structure"),  # pretty-printed term (architecture + loss + optimizer + epochs)
+        Column("objective_value"),  # raw validation loss, exactly what the objective function returned
+        # The validation accuracy of the same trained model, which is what the search maximizes.  Loss
+        # and accuracy do not order the candidates the same way, and a lower loss can come with a lower
+        # accuracy, so both are recorded.
+        Column("accuracy"),
+        # The held-out accuracy.  Never a search signal: ranking candidates by it selects on the split
+        # that is meant to stay untouched, and the column sits in the same row as the validation number,
+        # which makes it easy to read by accident.  Empty for runs without a test split.
+        Column("test_accuracy", render=_empty_if_none),
+        # The number of function symbols the term writes, which is the axis the loop's own sampler
+        # stratifies along.  Without it a size-uniform initial design cannot be shown to be one.
+        Column("term_size", field="term_size"),
+        Column("n_params"),  # trainable parameter count, to see whether the loop drifts to large nets
+        Column("train_seconds"),  # wall-clock training time
+        # Whether the numerics gave out, and how far the training got before they did.  Without these a
+        # network that stopped in its first epoch is indistinguishable from one that trained through and
+        # is merely bad: the abort still yields a finite accuracy, and on logits that are all not a
+        # number ``argmax`` returns class 0, so the accuracy becomes that class's frequency.  Divergence
+        # depends on the initial weights rather than on the architecture, so it belongs in the noise
+        # column and not in the variance between architectures, and it is the one property of an
+        # evaluation that cannot be recovered once the run is over.
+        Column("diverged"),
+        Column("epochs_completed"),
+        # Beside the training time, because the two are the run's whole wall clock and which of them
+        # dominates decides where a run is spending itself: only the training uses the accelerator, so a
+        # run that spends most of its time here is bound by the processor however fast the card is.
+        # Empty for pre_sample rows, which have no acquisition step.
+        Column("acquisition_seconds", field="acquisition_seconds"),
+        # The three columns below decide how the row may be read at all.  When ``suggest()`` cannot
+        # find a novel candidate it replaces the optimizer's result with a random fallback sample, and
+        # ``acquisition_value`` then describes that replacement.  A run whose loop-pass rows all report
+        # a fallback was random search, and without these columns that is indistinguishable in the
+        # finished file from a run that was not.  Empty for pre_sample rows, which have no acquisition
+        # step.
+        Column("acquisition_value", field="acquisition_value"),
+        Column("fallback_used", field="fallback_used"),
+        Column("fallback_attempts", field="fallback_attempts"),
+        Column("timestamp", field="timestamp"),
+        # The four columns of a repeated measurement.  ``accuracy`` above is their mean, which is what
+        # the search optimizes, and these say what it is a mean of: how many trainings, their individual
+        # values, their spread, and whether any single one of them diverged.  A run that kept only the
+        # mean could not afterwards tell a candidate that measured 0.72 three times from one that
+        # measured 0.50, 0.72 and 0.94, and the whole reason for repeating is that those two are not the
+        # same finding.  Empty for a run with one training per candidate, where no repetition happened
+        # to describe.
+        Column("n_repeats"),
+        Column("accuracy_runs", render=_joined),
+        Column("accuracy_std", render=_empty_if_none),
+        Column("diverged_runs", render=_joined),
+    ),
+)
+#: The CSV's columns, the CIFAR schema's header: this driver's layout is one schema among others.
+CSV_COLUMNS = CIFAR_SCHEMA.header
 
 
 def split_train_validation(x, y, val_fraction=0.1, seed=20260803):
@@ -538,22 +572,12 @@ def evaluate_candidate(tree, x, y, x_val, y_val, batch_size, protocol=None,
     }
 
 
-def _joined(values):
-    """Render a per-repetition list into one CSV cell, or an empty cell if there is none.
+class EvaluationLogger(EvaluationRecorder):
+    """Writes one row and one term record per evaluation, flushed as they go, in the CIFAR layout.
 
-    Args:
-        values (Sequence | None): The per-repetition measurements.
-
-    Returns:
-        str: The values separated by single spaces, or "" when nothing was measured.
-    """
-    if not values:
-        return ""
-    return " ".join(str(value) for value in values)
-
-
-class EvaluationLogger:
-    """Writes one row and one term record per evaluation, flushed as they go.
+    The generic recorder is :class:`bayesian_optimization.runs.records.EvaluationRecorder`; this is
+    that recorder with :data:`CIFAR_SCHEMA`, under the name and the signature this module has always
+    had.
 
     The files stay open for the whole run on purpose.  The point of this logger is that results
     survive a crash after hours of training, so every row is written and flushed when it happens
@@ -575,75 +599,7 @@ class EvaluationLogger:
     """
 
     def __init__(self, path, pretty_algebra, provenance=None):
-        self._pretty_algebra = pretty_algebra
-        self._file = open(path, "w", newline="")  # noqa: SIM115, see the class docstring
-        self._writer = csv.writer(self._file)
-        self._writer.writerow(CSV_COLUMNS)
-        self._file.flush()
-        try:
-            self._terms = TermPoolWriter(
-                _sibling_path(path, "_terms.pickle"), provenance=provenance
-            )
-        except BaseException:
-            # The CSV is already open at this point, and a caller that never got an instance back
-            # cannot close it, since there is no ``__exit__`` for an object whose ``__init__``
-            # raised.
-            self._file.close()
-            raise
-
-    def log(self, phase, index, tree, metrics, suggestion=None, acquisition_seconds=None):
-        """Append one evaluation, as one CSV row and one term record.
-
-        ``metrics`` is an :func:`evaluate_candidate` result.  A missing key is written as an empty
-        cell rather than raising, so a partially instrumented run still records its structures and
-        objective values.
-
-        ``suggestion`` is the ``Suggestion`` that produced this candidate, and it carries the
-        acquisition value and the fallback state.  Pre-sample rows have none, and their cells stay
-        empty: an empty cell says that there was no acquisition step here, whereas writing False
-        would claim that a fallback was ruled out which was never evaluated.
-        ``acquisition_seconds`` is empty for the same rows and for the same reason.
-        """
-        structure = tree.interpret(self._pretty_algebra())
-        diagnostics = (suggestion.diagnostics or {}) if suggestion is not None else {}
-        self._writer.writerow([
-            phase,
-            index,
-            structure,
-            metrics.get("objective_value", ""),
-            metrics.get("accuracy", ""),
-            "" if metrics.get("test_accuracy") is None else metrics["test_accuracy"],
-            tree.size,
-            metrics.get("n_params", ""),
-            metrics.get("train_seconds", ""),
-            metrics.get("diverged", ""),
-            metrics.get("epochs_completed", ""),
-            "" if acquisition_seconds is None else acquisition_seconds,
-            "" if suggestion is None else suggestion.acquisition_value,
-            diagnostics.get("fallback_used", ""),
-            diagnostics.get("fallback_attempts", ""),
-            time.time(),
-            metrics.get("n_repeats", ""),
-            # Space-separated rather than a nested list, so the cell stays one CSV field and
-            # ``str.split()`` reads it back without a parser.
-            _joined(metrics.get("accuracy_runs")),
-            "" if metrics.get("accuracy_std") is None else metrics["accuracy_std"],
-            _joined(metrics.get("diverged_runs")),
-        ])
-        self._file.flush()  # persist at once, so a crash mid-run loses no completed row
-        self._terms.write(phase, index, tree, metrics)
-
-    def close(self):
-        try:
-            self._terms.close()
-        finally:
-            self._file.close()
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc, tb):
-        self.close()
+        super().__init__(path, pretty_algebra, CIFAR_SCHEMA, provenance=provenance)
 
 
 def dataset_to_tensors(dataset, device, num_workers=0):
@@ -1153,16 +1109,13 @@ def run_ask_tell_search(
 
 
 def write_run_metadata(csv_path, metadata):
-    """Write the run's provenance next to its CSV and return the path used."""
-    path = metadata_path_for(csv_path)
-    enriched = {
-        **metadata,
-        "csv_path": csv_path,
+    """Write the run's provenance next to its CSV and return the path used.
+
+    The framework-neutral record of :func:`bayesian_optimization.runs.metadata.write_run_metadata`,
+    with this example's stack as its environment: the torch it trained with and the accelerator.
+    """
+    return _write_run_metadata(csv_path, metadata, environment={
         "torch_version": torch.__version__,
         "cuda_available": torch.cuda.is_available(),
         "gpu_name": torch.cuda.get_device_name(0) if torch.cuda.is_available() else None,
-        "written_at": time.time(),
-    }
-    with open(path, "w") as f:
-        json.dump(enriched, f, indent=2, sort_keys=True)
-    return path
+    })

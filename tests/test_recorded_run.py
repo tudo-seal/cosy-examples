@@ -44,10 +44,11 @@ from pathlib import Path
 import pytest
 
 from bayesian_optimization.examples.cnn_damg_nas.cnn_damg_term_algebras import pretty_term_algebra
-from bayesian_optimization.examples.cnn_damg_nas.cnn_damg_term_pool import FORMAT, read_term_pool
+from bayesian_optimization.examples.cnn_damg_nas.cnn_damg_term_pool import read_term_pool
 from bayesian_optimization.examples.cnn_damg_nas.cnn_damg_verify_reference import (
     EXPECTED_PARAMETERS,
 )
+from bayesian_optimization.runs.term_pool import LEGACY_FORMATS
 
 RECORDED = Path(__file__).resolve().parents[1] / "recorded_runs"
 RUN = "bo_VGGM_20260805_r3"
@@ -215,7 +216,9 @@ def test_every_recorded_term_renders_to_the_structure_written_beside_it():
     record and row agree in phase, index, rendering and accuracy, in the order both were written.
     """
     header, records = read_term_pool(RECORDED / f"{RUN}_terms.pickle")
-    assert header["format"] == FORMAT
+    # Recorded before the pool left the CIFAR example, so under the tag it had then.
+    assert header["format"] == "cnn_damg_term_pool"
+    assert header["format"] in LEGACY_FORMATS
     assert header["provenance"]["target_cell"] == "VGGM"
 
     rows = _rows()
