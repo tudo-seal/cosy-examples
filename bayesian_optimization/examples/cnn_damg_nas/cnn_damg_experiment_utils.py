@@ -106,14 +106,43 @@ from bayesian_optimization.examples.cnn_damg_nas.cnn_damg_network_algebras impor
 from bayesian_optimization.examples.cnn_damg_nas.cnn_damg_network_algebras import (
     learner as raw_learner,
 )
-from bayesian_optimization.examples.cnn_damg_nas.cnn_damg_term_pool import (
-    TermPoolWriter,
-    read_term_pool,
-)
 from bayesian_optimization.examples.cnn_damg_nas.recognizable_cnn_damg_repo import (
     check_alphabet,
 )
 from bayesian_optimization.initial_sampling import distinct_prefix
+
+# The run machinery that no search space owns lives in :mod:`bayesian_optimization.runs`.  Every
+# name of it that this module used to define is imported here, so it stays importable from here.
+from bayesian_optimization.runs.acquisition import (
+    DEFAULT_CROSSOVER_RATE,
+    DEFAULT_MUTATION_RATE,
+    DEFAULT_SELECTION_PRESSURE,
+    build_acquisition_optimizer,
+)
+from bayesian_optimization.runs.artifacts import _sibling_path, metadata_path_for
+from bayesian_optimization.runs.budgets import step_budget
+from bayesian_optimization.runs.records import (
+    EA_CSV_COLUMNS,
+    SURROGATE_CSV_COLUMNS,
+    EAGenerationLogger,
+    SurrogateLogger,
+    kernel_hyperparameters,
+)
+from bayesian_optimization.runs.resume import _check_resumed_design, load_initial_design
+from bayesian_optimization.runs.run_diagnostics import write_run_diagnostics
+from bayesian_optimization.runs.search_program import (
+    DEFAULT_DEPTH_BOUND,
+    DEFAULT_SIZE_BOUND,
+    DETERMINIZATION_STATE_LIMIT,
+    DETERMINIZATION_WARN_SECONDS,
+    SPACE_CONSTRUCTION_WARN_SECONDS,
+    DeterminizedSizeUniformSampler,
+    SearchProgram,
+    describe_sampler,
+    describe_search,
+)
+from bayesian_optimization.runs.search_program import build_search as _build_search
+from bayesian_optimization.runs.term_pool import TermPoolWriter, read_term_pool
 
 # --- Time budgets ---------------------------------------------------------------------------
 # Not limits: thresholds past which a step reports that it is still running.  A run of this kind is
@@ -122,11 +151,6 @@ from bayesian_optimization.initial_sampling import distinct_prefix
 #
 # The numbers are orders of magnitude, not expectations.  They are thresholds for reporting, so a
 # threshold that has gone out of date makes a run noisier or quieter, never wrong.
-SPACE_CONSTRUCTION_WARN_SECONDS = 300
-# The two steps that turn the synthesized program into one that can be counted: the determinization
-# and the counting construction of the size-uniform sampler.  Both are paid once per run, and both
-# grow with the size of the program rather than with the number of evaluations.
-DETERMINIZATION_WARN_SECONDS = 900
 PER_EVALUATION_WARN_SECONDS = 900
 ACQUISITION_WARN_SECONDS = 600
 # The one hard limit, and it is deliberate: an acquisition optimization that has run for an hour is
@@ -145,175 +169,6 @@ ACQUISITION_WARN_SECONDS = 600
 ACQUISITION_HARD_LIMIT_SECONDS = 3600
 
 
-# --- The program a run searches ---------------------------------------------------------------
-# The bound D of the loop's own sampler, on the size of a term rather than on its depth.  Size-
-# uniform sampling draws a realized size uniformly and then an inhabitant of that size uniformly,
-# and the size of a term is the number of function symbols it writes.
-#
-# The bound has to admit something, and it has to admit it at a cost the counting can pay.  Below
-# the size of the smallest term of a space it admits nothing at all, and the initializer says so
-# rather than returning a short population.  Raising it widens the design at the cost of drawing
-# larger architectures, and every one of those is a network this experiment trains.
-DEFAULT_SIZE_BOUND = 200
-# The bound of a depth-bounded sampler, which the evolutionary operators take and which a run takes
-# for its own draws where the counting is unaffordable.  A depth-bounded sampler runs a depth-first
-# search whose clause order is drawn uniformly and independently at each node, and it discards a
-# child whose partial inhabitant exceeds the bound.
-#
-# It stands beside the size bound rather than anywhere else, because the one mistake worth
-# preventing is reading the two as the same number.  A depth of 1000 and a size of 200 bound
-# different things, and the convergence argument for an evolutionary search asks that every
-# individual a run can hold lies within the bound of its sampler, which is a statement about one
-# measure at a time.
-DEFAULT_DEPTH_BOUND = 1000
-# Well above the product state count any configuration of this example reaches, and still a bound.
-# A recognizable constraint asks for a finite carrier, and an abstraction without one makes the
-# fixed point run forever instead of reporting itself.
-DETERMINIZATION_STATE_LIMIT = 1_000_000
-
-
-class DeterminizedSizeUniformSampler:
-    """Draws size-uniformly from the determinized program, for a loop that searches the coupled one.
-
-    Why the two programs cannot be the same one.  Counting needs the determinized form, because the
-    coupled program's swap laws read a hole, so no table indexed by the non-terminal is right and
-    the counting would have to build the retained search tree instead.  Searching needs the coupled
-    form, because the determinization is a product construction and the product is the larger
-    program, every rule of which the mutation's residual query and the recombination's membership
-    test walk.  One pass of the inner search runs on the order of the population times the mutation
-    rate times the generations mutations, and as many recombinations at the crossover rate, so the
-    difference between the two programs is paid once per operator application.
-
-    Why this is sound.  ``determinize`` derives exactly the terms the original derives, along
-    exactly one branch each, so the two programs are one language.
-    ``tests/test_recognizable_cnn_repo.py`` pins that by counting both and comparing the rows.  A
-    term drawn here is therefore an inhabitant of the space the loop searches, which is the whole of
-    what the loop asks of a sampler.
-
-    What it refuses.  A sampler is handed the query it is meant to answer, and this one answers a
-    different query than the one it is given, which is safe exactly as long as the given query is
-    the one it was built to stand in for.  So it checks rather than assuming: a partial-term query,
-    another program or another requested type all raise.  The mutation poses partial-term queries
-    and must never reach this object, and it has its own sampler for that reason.
-
-    Attributes:
-        size_bound (int): The bound D on the term size, forwarded to the inner sampler.
-        counting (str): ``"table"``, named so that :func:`describe_sampler` can read it off.
-    """
-
-    def __init__(self, determinization, coupled_space, coupled_request, size_bound, rng):
-        """Build the sampler.
-
-        Args:
-            determinization: The ``Determinization`` of the program the loop searches.
-            coupled_space: That program, as synthesized, which is what the loop hands in its query.
-            coupled_request: The requested type, likewise.
-            size_bound (int): The bound D on the term size.
-            rng (random.Random): The source of randomness.
-        """
-        self._determinization = determinization
-        self._coupled_space = coupled_space
-        self._coupled_request = coupled_request
-        self._inner = SizeUniformSampler(size_bound, rng, counting="table")
-        self._query = generator_query(determinization.space, determinization.start)
-        self.size_bound = size_bound
-        self.counting = "table"
-
-    def _checked(self, query):
-        """Verify the query is the one this sampler stands in for, and return its own.
-
-        Args:
-            query: The query the caller handed in.
-
-        Returns:
-            The generator query over the determinized program.
-
-        Raises:
-            ValueError: If the query is a partial-term query, or names another program or another
-                requested type.  Answering it from the determinized program would then be a
-                different question than the one asked.
-        """
-        if query.tree is not None:
-            msg = (
-                "this sampler answers the generator query of its program and nothing else; it "
-                "was handed a partial-term query, which asks for the completions of one term and "
-                "is not a question the determinized program can be asked in its place"
-            )
-            raise ValueError(msg)
-        if query.solution_space is not self._coupled_space:
-            msg = (
-                "this sampler stands in for one program and was handed a query against another; "
-                "the terms it draws would be inhabitants of a space the caller is not searching"
-            )
-            raise ValueError(msg)
-        if query.start != self._coupled_request:
-            msg = (
-                f"this sampler stands in for the request {self._coupled_request} and was handed "
-                f"a query for {query.start}"
-            )
-            raise ValueError(msg)
-        return self._query
-
-    def sample(self, query):
-        """Stream the completions in size-uniform order, without replacement.
-
-        Args:
-            query: The loop's generator query over the coupled program.
-
-        Yields:
-            Tree: Inhabitants of that program, drawn by counting the determinized one.
-        """
-        yield from self._inner.sample(self._checked(query))
-
-    def at_least(self, query, count):
-        """Decide whether the bound admits at least ``count`` inhabitants.
-
-        Args:
-            query: The loop's generator query over the coupled program.
-            count (int): The number asked for.
-
-        Returns:
-            bool: Whether the bound admits that many.
-        """
-        return self._inner.at_least(self._checked(query), count)
-
-    def forget(self):
-        """Drop the cached counting construction."""
-        self._inner.forget()
-
-
-@dataclass(frozen=True)
-class SearchProgram:
-    """What a run searches, the symbol to query it at, and the sampler it draws its own terms from.
-
-    The program is always the one the repository synthesizes.  The evolutionary operators walk it on
-    every mutation and every recombination, and they walk the larger program on the determinized
-    form, see :class:`DeterminizedSizeUniformSampler`.  Where the determinization happens at all it
-    happens inside the sampler, which is the only component that counts.
-
-    The three travel together because choosing them apart is how a run breaks.  The counting sampler
-    applies to a determinized program and to no other, while the depth-bounded one is the answer
-    where the counting is unaffordable, and pairing the wrong two leaves the loop with an
-    initializer that works and a duplicate fallback that cannot run.  That is the trap the
-    ``sampler`` parameter of ``BayesianOptimization`` was introduced to close, and here it is closed
-    one level up: there is one decision, :func:`build_search` makes it, and the invalid combinations
-    are not expressible.
-
-    Attributes:
-        space: The program to search, as synthesized.
-        request: The symbol to query it at, which is the requested type.
-        sampler: The loop's own source of terms, for the initial dataset and the duplicate
-            fallback.
-        provenance (dict): What the construction cost and how large it came out, for the run
-            record.  Read off the objects, not written beside them.
-    """
-
-    space: Any
-    request: Any
-    sampler: Any
-    provenance: dict
-
-
 def build_search(
     repository,
     target,
@@ -324,267 +179,29 @@ def build_search(
     seed=0,
     state_limit=DETERMINIZATION_STATE_LIMIT,
 ):
-    """Build the program a run searches together with the sampler that fits it.
+    """Build the program a run searches together with the sampler that fits it, for this example.
 
-    Why the two are one decision.  ``CNNrepository`` states its four swap laws as term predicates
-    over two sibling holes, and a predicate that reads a hole turns the residual there into a
-    relation.  For several holes the residual need not be a product of the single-hole residuals: a
-    hole occurring at two positions couples them syntactically, and an external predicate may relate
-    distinct holes, so a subterm admissible at one hole is admissible only for certain fillings of
-    another.  No table indexed by the non-terminal can be right about that, so the counting would
-    have to build the retained search tree instead, and on this space that tree is what makes the
-    sampler not slow but unfinishable.
-
-    ``RecognizableCNNrepository`` states the same four laws as an abstraction with a relation, which
-    is the form the determinization asks for, and
-    :func:`cosy.search.determinize.determinize` pushes them into the non-terminals.  The result
-    derives exactly the same terms along exactly one branch each and carries no predicate over a
-    hole, so the size table applies to it and only to it.
-
-    Which of the two modes a configuration can afford is a property of the repository rather than of
-    the method.  A configuration that caps its linear layers keeps the product small enough to
-    count, and one that does not can reach a product whose size table does not finish.  That is why
-    the mode is a parameter here and not a decision this module makes.
-
-    Args:
-        repository: The repository.  ``sampling="size-uniform"`` needs one whose constraints are
-            recognizable, which ``RecognizableCNNrepository`` is.  The plain ``CNNrepository`` is
-            refused by the determinization, which names the clauses it cannot compile.
-        target: The requested type.
-        sampling (str): ``"size-uniform"`` determinizes and counts from the program.
-            ``"depth-bounded"`` searches the program as synthesized and never counts.
-            (Default value = "size-uniform")
-        size_bound (int): The bound D on the term size, for the size-uniform sampler.
-            (Default value = :data:`DEFAULT_SIZE_BOUND`)
-        depth_bound (int): The bound on the term depth, for the depth-bounded sampler.
-            (Default value = :data:`DEFAULT_DEPTH_BOUND`)
-        seed (int): The sampler's seed.
-        state_limit (int): How many product states the determinization may reach.
-            (Default value = :data:`DETERMINIZATION_STATE_LIMIT`)
+    :func:`bayesian_optimization.runs.search_program.build_search`, with the alphabet check of
+    :mod:`recognizable_cnn_damg_repo` as its ``check_alphabet``.  The arguments are that
+    function's, and so is the account of why the program and the sampler are one decision.
 
     Returns:
         SearchProgram: The program, the symbol to query, the sampler, and the provenance.
 
     Raises:
-        ValueError: If ``sampling`` is neither of the two names.  Which sampler a space admits is
-            not something to guess a default for.
+        ValueError: If ``sampling`` is neither of the two names, or if the check refuses the
+            program.
     """
-    if sampling not in ("size-uniform", "depth-bounded"):
-        msg = (
-            f"sampling selects how the loop draws its own terms and is 'size-uniform' or "
-            f"'depth-bounded', not {sampling!r}"
-        )
-        raise ValueError(msg)
-
-    started = time.time()
-    with step_budget("search-space construction", SPACE_CONSTRUCTION_WARN_SECONDS):
-        coupled = Synthesizer(repository.specification(), {}).construct_solution_space(
-            target
-        ).prune()
-    construction_seconds = time.time() - started
-    coupled_nonterminals = len(tuple(coupled.nonterminals()))
-    coupled_rules = sum(len(coupled.get(nt) or ()) for nt in coupled.nonterminals())
-    print(
-        f"Search space construction took {construction_seconds:.2f}s "
-        f"({coupled_nonterminals} non-terminals, {coupled_rules} rules)",
-        flush=True,
+    return _build_search(
+        repository,
+        target,
+        check_alphabet=check_alphabet,
+        sampling=sampling,
+        size_bound=size_bound,
+        depth_bound=depth_bound,
+        seed=seed,
+        state_limit=state_limit,
     )
-
-    provenance = {
-        "repository": type(repository).__name__,
-        "sampling": sampling,
-        "coupled_nonterminals": coupled_nonterminals,
-        "coupled_rules": coupled_rules,
-        "search_space_construction_seconds": construction_seconds,
-    }
-
-    if sampling == "depth-bounded":
-        # The program as synthesized, predicates and all.  Nothing counts it, so nothing has to.
-        return SearchProgram(
-            space=coupled,
-            request=target,
-            sampler=DepthBoundedRandomSampler(depth_bound, random.Random(seed)),
-            provenance={**provenance, "depth_bound": depth_bound},
-        )
-
-    # check_alphabet first: the abstraction is stated against a fixed alphabet, and a terminal it
-    # has never seen would otherwise be folded into the "everything else" state, deciding the laws
-    # on a state that cannot represent them.  It refuses the space instead.
-    alphabet = check_alphabet(coupled)
-    started = time.time()
-    with step_budget("determinization", DETERMINIZATION_WARN_SECONDS):
-        determinization = determinize(coupled, target, state_limit=state_limit)
-    determinization_seconds = time.time() - started
-    rules = sum(
-        len(determinization.space.get(nt) or ()) for nt in determinization.space.nonterminals()
-    )
-    print(
-        f"Determinization took {determinization_seconds:.2f}s "
-        f"({determinization.state_count} product states, {rules} rules)",
-        flush=True,
-    )
-
-    # The coupled program is what the loop searches, here as in the other mode.  Only the sampler
-    # sees the determinized one, because counting is the only thing it is better at.
-    return SearchProgram(
-        space=coupled,
-        request=target,
-        sampler=DeterminizedSizeUniformSampler(
-            determinization, coupled, target, size_bound, random.Random(seed)
-        ),
-        provenance={
-            **provenance,
-            "size_bound": size_bound,
-            "determinization_seconds": determinization_seconds,
-            "determinization_state_count": determinization.state_count,
-            "determinization_rules": rules,
-            "determinization_state_limit": state_limit,
-            "abstraction_count": len(determinization.abstractions),
-            "terminals": alphabet["terminals"],
-        },
-    )
-
-
-# --- The acquisition optimizer --------------------------------------------------------------
-# An evolutionary search converges to a best individual under five conditions, and four of them are
-# decided by the components chosen below.  The fifth asks that the individuals a run can hold form a
-# finite set, and that is a property of the space rather than of the components: the requested type
-# carries structure literals over finite collections, so the set is finite.
-#
-# One of the four asks for an exhaustive sampler, which means that on every resolution query and for
-# every completion within the sampler's bound, the first element of the stream is that completion
-# with positive probability.  It is "every resolution query" that carries the weight here, because
-# the mutation poses a residual query rather than a generator query, and a sampler that reaches only
-# the generator queries would leave the mutation rate buying nothing.
-#
-# The position distribution is the other half, and it is not uniform over all positions: the
-# operator draws among the non-leaves and the root.  A leaf holding a literal is a position where
-# the residual query answers with the term already there, since the clause matcher pins a constant
-# argument even at the opened position, so drawing one spends the mutation on the identity, and this
-# repository is built from literal parameters.  Excluding the leaves keeps reachability, because the
-# root is always a mutation point and the residual there is the generator query.
-DEFAULT_SELECTION_PRESSURE = 1.7
-# The convergence conditions ask for a crossover rate below 1 and a mutation rate above 0 and fix
-# nothing else, so the two numbers are a choice, and this is the one place it is made.
-#
-# The mutation rate is per offspring and the operator is a macro-mutation.  ``ResolutionMutation``
-# draws a position among the non-leaves and the root and replaces the whole subtree there with a
-# fresh draw, so nothing here is analogous to flipping a bit.  How much of a term one mutation
-# replaces therefore depends on how large the terms of the space are: on a large term the root is a
-# rarer draw and an ordinary mutation replaces a smaller share, so the same rate shakes a large
-# space less than a small one.  0.03 is chosen for the architectures this example searches, whose
-# terms are large.  The two smaller example spaces of this repository sit lower still, at 0.02 in
-# simple_nas and at 0.02 in the DAMG example.
-#
-# Convergence is untouched by the value.  The root is always a mutation point, and a mutation with
-# an exhaustive sampler maps any individual to any other with positive probability through the root,
-# so reachability holds for every positive rate.  The rate decides how hard the search is shaken,
-# not what it can reach.  What the value is not is optimized: whether the inner search finds the
-# argmax of the acquisition function is not measured here.
-DEFAULT_CROSSOVER_RATE = 0.9
-DEFAULT_MUTATION_RATE = 0.03
-# Why the evolutionary operators stay depth-bounded while the loop's own sampler is size-uniform, on
-# the very same program.  The two ask different questions.  The loop poses one generator query for
-# the whole run, so a size-uniform sampler builds its counting construction once and every later
-# draw reads the table it built.  The mutation poses a residual query at a fresh position of a fresh
-# individual every time, and ``SizeUniformSampler`` keeps only the last construction it built, so a
-# size-uniform mutation would pay that construction again per draw, and one pass of the loop makes
-# as many draws as it makes mutations.  A depth-bounded draw never counts.
-#
-# Nothing in the convergence argument is given up by that.  The depth-bounded sampler is exhaustive
-# on every resolution query, which is the condition the operators have to meet, and the finiteness
-# condition comes from the space rather than from the bound.
-
-
-def build_acquisition_optimizer(
-    *,
-    population_size: int,
-    generations: int,
-    depth_bound: int = DEFAULT_DEPTH_BOUND,
-    crossover_rate: float = DEFAULT_CROSSOVER_RATE,
-    mutation_rate: float = DEFAULT_MUTATION_RATE,
-    selection_pressure: float = DEFAULT_SELECTION_PRESSURE,
-    seed: int = 0,
-) -> EvolutionarySearch[Any, Any, Any]:
-    """Build the evolutionary search that maximizes the acquisition function.
-
-    Each component gets its own generator, derived from ``seed``, so that changing one operator's
-    consumption does not shift every later draw of the run.
-
-    Rank-based rather than fitness-proportional parent selection.  Fitness-proportional weights
-    would be the raw acquisition values, and expected improvement spans orders of magnitude on a
-    confident surrogate, so a single individual takes nearly all of the selection probability.  Rank
-    selection depends on the ordering alone.  It gives every member of the population a positive
-    probability, which is one of the convergence conditions, as long as the pressure stays below 2:
-    at 1.7 the worst individual keeps a share of 0.3 divided by the population size.
-
-    Args:
-        population_size (int): The population size.
-        generations (int): The termination bound.
-        depth_bound (int): The bound of the samplers, on the depth of a term.
-        crossover_rate (float): The crossover rate, which the convergence conditions need below 1.
-        mutation_rate (float): The mutation rate, which they need above 0.
-        selection_pressure (float): The rank-selection pressure, below 2 so that every member keeps
-            a positive probability.
-        seed (int): The base seed.  Every component derives its own generator from it.
-
-    Returns:
-        EvolutionarySearch[Any, Any, Any]: The configured search.
-    """
-    def rng(offset: int) -> random.Random:
-        """Derive one component's generator.
-
-        Args:
-            offset (int): The component's index.
-
-        Returns:
-            random.Random: Its generator.
-        """
-        return random.Random(seed * 100 + offset)
-
-    return EvolutionarySearch(
-        initializer=SampledInitialization(DepthBoundedRandomSampler(depth_bound, rng(0))),
-        mutation=ResolutionMutation(DepthBoundedRandomSampler(depth_bound, rng(1)), rng(2)),
-        # No max_size: the finiteness the convergence argument asks for comes from the space itself,
-        # and a size cap on the acceptance test would be a second measure beside the sampler's depth
-        # bound, which is the one confusion this module is written to avoid.
-        recombination=SubtreeSwap(rng(3)),
-        parent_selection=RankBasedSelection(selection_pressure, rng=rng(4)),
-        # Generous and conservative, which is the condition on survivor selection and the component
-        # that carries the convergence guarantee.  Truncation keeps a best member and is therefore
-        # conservative, but it gives a worse member no chance of surviving, so it is not generous.
-        survivor_selection=GenerousConservativeReplacement(ExpScalarization(), rng(5)),
-        termination=Generations(generations),
-        population_size=population_size,
-        crossover_rate=crossover_rate,
-        mutation_rate=mutation_rate,
-        rng=rng(6),
-        comparator=ScalarFitnessComparator(True),  # the acquisition is always maximized
-    )
-
-
-def describe_sampler(sampler) -> dict:
-    """Read a sampler's kind and bounds off the object, for the run record.
-
-    ``repr`` of a sampler is its class and its address, which says nothing a second run can be
-    compared against, and the two samplers this repository uses are bounded in different measures,
-    so which bound it was is exactly the question a config file has to answer.
-
-    Args:
-        sampler: The sampler the loop draws its own terms from.
-
-    Returns:
-        dict: Its class name and whichever bounds it carries, with ``None`` for the ones it does
-            not.
-    """
-    return {
-        "type": type(sampler).__name__,
-        # A term size and a term depth are not the same number, and a record that reports one of
-        # them under the other's name describes a run that never happened.
-        "size_bound": getattr(sampler, "size_bound", None),
-        "depth_bound": getattr(sampler, "depth_bound", None),
-        "counting": getattr(sampler, "counting", None),
-    }
 
 
 def _as_list(values: Any) -> list | None:
@@ -637,130 +254,6 @@ def describe_repository(repo: Any) -> dict:
         "momentum_values": _as_list(repo.momentum_values),
         "num_feature_dimensions": len(repo.feature_dimensions),
     }
-
-
-def describe_search(evo_alg: EvolutionarySearch[Any, Any, Any]) -> dict:
-    """Read a run's evolutionary configuration off the object that will run it.
-
-    The provenance record used to be written by hand beside the construction, and it drifted: it
-    named ``AgeBasedReplacement`` for runs that used truncation, and called ``mutation_rate = 0``
-    mandatory long after the defect behind that rule was fixed.  A metadata block that cannot be
-    read off the object is a comment, and comments go stale silently.
-
-    Args:
-        evo_alg (EvolutionarySearch[Any, Any, Any]): The configured search.
-
-    Returns:
-        dict: The component names and numeric parameters, as they actually are.
-    """
-    def name(component: object) -> str:
-        """Render one component for the record.
-
-        Args:
-            component (object): The component.
-
-        Returns:
-            str: Its class name.
-        """
-        return type(component).__name__
-
-    return {
-        "initializer": name(evo_alg.initializer),
-        "mutation": name(evo_alg.mutation),
-        "recombination": name(evo_alg.recombination),
-        "parent_selection": name(evo_alg.parent_selection),
-        "survivor_selection": name(evo_alg.survivor_selection),
-        "termination": name(evo_alg.termination),
-        "comparator": name(evo_alg.comparator),
-        "population_size": evo_alg.population_size,
-        "crossover_rate": evo_alg.crossover_rate,
-        "mutation_rate": evo_alg.mutation_rate,
-    }
-
-
-@contextlib.contextmanager
-def step_budget(label, expected_seconds, hard_limit_seconds=None):
-    """Report a step that outruns its expected duration, while it is still running.
-
-    A run of these experiments is long by design, since a single pass trains a network, so "it is
-    still going" and "it is stuck" look alike from outside, and the difference only shows up hours
-    later in a log that ends mid-sentence.  This makes the difference observable: a watchdog thread
-    prints once the step passes the duration it was expected to take, and again at every doubling
-    of that, so a step that runs 60x its budget says so 6 times instead of 60.
-
-    It reports and it does not kill.  Aborting a step that trains a network for 15 minutes because
-    it took 20 would destroy more than it saves.  ``hard_limit_seconds`` exists for the steps where
-    hanging is a known failure mode rather than a slow day, such as sampling on a space whose draw
-    cost has a heavy tail.  It raises ``KeyboardInterrupt`` in the main thread, so the surrounding
-    ``with`` blocks still close their files.
-
-    Args:
-        label (str): What is being timed, as it should read in the log.
-        expected_seconds (float): The duration beyond which the step is worth reporting.  Not a
-            limit: exceeding it is normal on a slower machine, which is why the message says what
-            was expected instead of claiming a failure.
-        hard_limit_seconds (float | None): Abort the run past this duration, or None to only
-            report. (Default value = None)
-
-    Yields:
-        None: The context in which the step runs.
-    """
-    if expected_seconds <= 0:
-        # A threshold of zero makes the wait below return at once, every time, so the watchdog
-        # prints as fast as the interpreter allows and the step it was watching gets no processor.
-        # A caller computing this as a per-item budget times a count reaches zero the moment the
-        # count is zero, so it is worth catching rather than documenting.
-        msg = f"the expected duration of {label!r} must be positive, got {expected_seconds}"
-        raise ValueError(msg)
-
-    started = time.time()
-    finished = threading.Event()
-
-    def watch():
-        """Report at the expected duration and at every doubling of it."""
-        threshold = float(expected_seconds)
-        while True:
-            # The hard limit is its own deadline, not something checked when a report happens to
-            # be due.  Waking only at the reporting thresholds made a limit of 3600 s fire at 4800,
-            # the first doubling past it, and a limit below the first threshold never fire at all.
-            deadlines = [threshold]
-            if hard_limit_seconds is not None:
-                deadlines.append(float(hard_limit_seconds))
-            wake_at = min(d for d in deadlines if d > time.time() - started) \
-                if any(d > time.time() - started for d in deadlines) else 0.0
-            if finished.wait(timeout=max(wake_at - (time.time() - started), 0.0)):
-                return
-            elapsed = time.time() - started
-            if hard_limit_seconds is not None and elapsed >= hard_limit_seconds:
-                print(
-                    f"[watchdog] {label}: past the hard limit of {hard_limit_seconds:.0f}s, "
-                    "interrupting the run",
-                    flush=True,
-                )
-                _thread.interrupt_main()
-                return
-            if elapsed < threshold:
-                continue
-            print(
-                f"[watchdog] {label}: running for {elapsed:.0f}s, expected about "
-                f"{expected_seconds:.0f}s",
-                flush=True,
-            )
-            threshold *= 2
-
-    watcher = threading.Thread(target=watch, name=f"watchdog:{label}", daemon=True)
-    watcher.start()
-    try:
-        yield
-    finally:
-        finished.set()
-        elapsed = time.time() - started
-        if elapsed > expected_seconds:
-            print(
-                f"[watchdog] {label}: finished after {elapsed:.0f}s, "
-                f"{elapsed / max(expected_seconds, 1e-9):.1f}x the expected duration",
-                flush=True,
-            )
 
 
 CSV_COLUMNS = [
@@ -1153,225 +646,6 @@ class EvaluationLogger:
         self.close()
 
 
-EA_CSV_COLUMNS = [
-    "bo_iteration",      # which pass of the outer loop this inner run belongs to
-    "generation",        # 0 is the initial population
-    "best",              # b, the fittest individual of the whole inner run so far
-    "population_best",   # the fittest member of THIS generation, which b may already beat
-    "population_mean",
-    "population_worst",
-    "distinct_members",  # a collapsed population repeats itself
-    # The generation the best individual was last replaced in.  The gap to ``generation`` is how
-    # long the inner search has been stalled, which is what a termination bound is set against.
-    "last_improvement",
-    # Zero says that every offspring of this generation was discarded by the acceptance test, which
-    # the fitness columns alone do not show.
-    "offspring",
-]
-
-SURROGATE_CSV_COLUMNS = [
-    "bo_iteration",
-    "n_train",                        # how many pairs the pass conditioned on
-    "log_marginal_likelihood",
-    # The leave-one-out calibration, per pass rather than once at the end.  Read the two spreads
-    # together: the spread about zero and the spread about their own mean differ by the bias, which
-    # is the signature of a surrogate whose deviations stay at the prior.
-    "calibration_root_mean_square",
-    "calibration_standard_deviation",
-    "calibration_maximum_absolute",
-    "calibration_outside_two",
-    # The held-out fit, per pass.  The rank correlation alone does not separate a good surrogate
-    # from a collapsed one, since a surrogate that predicts one value for everything can still order
-    # a few ties by chance.  The prediction spread against the objective spread is what does, so all
-    # three are here.
-    "fit_size",
-    "fit_rank_correlation",
-    "fit_prediction_spread",
-    "fit_objective_spread",
-    "fit_residual_root_mean_square",
-    # What the model selection actually did.  A kernel whose amplitudes never move is one whose fit
-    # had nothing to adjust, and nothing else in these artifacts would say so, because sklearn runs
-    # its optimizer over an empty parameter vector without complaining.
-    "kernel_hyperparameters",
-]
-
-
-def kernel_hyperparameters(surrogate):
-    """Return the fitted kernel's hyperparameters as ``{name: value}``.
-
-    ``theta`` holds the logarithm of the value of every hyperparameter that lives on a log scale,
-    which is all of the ones here, so it is exponentiated back into the amplitudes and noise levels
-    a reader recognizes.  Walked with an explicit index rather than zipped, because a hyperparameter
-    may hold several elements and a zip would then silently pair names with the wrong numbers.
-
-    Args:
-        surrogate: A fitted ``GaussianProcessRegressor``.
-
-    Returns:
-        dict: One entry per hyperparameter of the fitted kernel.
-    """
-    values = np.exp(surrogate.kernel_.theta)
-    result = {}
-    index = 0
-    for hyperparameter in surrogate.kernel_.hyperparameters:
-        count = hyperparameter.n_elements
-        result[hyperparameter.name] = (
-            float(values[index])
-            if count == 1
-            else [float(value) for value in values[index:index + count]]
-        )
-        index += count
-    return result
-
-
-class EAGenerationLogger:
-    """Writes the trajectory of every acquisition maximization, one row per generation.
-
-    The frontier read says where the answer sits in the population it came from.  This says whether
-    the inner run got there by improving.  Convergence is a statement about the best individual over
-    the generations, and without these rows a run holds no evidence for or against it, because the
-    loop keeps only the last generation of the last pass.
-
-    Flushed per pass for the same reason the evaluation log is: the inner run is finished before the
-    network trains, and a run interrupted during the training should keep it.
-    """
-
-    def __init__(self, path):
-        self._file = open(path, "w", newline="")  # noqa: SIM115, closed by __exit__
-        self._writer = csv.writer(self._file)
-        self._writer.writerow(EA_CSV_COLUMNS)
-        self._file.flush()
-
-    def log(self, bo_iteration, acquisition_run):
-        """Append one inner run's generations.
-
-        Args:
-            bo_iteration (int): The pass of the outer loop.
-            acquisition_run: The ``AcquisitionRun`` the pass recorded, or None.
-
-        Raises:
-            ValueError: If the run recorded no generations at all.  Every inner run yields at
-                least its initial population, so an empty sequence means the recording was not
-                asked for, and a silently empty file would read as if the search had done nothing.
-        """
-        if acquisition_run is None:
-            return
-        if not acquisition_run.generations:
-            msg = (
-                f"pass {bo_iteration} recorded an acquisition run with no generations; every run "
-                f"yields at least the zeroth, so this is a maximization that was not asked to "
-                f"record its trajectory rather than one that had none"
-            )
-            raise ValueError(msg)
-        for record in acquisition_run.generations:
-            self._writer.writerow([
-                bo_iteration,
-                record.generation,
-                record.best,
-                record.population_best,
-                record.population_mean,
-                record.population_worst,
-                record.distinct_members,
-                record.last_improvement,
-                record.offspring,
-            ])
-        self._file.flush()
-
-    def close(self):
-        self._file.close()
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc, tb):
-        self.close()
-
-
-class SurrogateLogger:
-    """Writes what the surrogate of each pass believed, and how well.
-
-    The acceptance checks read the surrogate once, at the end.  That answers whether the model was
-    usable and not whether it became usable, and the second question is the one a plot of a run is
-    about: a loop whose calibration improves as evaluations arrive is working, and one whose
-    calibration stays where it started is over-confident from the first pass to the last.
-
-    The held-out fit costs one extra Gaussian-process fit per pass, which is seconds at these
-    dataset sizes against a pass that trains a neural network.
-    """
-
-    def __init__(self, path):
-        self._file = open(path, "w", newline="")  # noqa: SIM115, closed by __exit__
-        self._writer = csv.writer(self._file)
-        self._writer.writerow(SURROGATE_CSV_COLUMNS)
-        self._file.flush()
-
-    def log(self, bo_iteration, optimizer):
-        """Append one pass's surrogate reads.
-
-        Args:
-            bo_iteration (int): The pass of the outer loop.
-            optimizer (BayesianOptimization): The loop, just after ``suggest()``.
-        """
-        surrogate = optimizer.surrogate
-        if surrogate is None:
-            return
-        calibration = read_calibration(surrogate)
-
-        # The same split by parity that the diagnostics use, over the data this pass saw.  The
-        # cells stay empty where the split is not one a fit read is about:
-        #
-        # * fewer than two held-out terms, because a scatter of one point has no spread and no
-        #   rank;
-        # * a term on both sides, or twice on the conditioning side, because the surrogate would
-        #   then have seen what it is asked to predict, and a noise-free Gaussian process
-        #   reproduces its training values exactly, so the scatter would sit on the diagonal
-        #   whatever the kernel does.  That is the one thing this read exists to rule out.
-        #
-        # The loop's rejection path makes the second case unreachable through ``suggest()``.  It is
-        # guarded because a caller may seed the dataset with ``x0`` directly, and a run should not
-        # die in its logger.
-        snapshot = optimizer.get_state_snapshot()
-        terms, values = snapshot["x_list"], snapshot["y_list"]
-        conditioned, held_out = terms[0::2], terms[1::2]
-        fit = None
-        readable = (
-            len(held_out) >= 2
-            and conditioned
-            and len(set(conditioned)) == len(conditioned)
-            and not set(conditioned) & set(held_out)
-        )
-        if readable:
-            fit = read_fit(
-                optimizer.surrogate_over(conditioned, values[0::2]), held_out, values[1::2]
-            )
-
-        self._writer.writerow([
-            bo_iteration,
-            len(surrogate.X_train_),
-            surrogate.log_marginal_likelihood_value_,
-            calibration.root_mean_square,
-            calibration.standard_deviation,
-            calibration.maximum_absolute,
-            calibration.outside_two,
-            "" if fit is None else fit.size,
-            "" if fit is None or fit.rank_correlation is None else fit.rank_correlation,
-            "" if fit is None else fit.prediction_spread,
-            "" if fit is None else fit.objective_spread,
-            "" if fit is None else fit.residual_root_mean_square,
-            json.dumps(kernel_hyperparameters(surrogate), sort_keys=True),
-        ])
-        self._file.flush()
-
-    def close(self):
-        self._file.close()
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc, tb):
-        self.close()
-
-
 def dataset_to_tensors(dataset, device, num_workers=0):
     """Materialize a whole split as one pair of tensors on ``device``.
 
@@ -1585,86 +859,6 @@ def _draw_prefix(optimizer, count):
         )
         raise RuntimeError(msg)
     return distinct_prefix(optimizer.sampler, query, count)
-
-
-def _check_resumed_design(resume_design, drawn_prefix):
-    """Refuse a resumed design whose terms are not the ones this run would have drawn.
-
-    The resumed values describe those terms.  If the sampler now produces different ones, after a
-    changed seed or a changed cell or with a sampler whose order is not reproducible, then pairing
-    value ``i`` with term ``i`` pairs a measurement with a network it was not taken from, and every
-    number after that is about nothing.  With a fixed seed the two streams agree, so this normally
-    passes.  It exists for when it does not.
-
-    Args:
-        resume_design (list[tuple]): ``(term, metrics)`` as loaded.
-        drawn_prefix (list): The terms this run drew.
-
-    Raises:
-        ValueError: On a different length, or on the first term that differs.
-    """
-    if len(resume_design) != len(drawn_prefix):
-        msg = (
-            f"the resumed design holds {len(resume_design)} terms but this run draws "
-            f"{len(drawn_prefix)}; the size of the initial design must match the run being "
-            f"continued"
-        )
-        raise ValueError(msg)
-    for index, ((resumed, _metrics), drawn) in enumerate(zip(resume_design, drawn_prefix, strict=True)):
-        if resumed != drawn:
-            msg = (
-                f"resumed term {index} is not the term this run drew at that position; the "
-                f"sampler is producing a different stream, so the loaded values describe other "
-                f"networks than the ones being paired with them"
-            )
-            raise ValueError(msg)
-
-
-def load_initial_design(path, expected, phase="pre_sample"):
-    """Take a finished initial design out of an interrupted run's term pool.
-
-    A run that dies after its initial design has spent hours of accelerator time on trainings whose
-    results are complete and on disk, and restarting it repeats every one of them to arrive at the
-    same numbers.  The terms and their metrics are in ``<run>_terms.pickle``, and this reads them
-    back so that the next run can start where the last one got to.
-
-    The provenance is checked, not assumed.  A design measured under different epochs, a different
-    cell or a different number of repetitions is not this run's design, and silently conditioning a
-    surrogate on it would produce a run whose dataset nobody can describe.  The fields compared are
-    the ones that change what a number means, and everything else may differ.
-
-    Args:
-        path (str): The ``<run>_terms.pickle`` of the interrupted run.
-        expected (dict): The fields the current run requires to match.
-        phase (str): Which phase's records to take. (Default value = "pre_sample")
-
-    Returns:
-        list[tuple]: ``(term, metrics)`` in the order they were measured.
-
-    Raises:
-        ValueError: If the pool carries no matching provenance, or none of the requested phase.
-    """
-    header, records = read_term_pool(path)
-    provenance = header.get("provenance") or {}
-    mismatched = {
-        key: (provenance.get(key), value)
-        for key, value in expected.items()
-        if provenance.get(key) != value
-    }
-    if mismatched:
-        detail = ", ".join(f"{k}: pool has {p!r}, run wants {w!r}" for k, (p, w) in mismatched.items())
-        msg = (
-            f"{path} was measured under a different configuration and its values do not describe "
-            f"this run's candidates ({detail})"
-        )
-        raise ValueError(msg)
-
-    design = [(record.term, record.metrics) for record in records if record.phase == phase]
-    if not design:
-        phases = sorted({record.phase for record in records})
-        msg = f"{path} holds no {phase!r} records; it has {phases}"
-        raise ValueError(msg)
-    return design
 
 
 def run_ask_tell_search(
@@ -1956,195 +1150,6 @@ def run_ask_tell_search(
         summary["baseline_evaluations"] = n_pre_samples + n_iterations
         summary["shared_initial_evaluations"] = n_pre_samples
     return result, bo_time, summary
-
-
-def metadata_path_for(csv_path):
-    """Return the provenance path beside a run's CSV: ``run.csv`` becomes ``run_config.json``."""
-    base, _ext = os.path.splitext(csv_path)
-    return f"{base}_config.json"
-
-
-def _sibling_path(csv_path, suffix):
-    """Return a path beside a run's CSV: ``run.csv`` becomes ``run<suffix>``."""
-    base, _ext = os.path.splitext(csv_path)
-    return f"{base}{suffix}"
-
-
-def write_run_diagnostics(csv_path, optimizer, result):
-    """Run the acceptance checks over the finished run and write them out.
-
-    A run that produced numbers has not thereby produced readable numbers, and these reads are what
-    separates the two.  They are ordered by what they need, the kernel first, then the mean, then
-    the uncertainty, then the inner evolutionary run, and a failure found early makes the later ones
-    uninformative rather than wrong: an uninformative kernel gives a flat fit scatter, flat
-    residuals and a flat acquisition landscape, and only the first of them says why.
-
-    Every field here is a measurement and none is a verdict.  Each read names a failure mode without
-    the threshold that separates it, because a threshold belongs to a search space and not to the
-    method, and eleven terms of one chain and four hundred convolutional architectures do not share
-    one.  So this writes the numbers and leaves the reading to whoever compares two runs.
-
-    Two artifacts: ``<run>_diagnostics.json`` with the five reads, and ``<run>_trace.csv`` with the
-    per-pass table behind the fifth.
-
-    Called after the CSV and the metadata are on disk, so that a read which raises, a surrogate that
-    will not fit for instance, costs the diagnostics and not the run.
-
-    Each read states what it needs, and a read whose input is not there is written as ``null``.
-    That is not a substitute value and not a swallowed failure: a smoke test of three evaluations
-    has one held-out term, and the fit read is a statement about a scatter that needs two, so "there
-    was not enough of a run to read this" is the true answer and it is what the file says.  A read
-    that fails on data it was given still raises.
-
-    Args:
-        csv_path (str): The run's CSV.  The artifacts are written beside it.
-        optimizer (BayesianOptimization): The loop, after ``finalize()``.
-        result (dict): What ``finalize()`` returned.
-
-    Returns:
-        dict: The diagnostics, as they were written.
-    """
-    terms = list(result["x"])
-    values = [float(value) for value in result["y"]]
-
-    # --- 1. The kernel, before any conditioning ----------------------------------------------
-    # ``optimizer.kernel`` and not the fitted one.  A kernel matrix betrays a broken kernel before
-    # any Gaussian process is conditioned, and that reading is about the kernel as it was
-    # constructed, before a fit chose its scales.
-    gram = read_gram(optimizer.kernel(terms), objective=values) if len(terms) >= 2 else None
-
-    # --- 2. The mean, on terms the surrogate has not seen -------------------------------------
-    # Condition on the terms of even index and predict the odd ones.  Splitting by parity keeps the
-    # conditioning half spread over the whole run instead of over one region of it, which would
-    # measure extrapolation, a different and harder question.
-    conditioned_terms, conditioned_values = terms[0::2], values[0::2]
-    held_out_terms, held_out_values = terms[1::2], values[1::2]
-    # The same three conditions ``SurrogateLogger`` states: two held-out terms to make a scatter, a
-    # conditioning half without repeats, and no term on both sides.  A surrogate that has seen what
-    # it predicts reproduces it, and the read would report a diagonal it did not earn.
-    readable = (
-        len(held_out_terms) >= 2
-        and conditioned_terms
-        and len(set(conditioned_terms)) == len(conditioned_terms)
-        and not set(conditioned_terms) & set(held_out_terms)
-    )
-    fit = (
-        read_fit(
-            optimizer.surrogate_over(conditioned_terms, conditioned_values),
-            held_out_terms,
-            held_out_values,
-        )
-        if readable
-        else None
-    )
-
-    # --- 3. The uncertainty, over the whole dataset -------------------------------------------
-    # Not ``result["gp_model"]``, which is the surrogate of the last ``suggest()`` and never saw the
-    # evaluation the run ended on.  A calibration is a statement about the data that was collected.
-    calibration = read_calibration(optimizer.surrogate_over_dataset()) if terms else None
-
-    # --- 4. The inner evolutionary run --------------------------------------------------------
-    run = optimizer.last_acquisition_run
-    frontier = None if run is None else read_frontier(run)
-
-    # --- 5. The loop itself -------------------------------------------------------------------
-    trace = read_trace(result["trace"]) if result["trace"] else None
-
-    diagnostics = {
-        # null where the run was too short for the read, never a filled-in number.
-        "gram": None if gram is None else {
-            "size": gram.size,
-            "symmetry_error": gram.symmetry_error,
-            "minimum_eigenvalue": gram.minimum_eigenvalue,
-            "condition_number": gram.condition_number,
-            "diagonal_spread": gram.diagonal_spread,
-            "off_diagonal_mean": gram.off_diagonal_mean,
-            "off_diagonal_spread": gram.off_diagonal_spread,
-            "seriation_neighbour_similarity": gram.seriation_neighbour_similarity,
-            "coordinate_spread": gram.coordinate_spread,
-            # The kernel's own coordinate against the objective.  A low value here is a statement
-            # about this kernel on these terms and not a defect by itself, since the leading
-            # principal component of a kernel need not be the direction the objective varies along.
-            "objective_alignment": gram.objective_alignment,
-        },
-        "fit": None if fit is None else {
-            "size": fit.size,
-            "rank_correlation": fit.rank_correlation,
-            "predictions_constant": fit.predictions_constant,
-            "prediction_spread": fit.prediction_spread,
-            "objective_spread": fit.objective_spread,
-            "regression_slope": fit.regression_slope,
-            "residual_root_mean_square": fit.residual_root_mean_square,
-            "true_values": list(fit.true_values),
-            "predicted_values": list(fit.predicted_values),
-        },
-        "calibration": None if calibration is None else {
-            "size": calibration.size,
-            "mean_absolute": calibration.mean_absolute,
-            "maximum_absolute": calibration.maximum_absolute,
-            # The spread about zero and the spread about their own mean, side by side.  The
-            # difference between the two is bias, and residuals that carry a single sign with a
-            # small spread are the signature of a surrogate whose deviations stayed at the prior.
-            # Reading only one of the two hides it.
-            "root_mean_square": calibration.root_mean_square,
-            "standard_deviation": calibration.standard_deviation,
-            "outside_two": calibration.outside_two,
-            "positive_fraction": calibration.positive_fraction,
-            "log_marginal_likelihood": calibration.log_marginal_likelihood,
-            "targets_normalized": calibration.targets_normalized,
-            "standardized_residuals": list(calibration.standardized_residuals),
-        },
-        # None rather than an empty record.  That no acquisition maximization was recorded is a
-        # different statement from one that was recorded and held nothing.
-        "frontier": None if frontier is None else {
-            "size": frontier.size,
-            "distinct_members": frontier.distinct_members,
-            "pick_in_population": frontier.pick_in_population,
-            "known_members": frontier.known_members,
-            "mean_at_pick": frontier.mean_at_pick,
-            "deviation_at_pick": frontier.deviation_at_pick,
-            "score_at_pick": frontier.score_at_pick,
-            "fallback_used": frontier.fallback_used,
-            "dominating_members": frontier.dominating_members,
-            "on_frontier": frontier.on_frontier,
-            "higher_scored_members": frontier.higher_scored_members,
-            "mean_spread": frontier.mean_spread,
-            "deviation_spread": frontier.deviation_spread,
-        },
-        "trace": None if trace is None else {
-            "passes": trace.passes,
-            "acquisition_trend": trace.acquisition_trend,
-            "acquisition_first": trace.acquisition_first,
-            "acquisition_last": trace.acquisition_last,
-            "acquisition_at_zero": trace.acquisition_at_zero,
-            "deviation_spread": trace.deviation_spread,
-            "deviation_minimum": trace.deviation_minimum,
-            "deviation_maximum": trace.deviation_maximum,
-            "fallbacks": trace.fallbacks,
-            "distinct_fraction": trace.distinct_fraction,
-            "improvements": trace.improvements,
-            "stalled_passes": trace.stalled_passes,
-            "best_trace": list(trace.best_trace),
-        },
-        # The reads carry no thresholds, and neither does this file.  What the fields mean is in
-        # ``bayesian_optimization/diagnostics``, one remark per read.
-        "read_this_with": "bayesian_optimization.diagnostics",
-    }
-
-    path = _sibling_path(csv_path, "_diagnostics.json")
-    with open(path, "w") as handle:
-        json.dump(diagnostics, handle, indent=2, sort_keys=True, default=float)
-    print(f"Acceptance checks written to {path}", flush=True)
-
-    if result["trace"]:
-        trace_path = _sibling_path(csv_path, "_trace.csv")
-        with open(trace_path, "w", newline="") as handle:
-            writer = csv.writer(handle)
-            writer.writerow(trace_columns())
-            writer.writerows(trace_rows(result["trace"]))
-        print(f"Run trace written to {trace_path}", flush=True)
-
-    return diagnostics
 
 
 def write_run_metadata(csv_path, metadata):
