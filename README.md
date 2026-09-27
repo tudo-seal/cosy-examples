@@ -6,17 +6,22 @@ search maximizes an acquisition score over that space, and the term it returns i
 candidate the objective is spent on.
 
 The `cosy` library itself declares no runtime dependency. This repository declares numpy, scipy,
-scikit-learn, networkx, grakel, torch and torchvision, and pandas, matplotlib and tqdm beside
-them, which is why the Gaussian process half of the method lives here and not there.
+scikit-learn, networkx and grakel, which is why the Gaussian process half of the method lives here
+and not there. The architecture searches under `examples/` add torch and torchvision (the `cnn`
+extra) and pandas and tqdm (the `examples` extra); the core and the run layer import none of them.
 
 ## Installation
 
-Install the package with its dev extra into a virtual environment. The dev extra carries the two
-checkers as well as the test tools, so one install covers everything the sections below run:
+Install the package into a virtual environment with the extras of the parts you run. The core and
+the run layer need none, the architecture searches need `cnn` and `examples`, and `dev` carries the
+two checkers and the test tools. Everything the sections below run:
 
 ```
-python -m pip install -e ".[dev]"
+python -m pip install -e ".[dev,cnn,examples]"
 ```
+
+Installed without `cnn` and `examples`, the suite leaves out every test module that needs them and
+names each in its summary; the checks run that way as a job of its own.
 
 The `cosy` library comes along as the declared `combinatory-synthesizer` dependency. Python 3.11
 or 3.12 is required, as `pyproject.toml` states.
@@ -34,12 +39,13 @@ ruff check .
 mypy bayesian_optimization tests
 ```
 
-The two checks need the `dev` extra, which carries `mypy` and `ruff`. The tests need `test`, and
-`pip install -e ".[dev]"` covers both.
+The two checks need the `dev` extra, which carries `mypy` and `ruff`, and `mypy` reads the examples
+against torch's own types, so it needs `cnn` as well. The tests need `test`, and
+`pip install -e ".[dev,cnn,examples]"` covers all of it.
 
-The suite holds 891 tests in 51 test modules. Five carry the `slow` marker, and the remaining 886
-finish in about ninety seconds in one process on the machine this was measured on. `mypy` reports
-nothing over the 105 files those two paths cover. `pyproject.toml` declares `slow`,
+The suite holds 1 000 tests in 58 test modules. Five carry the `slow` marker, and the remaining 995
+finish in about 106 seconds in one process on the machine this was measured on. `mypy` reports
+nothing over the 126 files those two paths cover. `pyproject.toml` declares `slow`,
 `integration` and `property`, and it puts the repository root on `sys.path`, so
 `bayesian_optimization` is taken from the checkout rather than from an installed copy.
 `CONTRIBUTING.md` covers coverage measurement and the conventions the two layers are held to.
@@ -135,7 +141,7 @@ is to be minimized is negated on the way in and the reported optimum on the way 
 | `utils.py` | the conversions from a term to a labeled graph the graph kernels read |
 | `runs/` | the run layer: one driver for every strategy and the paired comparison, the metric schema and the recorder, the files of a run and its provenance, the term pool and resume, the search program and its samplers, the acquisition-optimizer builder, the watchdog |
 
-That is 21 modules of core, 6430 lines, and the run layer's 12 modules, 2520 lines, which import
+That is 21 modules of core, 6426 lines, and the run layer's 12 modules, 2590 lines, which import
 no training framework and hold what a run over any space needs around the loop.
 `bayesian_optimization/examples/` holds 24 more modules and 12 070 lines, and every one of them is
 an application: an example may not work around a defect in the core or the run layer, it has to be
@@ -143,7 +149,7 @@ fixed where it is. The dependency runs one way only: an example may import the r
 core, the run layer the core, and no module outside `examples/` imports anything from inside it.
 
 `bayesian_optimization/__init__.py` exports 37 names and `bayesian_optimization/runs/__init__.py`
-45, and nothing else is public API.
+46, and nothing else is public API.
 
 ## The optimization loop
 

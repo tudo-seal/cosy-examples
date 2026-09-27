@@ -1,8 +1,8 @@
 # The checks CONTRIBUTING lists, on every push and every pull request. The commands are the same
 # ones, so a failure here names the same defect a failure on a laptop names. The environment is
-# not the same: torch, torchvision, pandas, matplotlib, tqdm, pytest and hypothesis are declared
-# without versions, and cosy comes from the default branch of its repository, so this job also
-# fails when something outside this repository moves. That is the point of running it.
+# not the same: torch, torchvision, pandas, tqdm, pytest and hypothesis are declared without
+# versions, and cosy comes from the default branch of its repository, so this job also fails when
+# something outside this repository moves. That is the point of running it.
 name: checks
 
 on:
@@ -23,10 +23,11 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-# Two jobs, because only one of them needs a matrix. mypy is configured for 3.11 in pyproject.toml
-# and ruff reads its target from requires-python, so both checkers would examine the same thing
-# twice. The tests are what differs between the interpreters, since every dependency resolves to a
-# different build under each.
+# The checkers and the tests are separate jobs, because only the tests need a matrix. mypy is
+# configured for 3.11 in pyproject.toml and ruff reads its target from requires-python, so both
+# checkers would examine the same thing twice. The tests are what differs between the interpreters,
+# since every dependency resolves to a different build under each. A third job runs the tests
+# without the examples' dependencies.
 jobs:
   lint:
     runs-on: ubuntu-latest
@@ -43,7 +44,7 @@ jobs:
       - name: Install torch without CUDA
         run: pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
       - name: Install
-        run: pip install -e ".[dev]"
+        run: pip install -e ".[dev,cnn,examples]"
       - name: ruff
         run: ruff check .
       - name: mypy
@@ -76,10 +77,32 @@ jobs:
 
       # cosy comes along as the declared git dependency, from the default branch of its repository.
       - name: Install
-        run: pip install -e ".[dev]"
+        run: pip install -e ".[dev,cnn,examples]"
 
       # Without the slow marker, which is the five end-to-end runs of the loop. Several tests hold
       # a duration against a bound, so a run that fails on one of those is more likely to be a busy
       # runner than a change.
+      - name: pytest
+        run: pytest -m "not slow"
+
+  # The core and the run layer without the examples' dependencies, which are extras. The suite
+  # leaves out every test module that needs one of them and names each in its summary
+  # (tests/conftest.py), so a module of the core or the run layer that came to import torch fails
+  # here, where the two jobs above cannot see it.
+  tests-without-torch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install without the extras
+        run: pip install -e ".[dev]"
+      # The job means nothing if torch came along anyway, through a dependency of a dependency.
+      - name: torch is absent
+        run: python -c "import importlib.util, sys; sys.exit(importlib.util.find_spec('torch') is not None)"
       - name: pytest
         run: pytest -m "not slow"

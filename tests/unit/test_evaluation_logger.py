@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import csv
 
+import pytest
 from cosy.core.tree import Tree
 
 from bayesian_optimization.state import Suggestion
@@ -20,6 +21,7 @@ def _read(path):
 
 
 def test_columns_cover_the_fallback_state():
+    pytest.importorskip("torch")  # the CIFAR example loads it
     from bayesian_optimization.examples.cnn_damg_nas.cnn_damg_experiment_utils import CSV_COLUMNS
 
     missing = {"acquisition_value", "fallback_used", "fallback_attempts"} - set(CSV_COLUMNS)
@@ -28,6 +30,7 @@ def test_columns_cover_the_fallback_state():
 
 def test_bo_step_records_acquisition_value_and_fallback(tmp_path):
     """A row from a fallback iteration must be distinguishable from a genuine BO step."""
+    pytest.importorskip("torch")  # the CIFAR example loads it
     from bayesian_optimization.examples.cnn_damg_nas.cnn_damg_experiment_utils import (
         EvaluationLogger,
     )
@@ -57,6 +60,7 @@ def test_row_without_a_suggestion_leaves_the_columns_empty(tmp_path):
     Writing ``False`` would assert that no fallback happened in an iteration that never ran one --
     the same silent substitute value this phase removes elsewhere.
     """
+    pytest.importorskip("torch")  # the CIFAR example loads it
     from bayesian_optimization.examples.cnn_damg_nas.cnn_damg_experiment_utils import (
         EvaluationLogger,
     )
@@ -78,6 +82,7 @@ def test_one_call_writes_both_the_row_and_the_term(tmp_path):
     repaired by retraining, which is what makes this an invariant of the logger rather than a
     convention its call sites are expected to keep.
     """
+    pytest.importorskip("torch")  # the CIFAR example loads it
     from bayesian_optimization.examples.cnn_damg_nas.cnn_damg_experiment_utils import (
         EvaluationLogger,
     )

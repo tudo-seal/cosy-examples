@@ -127,6 +127,7 @@ def test_a_pass_row_carries_its_acquisition_reading(tmp_path):
 
 def test_the_cifar_schema_writes_the_cifar_driver_s_row_unchanged(tmp_path, monkeypatch):
     """The CIFAR layout is one schema: the same columns, the same cells, the same order."""
+    pytest.importorskip("torch")  # the CIFAR example loads it
     from bayesian_optimization.examples.cnn_damg_nas import cnn_damg_experiment_utils as utils
     from bayesian_optimization.runs import records
 
@@ -212,6 +213,7 @@ def test_the_provenance_records_the_environment_it_is_handed_and_no_other(tmp_pa
 # --- the budgets --------------------------------------------------------------------------------
 
 def test_the_step_budgets_default_to_the_cifar_example_s_and_are_the_caller_s_to_set():
+    pytest.importorskip("torch")  # the CIFAR example loads it
     from bayesian_optimization.examples.cnn_damg_nas import cnn_damg_experiment_utils as utils
 
     budgets = StepBudgets()

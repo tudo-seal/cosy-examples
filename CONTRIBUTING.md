@@ -2,14 +2,18 @@
 
 ## Setup
 
-Install the package with its dev extra into a virtual environment. The dev
-extra carries the two checkers as well as the test tools, so one install
-covers
-everything below:
+Install the package with the extras of everything below into a virtual
+environment: `dev` carries the two checkers and the test tools, `cnn` and
+`examples` what the architecture searches import.
 
 ```
-python -m pip install -e ".[dev]"
+python -m pip install -e ".[dev,cnn,examples]"
 ```
+
+The core and the run layer import none of `cnn` and `examples`. Without
+them, the suite leaves out every test module that needs one and names each
+in its summary (`tests/conftest.py`); the checks run that way too, so a
+module of the core that came to import torch fails there.
 
 The `cosy` library comes along as the declared `combinatory-synthesizer`
 dependency, and the tests import it directly. `pyproject.toml` puts the
@@ -30,7 +34,7 @@ for a quick run:
 pytest -m "not slow"
 ```
 
-Five of the 891 tests carry `slow`, and the other 886 finish in about 90
+Five of the 1 000 tests carry `slow`, and the other 995 finish in about 106
 seconds in one process on the machine this was measured on.
 
 ## Measuring coverage
@@ -56,7 +60,7 @@ mypy bayesian_optimization tests
 ```
 
 Both come with the `dev` extra and both read their configuration from
-`pyproject.toml`. `mypy` covers 105 files over those two paths and reports no
+`pyproject.toml`. `mypy` covers 126 files over those two paths and reports no
 error, only its twenty standing notes about unchecked bodies of untyped
 functions, so a new error is one this change introduced.
 
@@ -69,12 +73,12 @@ The slow tests are the end-to-end runs of the loop and are left to a local
 ## Three layers, held to two standards
 
 `bayesian_optimization/` outside `runs/` and `examples/` is a reusable core:
-21 modules, 6430 lines, and 37 exported names. A future caller has to be able
+21 modules, 6426 lines, and 37 exported names. A future caller has to be able
 to use that API without prior knowledge and without unwritten invariants, so a
 change there carries its reason in the code rather than in a commit message.
 
 `bayesian_optimization/runs/` is the run layer, held to the same standard: 12
-modules, 2520 lines, and 45 exported names. It is what a run over any space
+modules, 2590 lines, and 46 exported names. It is what a run over any space
 needs around the loop: the driver for every strategy and the paired
 comparison, the metric schema and the recorder, the files of a run and its
 provenance, the term pool and resume, the search program and its samplers. It
@@ -168,7 +172,7 @@ Gaussian process surrogate needs scikit-learn, numpy and scipy, the graph
 kernels need grakel and networkx, and the architecture searches need torch
 and
 torchvision. All of those are declared in this repository's
-`pyproject.toml`,
+`pyproject.toml`, the last two as the `cnn` extra,
 none of them in cosy's.
 
 So the split is not by topic. Everything that needs a runtime dependency

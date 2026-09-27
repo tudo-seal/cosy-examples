@@ -1,12 +1,77 @@
 from __future__ import annotations
 
+import ast
+import importlib
+import importlib.util
 import random
+from pathlib import Path
 from typing import Any
 
 import numpy as np
 import pytest
 from cosy.core.tree import Tree
 from sklearn.gaussian_process import GaussianProcessRegressor
+
+# ---------------------------------------------------------------------------
+# The test modules a run without the examples' dependencies leaves out
+# ---------------------------------------------------------------------------
+
+#: What the examples need beyond the core and the run layer, installed with the ``cnn`` and
+#: ``examples`` extras. A run where one of them is missing, the checks' job without torch, leaves
+#: out every test module that needs it and says which.
+OPTIONAL_DEPENDENCIES = ("torch", "torchvision", "pandas", "tqdm")
+_ABSENT = frozenset(
+    name for name in OPTIONAL_DEPENDENCIES if importlib.util.find_spec(name) is None
+)
+_LEFT_OUT: dict[str, str] = {}
+
+
+def _missing_dependency_of(path: Path) -> str | None:
+    """The absent dependency a test module's module-level imports need, or None.
+
+    Decided by importing what the module imports at its top level, this repository's modules
+    included, so a module that needs torch through the CIFAR example is found without a list of
+    such modules to keep. An import inside a test is that test's own business: it skips itself.
+    """
+    for node in ast.parse(path.read_text()).body:
+        if isinstance(node, ast.Import):
+            names = [alias.name for alias in node.names]
+        elif isinstance(node, ast.ImportFrom) and node.module and not node.level:
+            # the module, and each imported name that is a submodule of it
+            names = [node.module, *(f"{node.module}.{alias.name}" for alias in node.names)]
+        else:
+            continue
+        for name in names:
+            top = name.split(".")[0]
+            if top in _ABSENT:
+                return top
+            if top in ("bayesian_optimization", "tests"):
+                try:
+                    importlib.import_module(name)
+                except ModuleNotFoundError as error:
+                    missing = (error.name or "").split(".")[0]
+                    if missing in _ABSENT:
+                        return missing
+                    if error.name != name:  # not merely a name that is no module
+                        raise
+    return None
+
+
+def pytest_ignore_collect(collection_path: Path, config: pytest.Config) -> bool | None:
+    if not _ABSENT or collection_path.suffix != ".py" or not collection_path.name.startswith("test_"):
+        return None
+    missing = _missing_dependency_of(collection_path)
+    if missing is None:
+        return None
+    _LEFT_OUT[str(collection_path.relative_to(config.rootpath))] = missing
+    return True
+
+
+def pytest_terminal_summary(terminalreporter: Any) -> None:
+    if _LEFT_OUT:
+        terminalreporter.write_sep("-", f"{len(_LEFT_OUT)} test modules left out, a dependency missing")
+        for module, missing in sorted(_LEFT_OUT.items()):
+            terminalreporter.write_line(f"{module}: needs {missing}")
 
 # ---------------------------------------------------------------------------
 # Shared Tree corpus

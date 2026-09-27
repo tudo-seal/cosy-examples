@@ -387,6 +387,7 @@ def test_the_size_uniform_mode_searches_the_coupled_program_and_counts_the_other
     Args:
         original (tuple): The tracked repository's space and target.
     """
+    pytest.importorskip("torch")  # the CIFAR example loads it
     from bayesian_optimization.examples.cnn_damg_nas.cnn_damg_experiment_utils import (
         DeterminizedSizeUniformSampler,
         build_search,
@@ -455,6 +456,7 @@ def test_the_sampler_draws_the_terms_the_loop_s_program_derives(original):
     """
     from cosy.search import checker
 
+    pytest.importorskip("torch")  # the CIFAR example loads it
     from bayesian_optimization.examples.cnn_damg_nas.cnn_damg_experiment_utils import build_search
 
     original_space, target = original
@@ -488,6 +490,7 @@ def test_the_sampler_refuses_a_query_it_does_not_stand_in_for(original):
     from cosy.core.types import Constructor
     from cosy.search import residual_query
 
+    pytest.importorskip("torch")  # the CIFAR example loads it
     from bayesian_optimization.examples.cnn_damg_nas.cnn_damg_experiment_utils import build_search
 
     original_space, target = original
@@ -517,6 +520,7 @@ def test_build_search_refuses_the_repository_it_cannot_compile(original):
     Args:
         original (tuple): The tracked repository's space and target.  Only the target is used.
     """
+    pytest.importorskip("torch")  # the CIFAR example loads it
     from bayesian_optimization.examples.cnn_damg_nas.cnn_damg_experiment_utils import (
         build_search,
     )
@@ -539,6 +543,7 @@ def test_the_depth_bounded_mode_searches_the_program_as_synthesized(original):
     """
     from cosy.search import DepthBoundedRandomSampler
 
+    pytest.importorskip("torch")  # the CIFAR example loads it
     from bayesian_optimization.examples.cnn_damg_nas.cnn_damg_experiment_utils import (
         build_search,
     )
@@ -561,6 +566,7 @@ def test_the_depth_bounded_mode_searches_the_program_as_synthesized(original):
 
 def test_build_search_refuses_a_sampling_mode_it_does_not_have(original):
     """Which sampler a space admits is not something to guess a default for."""
+    pytest.importorskip("torch")  # the CIFAR example loads it
     from bayesian_optimization.examples.cnn_damg_nas.cnn_damg_experiment_utils import (
         build_search,
     )
