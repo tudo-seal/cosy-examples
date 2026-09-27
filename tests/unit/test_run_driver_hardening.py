@@ -104,15 +104,27 @@ def test_a_minimizing_objective_enters_negated_and_reports_in_its_own_sign(tmp_p
 
 # --- resume --------------------------------------------------------------------------------------
 
-def test_a_resumed_record_s_own_loop_value_wins_over_the_caller_s_reading(tmp_path):
+def test_a_caller_s_reading_reads_every_resumed_record_and_the_kept_value_stands_otherwise(
+        tmp_path):
+    """A kept loop value is the value under the objective of the run that measured the record.
+
+    A run that names its own reading resumes under its own objective, which may be another one,
+    so the reading is taken for every record; without one, the kept values are the values.
+    """
     terms = _head(seed=3, count=3)
-    records = [TermRecord("pre_sample", i, term, {"score": 0.1}, loop_value=0.5 + i / 10)
+    records = [TermRecord("pre_sample", i, term, {"score": 0.1 * (i + 1)}, loop_value=0.5 + i / 10)
                for i, term in enumerate(terms)]
 
-    outcome = _run(_random(3), _metrics, tmp_path / "run.csv", resume=records, n_passes=0,
-                   resumed_value=lambda metrics: metrics["score"])
+    read = _run(_random(3), _metrics, tmp_path / "read.csv", resume=records, n_passes=0,
+                resumed_value=lambda metrics: metrics["score"])
+    kept = _run(_random(3), _metrics, tmp_path / "kept.csv", resume=records, n_passes=0)
 
-    assert list(outcome.result["y"]) == [0.5, 0.6, 0.7]
+    assert list(read.result["y"]) == pytest.approx([0.1, 0.2, 0.3])
+    assert list(kept.result["y"]) == [0.5, 0.6, 0.7]
+    _header, rewritten = read_term_pool(tmp_path / "read_terms.pickle")
+    assert [record.loop_value for record in rewritten] == pytest.approx([0.1, 0.2, 0.3]), (
+        "the run's own records keep the value this run was handed, for the next resume"
+    )
 
 
 def test_a_resumed_run_keeps_the_loop_values_for_the_next_resume(tmp_path):

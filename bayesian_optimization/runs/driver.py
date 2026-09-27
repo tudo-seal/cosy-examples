@@ -5,9 +5,9 @@
 is drawn by the strategy, given as terms, or resumed from the records of an earlier run, and on
 every one of those paths each evaluation is written, row and term record, before the loop takes its
 value and before the next evaluation starts.  A resumed design is taken over term by term, with the
-value the loop was handed when it was measured.  Everything that can be refused is refused before
-anything is drawn, opened or paid: a taken run name, a pass configuration no pass could use, a
-resumed record without a value.
+value the loop was handed when it was measured, or with the caller's reading of its metrics.
+Everything that can be refused is refused before anything is drawn, opened or paid: a taken run
+name, a pass configuration no pass could use, a resumed record without a value.
 
 :func:`run_paired` runs several strategies from one design at one budget.  The first evaluates the
 design; the others take it over from the first one's records, so the design is paid once.  That is
@@ -74,13 +74,18 @@ def _run_kind(strategy: AskTellLoop, n_passes: int) -> str:
 def _resumed_values(
     records: Sequence[TermRecord], resumed_value: Callable[[Mapping[str, Any]], float] | None
 ) -> list[float]:
-    """The value the loop is handed for each resumed record, refused where none can be named."""
+    """The value the loop is handed for each resumed record, refused where none can be named.
+
+    The caller's reading, where it names one, reads every record: a kept loop value is the value
+    under the objective of the run that measured the record, and a run under another objective
+    reads its own.  Without a reading the kept values are the values.
+    """
     values = []
     for index, record in enumerate(records):
-        if record.loop_value is not None:
-            value = float(record.loop_value)
-        elif resumed_value is not None:
+        if resumed_value is not None:
             value = float(resumed_value(record.metrics))
+        elif record.loop_value is not None:
+            value = float(record.loop_value)
         else:
             msg = (
                 f"resumed record {index} carries no loop value, since it was written before the "
@@ -163,8 +168,10 @@ def run_search(
             loop values the values. Which records belong to which configuration is the caller's
             check (see :func:`~bayesian_optimization.runs.resume.load_initial_design`).
             (Default value = None)
-        resumed_value (Callable | None): How a resumed record written before records kept the
-            loop's value becomes that value. (Default value = None)
+        resumed_value (Callable | None): How a resumed record's metrics become the value this
+            run's loop is handed.  Given, it reads every resumed record, also one that kept a loop
+            value, since a kept value is the one the measuring run's objective gave; omitted, the
+            kept values are taken, and a record without one is refused. (Default value = None)
         provenance (Mapping | None): Written into the term pool's header. (Default value = None)
         budgets (StepBudgets | None): The watchdog's budgets; the CIFAR example's when omitted.
             (Default value = None)
