@@ -26,6 +26,7 @@ LOOP_FIELDS: tuple[str, ...] = (
     "structure",
     "term_size",
     "loop_value",
+    "taken_over",
     "acquisition_seconds",
     "acquisition_value",
     "fallback_used",
@@ -145,10 +146,14 @@ class MetricSchema:
             live (Callable | None): See the attribute. (Default value = None)
 
         Returns:
-            MetricSchema: ``phase, index, structure, loop_value``, the metrics, then ``term_size``,
-                ``acquisition_seconds``, ``acquisition_value``, ``fallback_used``, ``timestamp``.
+            MetricSchema: ``phase, index, structure, loop_value, taken_over``, the metrics, then
+                ``term_size``, ``acquisition_seconds``, ``acquisition_value``, ``fallback_used``,
+                ``timestamp``.
         """
-        head = [Column(name, field=name) for name in ("phase", "index", "structure", "loop_value")]
+        head = [
+            Column(name, field=name)
+            for name in ("phase", "index", "structure", "loop_value", "taken_over")
+        ]
         body = [Column(name) for name in metrics]
         tail = [
             Column(name, field=name)
@@ -174,6 +179,7 @@ class MetricSchema:
         loop_value: float | None = None,
         suggestion: Suggestion | None = None,
         acquisition_seconds: float | None = None,
+        taken_over: bool = False,
     ) -> list[Any]:
         """One CSV row, in the order of the columns.
 
@@ -181,6 +187,8 @@ class MetricSchema:
         partially instrumented run still records its structures.  A row without a suggestion, a
         term of the design, leaves the acquisition cells empty: an empty cell says there was no
         acquisition step, where ``False`` would claim a fallback was ruled out that never was.
+        ``taken_over`` says the row's value came from the record of an earlier run rather than
+        from an evaluation this run made, so a resumed row is not read as a measurement of it.
 
         Returns:
             list[Any]: The cells.
@@ -192,6 +200,7 @@ class MetricSchema:
             "structure": structure,
             "term_size": term_size,
             "loop_value": _cell(loop_value),
+            "taken_over": taken_over,
             "acquisition_seconds": _cell(acquisition_seconds),
             "acquisition_value": "" if suggestion is None else _cell(suggestion.acquisition_value),
             "fallback_used": diagnostics.get("fallback_used", ""),

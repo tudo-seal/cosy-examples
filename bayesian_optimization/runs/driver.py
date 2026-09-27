@@ -289,7 +289,8 @@ def run_search(
                     note = ""
                 # Written before the loop takes the value, so that a value the loop refuses, a
                 # non-finite one, is on disk with the metrics that explain it.
-                recorder.log(DESIGN_PHASE, index, term, metrics, loop_value=value)
+                recorder.log(DESIGN_PHASE, index, term, metrics, loop_value=value,
+                             taken_over=values is not None)
                 echo(f"  {DESIGN_PHASE}[{index}]: objective={objective.as_reported(value):.5f} "
                      f"{schema.live_line(metrics)}{note}".rstrip())
                 strategy.observe(term, value)

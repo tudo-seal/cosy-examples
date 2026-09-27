@@ -21,7 +21,7 @@ from bayesian_optimization.runs.artifacts import RunArtifacts
 from bayesian_optimization.runs.budgets import StepBudgets
 from bayesian_optimization.runs.metadata import write_run_metadata
 from bayesian_optimization.runs.records import EvaluationRecorder
-from bayesian_optimization.runs.schema import MetricSchema, Objective
+from bayesian_optimization.runs.schema import Column, MetricSchema, Objective
 from bayesian_optimization.runs.term_pool import read_term_pool
 from bayesian_optimization.state import Suggestion
 
@@ -75,12 +75,26 @@ def test_a_schema_of_one_s_own_metrics_writes_those_and_not_the_cifar_ones(tmp_p
 
     header, row = _rows(path)
     assert "accuracy" not in header
-    assert header[:4] == ["phase", "index", "structure", "loop_value"]
+    assert header[:5] == ["phase", "index", "structure", "loop_value", "taken_over"]
     assert {"f1", "n_params", "term_size", "acquisition_value", "timestamp"} <= set(header)
     cells = dict(zip(header, row, strict=True))
     assert (cells["phase"], cells["index"], cells["structure"]) == ("pre_sample", "0", "a")
     assert (cells["loop_value"], cells["f1"], cells["n_params"]) == ("0.7", "0.7", "12")
     assert cells["acquisition_value"] == "", "a design row has no acquisition step"
+
+
+def test_a_column_shows_whether_the_row_s_value_was_taken_over_from_an_earlier_run(tmp_path):
+    schema = MetricSchema(Objective("f1"), (
+        Column("phase", field="phase"), Column("resumed", field="taken_over"), Column("f1"),
+    ))
+    path = tmp_path / "run.csv"
+    with EvaluationRecorder(str(path), dict, schema) as recorder:
+        recorder.log("pre_sample", 0, Tree("a"), {"f1": 0.7}, loop_value=0.7, taken_over=True)
+        recorder.log("pass", 0, Tree("b"), {"f1": 0.5}, loop_value=0.5)
+
+    header, *rows = _rows(path)
+    assert header == ["phase", "resumed", "f1"]
+    assert rows == [["pre_sample", "True", "0.7"], ["pass", "False", "0.5"]]
 
 
 def test_the_recorder_keeps_the_loop_s_value_in_the_term_record(tmp_path):

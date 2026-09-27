@@ -133,6 +133,20 @@ def test_a_design_resumed_from_a_pool_is_taken_over_and_not_evaluated(tmp_path):
     assert (outcome.summary["evaluated_here"], outcome.summary["taken_over"]) == (2, 3)
 
 
+def test_a_row_says_whether_this_run_measured_it_or_took_it_over(tmp_path):
+    """U12's other half: a resumed row is on disk like a measured one, and must say which it is."""
+    _run(_random(5), _metrics, tmp_path / "first.csv", n_design=3, n_passes=1)
+    assert [row["taken_over"] for row in _rows(tmp_path / "first.csv")] == ["False"] * 4
+    _header, records = read_term_pool(tmp_path / "first_terms.pickle")
+    design = [record for record in records if record.phase == "pre_sample"]
+
+    _run(_random(6), _metrics, tmp_path / "second.csv", resume=design, n_passes=2)
+
+    assert [row["taken_over"] for row in _rows(tmp_path / "second.csv")] == (
+        ["True"] * 3 + ["False"] * 2
+    )
+
+
 def test_a_record_without_the_loop_s_value_needs_the_caller_s_reading(tmp_path):
     terms = _stream_head(seed=2, count=3)
     legacy = [TermRecord("pre_sample", i, term, {"score": 0.5 + i / 10}) for i, term in enumerate(terms)]
@@ -190,3 +204,7 @@ def test_a_paired_comparison_shares_one_design_evaluated_once(tmp_path):
     )
     assert outcomes["random"].summary["taken_over"] == 3
     assert outcomes["bo"].summary["taken_over"] == 0
+    assert [row["taken_over"] for row in _rows(tmp_path / "random.csv")] == (
+        ["True"] * 3 + ["False"] * 2
+    )
+    assert all(row["taken_over"] == "False" for row in _rows(tmp_path / "bo.csv"))

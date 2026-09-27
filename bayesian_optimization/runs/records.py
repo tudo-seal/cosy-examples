@@ -283,14 +283,15 @@ class EvaluationRecorder:
             raise
 
     def log(self, phase, index, tree, metrics, suggestion=None, acquisition_seconds=None,
-            loop_value=None):
+            loop_value=None, taken_over=False):
         """Append one evaluation, as one CSV row and one term record.
 
         A metric the evaluation did not report is written as an empty cell rather than raising, so
         a partially instrumented run still records its structures.  ``suggestion`` is the
         ``Suggestion`` that produced a pass and carries the acquisition value and the fallback
         state; a term of the design has none, and its cells stay empty.  ``loop_value`` is the
-        value the loop was handed for this evaluation, kept in the term record.
+        value the loop was handed for this evaluation, kept in the term record.  ``taken_over``
+        marks a row whose value came from an earlier run's record, for the schema's column of it.
         """
         structure = tree.interpret(self._pretty_algebra())
         self._writer.writerow(self._schema.row(
@@ -303,6 +304,7 @@ class EvaluationRecorder:
             loop_value=loop_value,
             suggestion=suggestion,
             acquisition_seconds=acquisition_seconds,
+            taken_over=taken_over,
         ))
         self._file.flush()  # persist at once, so a crash mid-run loses no completed row
         self._terms.write(phase, index, tree, metrics, loop_value=loop_value)
