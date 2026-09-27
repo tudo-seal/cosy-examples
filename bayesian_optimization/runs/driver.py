@@ -21,18 +21,21 @@ schema's objective reads the loop's value off it.
 from __future__ import annotations
 
 import contextlib
+import functools
+import math
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
 from ..bo import BayesianOptimization
-from ..loop import AskTellLoop
+from ..loop import AskTellLoop, _require_hashable
 from ..random_search import RandomSearch
+from ..state import BOState
 from .artifacts import RunArtifacts
 from .budgets import StepBudgets, step_budget
 from .records import EAGenerationLogger, EvaluationRecorder, SurrogateLogger
-from .schema import MetricSchema
+from .schema import MetricSchema, Objective
 from .term_pool import TermRecord, read_term_pool
 
 #: The phase of a design term in a run's rows and records, as the CIFAR driver has always named it.
@@ -56,7 +59,11 @@ class RunOutcome:
     summary: dict[str, Any]
 
 
-def _run_kind(strategy: AskTellLoop) -> str:
+def _run_kind(strategy: AskTellLoop, n_passes: int) -> str:
+    # Read off what ran rather than off the class alone: a run of no passes evaluated its design
+    # and nothing else, whichever strategy would have made the passes.
+    if n_passes == 0:
+        return "design_only"
     if isinstance(strategy, BayesianOptimization):
         return "bayesian_optimization"
     if isinstance(strategy, RandomSearch):
@@ -71,9 +78,9 @@ def _resumed_values(
     values = []
     for index, record in enumerate(records):
         if record.loop_value is not None:
-            values.append(float(record.loop_value))
+            value = float(record.loop_value)
         elif resumed_value is not None:
-            values.append(float(resumed_value(record.metrics)))
+            value = float(resumed_value(record.metrics))
         else:
             msg = (
                 f"resumed record {index} carries no loop value, since it was written before the "
@@ -81,7 +88,43 @@ def _resumed_values(
                 "resumed_value"
             )
             raise ValueError(msg)
+        if not math.isfinite(value):
+            msg = f"resumed record {index} hands the loop {value}, and the loop takes finite values"
+            raise ValueError(msg)
+        values.append(value)
     return values
+
+
+def _loop_value_or_record(
+    objective: Objective,
+    recorder: EvaluationRecorder,
+    phase: str,
+    index: int,
+    term: Any,
+    metrics: Mapping[str, Any],
+    **row: Any,
+) -> float:
+    """The loop's value of an evaluation; where it cannot be read, the evaluation is written first.
+
+    A paid evaluation reaches the disk whatever its metrics hold: one that does not report the
+    objective, or reports it as something that is not a number, is written with an empty loop
+    value before the run stops on it.
+    """
+    try:
+        return objective.loop_value(metrics)
+    except Exception:
+        recorder.log(phase, index, term, metrics, loop_value=None, **row)
+        raise
+
+
+def _require_uninitialized(strategy: AskTellLoop, name: str = "the strategy") -> None:
+    state = strategy.get_state_snapshot()["state"]
+    if state != BOState.UNINITIALIZED.value:
+        msg = (
+            f"{name} is in state {state}, not UNINITIALIZED: a run starts on a strategy that has "
+            "not run; reset() it or construct a new one"
+        )
+        raise RuntimeError(msg)
 
 
 def run_search(
@@ -100,7 +143,7 @@ def run_search(
     budgets: StepBudgets | None = None,
     refuse_taken: bool = True,
     verbose: bool = False,
-    echo: Callable[[str], None] = print,
+    echo: Callable[[str], None] | None = None,
 ) -> RunOutcome:
     """Run a strategy, writing every evaluation as it is measured.
 
@@ -128,18 +171,26 @@ def run_search(
         refuse_taken (bool): Refuse a run whose files exist, before anything is opened.
             (Default value = True)
         verbose (bool): Passed to ``suggest``. (Default value = False)
-        echo (Callable[[str], None]): Where the per-evaluation lines go. (Default value = print)
+        echo (Callable[[str], None] | None): Where the per-evaluation lines go; ``None`` prints
+            each line and flushes it, so that a killed run's log holds the lines before the kill.
+            (Default value = None)
 
     Returns:
         RunOutcome: The result, the wall clock and the summary.
 
     Raises:
-        ValueError: For a design given both ways, a size that does not match it, a negative
-            budget, or a resumed record without a value; and as ``check_configuration()`` refuses
-            a pass configuration.  All before anything is drawn, opened or evaluated.
+        ValueError: For a design given both ways, a size that does not match it or is negative, a
+            run that would evaluate nothing, a design that repeats a term, a resumed record
+            without a finite value, Bayesian optimization without a design to condition its first
+            pass on; and as ``check_configuration()`` refuses a pass configuration.
+        TypeError: For a design term that cannot be hashed.
+        RuntimeError: For a strategy that has already run.
         FileExistsError: If ``refuse_taken`` and a file of the run exists.
+        All of these before anything is drawn, opened or evaluated, so a corrected retry under the
+        same name runs.
     """
     budgets = budgets if budgets is not None else StepBudgets()
+    echo = echo if echo is not None else functools.partial(print, flush=True)
     # --- Everything that can be refused is refused before anything is drawn, opened or paid.
     if design is not None and resume is not None:
         raise ValueError("a design is given either as terms or as resumed records, not both")
@@ -163,6 +214,23 @@ def run_search(
     if terms is not None and n_design is not None and n_design != len(terms):
         msg = f"n_design is {n_design}, and the design handed over has {len(terms)} terms"
         raise ValueError(msg)
+    size = len(terms) if terms is not None else n_design
+    assert size is not None
+    if size < 0:
+        raise ValueError(f"a design holds a non-negative number of terms, not {size}")
+    if size + n_passes == 0:
+        raise ValueError("a run of no design and no passes evaluates nothing and has no result")
+    if isinstance(strategy, BayesianOptimization) and size == 0 and n_passes > 0:
+        raise ValueError(
+            "Bayesian optimization conditions its first pass on the design, and a design of no "
+            "terms leaves nothing to condition"
+        )
+    if terms is not None:
+        _require_hashable(terms, "the design")
+        if len(set(terms)) != len(terms):
+            raise ValueError("the design repeats a term: a repeated design term is an evaluation "
+                             "spent on a value the dataset already holds")
+    _require_uninitialized(strategy)
     artifacts = RunArtifacts(csv_path)
     if refuse_taken:
         artifacts.refuse_taken()
@@ -187,8 +255,6 @@ def run_search(
             surrogate_logger = stack.enter_context(SurrogateLogger(artifacts.path("surrogate")))
 
         # --- The design, the loop's first phase: every term written before its value is taken.
-        size = len(terms) if terms is not None else n_design
-        assert size is not None
         with step_budget(f"the design ({size} evaluations)", max(size, 1) * budgets.per_evaluation):
             if terms is None:
                 strategy.initialize(initial_size=size)
@@ -210,8 +276,9 @@ def run_search(
                     note = " (resumed)"
                 else:
                     metrics = evaluate(term)
-                    value = objective.loop_value(metrics)
                     evaluated_here += 1
+                    value = _loop_value_or_record(objective, recorder, DESIGN_PHASE, index, term,
+                                                  metrics)
                     note = ""
                 # Written before the loop takes the value, so that a value the loop refuses, a
                 # non-finite one, is on disk with the metrics that explain it.
@@ -242,8 +309,10 @@ def run_search(
             term = suggestion.candidate
             with step_budget(f"pass {step}: the evaluation", budgets.per_evaluation):
                 metrics = evaluate(term)
-            value = objective.loop_value(metrics)
             evaluated_here += 1
+            value = _loop_value_or_record(objective, recorder, phase, step, term, metrics,
+                                          suggestion=suggestion,
+                                          acquisition_seconds=acquisition_seconds)
             recorder.log(phase, step, term, metrics, suggestion=suggestion,
                          acquisition_seconds=acquisition_seconds, loop_value=value)
             echo(f"  {phase}[{step}]: objective={objective.as_reported(value):.5f} "
@@ -253,7 +322,8 @@ def run_search(
     result = strategy.finalize()
     seconds = time.time() - started
     summary: dict[str, Any] = {
-        "run_kind": _run_kind(strategy),
+        "run_kind": _run_kind(strategy, n_passes),
+        "strategy": type(strategy).__name__,
         "design_source": source,
         "n_design": len(strategy.design),
         "n_passes": n_passes,
@@ -285,7 +355,7 @@ def run_paired(
     provenance: Mapping[str, Any] | None = None,
     budgets: StepBudgets | None = None,
     verbose: bool = False,
-    echo: Callable[[str], None] = print,
+    echo: Callable[[str], None] | None = None,
 ) -> dict[str, RunOutcome]:
     """Run several strategies from one design at one budget, the design evaluated once.
 
@@ -305,14 +375,27 @@ def run_paired(
         dict[str, RunOutcome]: The outcome of each strategy's run, by name.
 
     Raises:
-        ValueError: If the names of the strategies and the paths differ.
-        FileExistsError: If a file of any of the runs exists, before the first run starts.
+        ValueError: If the names of the strategies and the paths differ, if two runs would share
+            a file, or if one strategy object appears under two names.
+        RuntimeError: If a strategy has already run.
+        FileExistsError: If a file of any of the runs exists.
+        All of these, and a pass configuration a later strategy could not use, before the first
+        run starts, so that a later strategy's mistake costs no design.
     """
     names = list(strategies)
     if not names or set(names) != set(csv_paths):
         raise ValueError("one CSV path per strategy, under the same names")
-    # Refused before the first run starts, so a second strategy's mistake costs no design.
+    if len({id(strategy) for strategy in strategies.values()}) != len(names):
+        raise ValueError("one strategy object under two names would run twice on one state")
+    claimed: dict[str, str] = {}
     for name in names:
+        for path in RunArtifacts(csv_paths[name]).paths().values():
+            if path in claimed:
+                msg = f"the runs {claimed[path]!r} and {name!r} would both write {path}"
+                raise ValueError(msg)
+            claimed[path] = name
+    for name in names:
+        _require_uninitialized(strategies[name], f"the strategy {name!r}")
         RunArtifacts(csv_paths[name]).refuse_taken()
     if n_passes > 0:
         for name in names:

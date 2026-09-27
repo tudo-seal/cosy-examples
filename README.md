@@ -133,13 +133,17 @@ is to be minimized is negated on the way in and the reported optimum on the way 
 | `diagnostics/` | the five reads over a run, and the run log beneath them |
 | `state.py` | `BOState`, `Suggestion`, `Diagnostics` |
 | `utils.py` | the conversions from a term to a labeled graph the graph kernels read |
+| `runs/` | the run layer: one driver for every strategy and the paired comparison, the metric schema and the recorder, the files of a run and its provenance, the term pool and resume, the search program and its samplers, the acquisition-optimizer builder, the watchdog |
 
-That is 21 modules of core, 6420 lines. `bayesian_optimization/examples/` holds 24 more modules and
-13 416 lines, and every one of them is an application: an example may not work around a defect in
-the core, it has to be fixed where it is. The dependency runs one way only, and no module outside
-`examples/` imports anything from inside it.
+That is 21 modules of core, 6430 lines, and the run layer's 12 modules, 2520 lines, which import
+no training framework and hold what a run over any space needs around the loop.
+`bayesian_optimization/examples/` holds 24 more modules and 12 070 lines, and every one of them is
+an application: an example may not work around a defect in the core or the run layer, it has to be
+fixed where it is. The dependency runs one way only: an example may import the run layer and the
+core, the run layer the core, and no module outside `examples/` imports anything from inside it.
 
-`bayesian_optimization/__init__.py` exports 37 names, and nothing else is public API.
+`bayesian_optimization/__init__.py` exports 37 names and `bayesian_optimization/runs/__init__.py`
+45, and nothing else is public API.
 
 ## The optimization loop
 
@@ -395,8 +399,8 @@ need rather than by topic.
 | `cnn_damg_network_algebras.py` | a `torch.nn.Module` per combinator, and three algebras |
 | `cnn_damg_kernels.py` | the named kernels a run may ask for |
 | `cnn_damg_reference_architectures.py` | published networks as fully concrete literals |
-| `cnn_damg_term_pool.py` | the evaluated terms themselves, beside the numbers of a run |
-| `cnn_damg_experiment_utils.py` | the search, the persistence and the timing the drivers share |
+| `cnn_damg_term_pool.py` | a re-export of `runs/term_pool.py`, kept so that the pools stored under its name still load |
+| `cnn_damg_experiment_utils.py` | the CIFAR layout of a run (`CIFAR_SCHEMA`), the evaluation and the example's driver; the generic parts re-exported from `runs/` |
 | `cnn_damg_cifar_experiment.py` | the CIFAR-10 driver |
 | `cnn_damg_verify_reference.py` | the reference training that anchors every comparison |
 

@@ -126,7 +126,8 @@ class TermPoolWriter:
             the target or the run's name. It goes into the header verbatim. This is not a second
             copy of the run's configuration file: that file stays the run's provenance record, and
             this is what makes the pickle recognizable on a machine which received only the pickle.
-        mode (str): ``"w"`` overwrites an existing file, which is what a run does. Its CSV is
+        mode (str): ``"w"`` overwrites an existing file, which is what a run does that was not
+            asked to refuse a taken name (``EvaluationRecorder`` passes ``"x"`` when it is). Its CSV is
             overwritten in the same breath, so the two artifacts cannot disagree about which run
             they belong to. ``"x"`` refuses one, which is what a pool does. A pool is paid for in
             trainings, and a second writer on a finished pool's path would spend them again on top
@@ -273,6 +274,10 @@ def resume_term_pool(path):
         header, records = truncated.header, truncated.records
         salvaged = True
 
+    if header.get("format") in LEGACY_FORMATS:
+        # The records are pickled again below, under this module's path, which a reader from
+        # before the move cannot import: the header says so with the current tag.
+        header = {**header, "format": FORMAT}
     rewritten = f"{path}.resuming"
     with open(rewritten, "xb") as handle:
         pickle.dump(header, handle)

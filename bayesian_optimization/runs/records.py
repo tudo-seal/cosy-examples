@@ -276,6 +276,10 @@ class EvaluationRecorder:
             # The CSV is already open here, and a caller that never got an instance back cannot
             # close it, since there is no ``__exit__`` for an object whose ``__init__`` raised.
             self._file.close()
+            if mode == "x":
+                # Created by this call and holding nothing but its header: removed, so that the
+                # retry is not refused as a run that is still writing.
+                os.remove(path)
             raise
 
     def log(self, phase, index, tree, metrics, suggestion=None, acquisition_seconds=None,

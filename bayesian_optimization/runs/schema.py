@@ -122,6 +122,13 @@ class MetricSchema:
     columns: tuple[Column, ...]
     live: Callable[[Mapping[str, Any]], str] | None = None
 
+    def __post_init__(self) -> None:
+        names = [column.name for column in self.columns]
+        repeated = sorted({name for name in names if names.count(name) > 1})
+        if repeated:
+            msg = f"a CSV header names each column once; {', '.join(repeated)} appear more than once"
+            raise ValueError(msg)
+
     @classmethod
     def for_metrics(
         cls,

@@ -19,7 +19,7 @@ class RunArtifacts:
     """Every file a run writes, named after its CSV.
 
     A run writes seven files beside each other, and a second start against the same name would
-    truncate the ones a first run is still writing, since every writer opens in ``"w"`` mode.  Named
+    truncate the ones a first run is still writing, since the per-pass loggers open in ``"w"`` mode.  Named
     here in one place, they can be checked all at once before anything is opened.
 
     Args:

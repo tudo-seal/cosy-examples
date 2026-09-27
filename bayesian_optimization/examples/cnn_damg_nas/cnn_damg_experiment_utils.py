@@ -1,9 +1,13 @@
-"""What the two cnn_damg_nas experiments share: the search, the persistence, the timing.
+"""What the two cnn_damg_nas experiments share: the CIFAR layout of a run, and its driver.
 
 The USPS and the CIFAR-10 script differ in their dataset, their search-space constants and their
 command line.  Everything between them, the acquisition optimizer, the ask/tell loop, the logging
-and the provenance record, was the same code in both files, character for character, and that is
-what lives here now.
+and the provenance record, was the same code in both files, character for character, and was then
+kept here.  The parts that name no CIFAR metric and no CNN alphabet have since moved into the run
+layer, :mod:`bayesian_optimization.runs`, and are re-exported from here: the search program and
+its samplers, the watchdog, the acquisition-optimizer builder, the term pool, the recorder, the
+run's files and its neutral provenance, and a driver for any strategy.  What stays is this
+example's own: its column layout ``CIFAR_SCHEMA``, its evaluation, and ``run_ask_tell_search``.
 
 The reason is not tidiness.  While it stood twice, every correction had to be made twice, and
 statements had drifted from what the code did: both metadata blocks named a survivor selection the

@@ -60,6 +60,28 @@ def load_initial_design(path, expected, phase="pre_sample"):
     Raises:
         ValueError: If the pool carries no matching provenance, or none of the requested phase.
     """
+    return [(record.term, record.metrics) for record in load_design_records(path, expected, phase)]
+
+
+def load_design_records(path, expected, phase="pre_sample"):
+    """Load the design records of an earlier run, checked against this run's configuration.
+
+    The records themselves rather than ``(term, metrics)`` pairs: a record carries the value the
+    loop was handed, which :func:`~bayesian_optimization.runs.driver.run_search` hands the loop
+    again when it resumes the design (``resume=``).  The provenance check is
+    :func:`load_initial_design`'s, which returns the pairs of these records.
+
+    Args:
+        path (str): The ``<run>_terms.pickle`` of the earlier run.
+        expected (dict): The fields the current run requires to match.
+        phase (str): Which phase's records to take. (Default value = "pre_sample")
+
+    Returns:
+        list[TermRecord]: The records of that phase, in the order they were measured.
+
+    Raises:
+        ValueError: If the pool carries no matching provenance, or none of the requested phase.
+    """
     header, records = read_term_pool(path)
     provenance = header.get("provenance") or {}
     mismatched = {
@@ -75,9 +97,11 @@ def load_initial_design(path, expected, phase="pre_sample"):
         )
         raise ValueError(msg)
 
-    design = [(record.term, record.metrics) for record in records if record.phase == phase]
+    design = [record for record in records if record.phase == phase]
     if not design:
         phases = sorted({record.phase for record in records})
         msg = f"{path} holds no {phase!r} records; it has {phases}"
         raise ValueError(msg)
     return design
+
+

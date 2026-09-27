@@ -114,3 +114,13 @@ class StepBudgets:
     per_evaluation: float = 900
     acquisition_warn: float = 600
     acquisition_hard_limit: float = 3600
+
+    def __post_init__(self) -> None:
+        # Refused where it is written: the watchdog refuses a budget that is not positive, and
+        # it would do so at the step, after the design before it was paid.
+        for name in ("space_construction", "determinization", "per_evaluation", "acquisition_warn",
+                     "acquisition_hard_limit"):
+            value = getattr(self, name)
+            if not value > 0:
+                msg = f"a step budget is a positive number of seconds; {name} is {value!r}"
+                raise ValueError(msg)

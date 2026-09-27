@@ -66,20 +66,28 @@ the same commands, so a red run there fails for the same reason it fails here.
 The slow tests are the end-to-end runs of the loop and are left to a local
 `pytest` before a change goes out.
 
-## Two layers, held to two standards
+## Three layers, held to two standards
 
-`bayesian_optimization/` outside `examples/` is a reusable core: 21 modules,
-6420 lines, and 37 exported names. A future caller has to be able to use
-that
-API without prior knowledge and without unwritten invariants, so a change
-there
-carries its reason in the code rather than in a commit message.
+`bayesian_optimization/` outside `runs/` and `examples/` is a reusable core:
+21 modules, 6430 lines, and 37 exported names. A future caller has to be able
+to use that API without prior knowledge and without unwritten invariants, so a
+change there carries its reason in the code rather than in a commit message.
 
-`bayesian_optimization/examples/` is applications only: 24 modules, 13 416
-lines. The dependency runs one way, and no module of
-`bayesian_optimization/`
-outside `examples/` imports anything from inside it. The tests do, 32 of
-them. An example may never paper over a defect in the core
+`bayesian_optimization/runs/` is the run layer, held to the same standard: 12
+modules, 2520 lines, and 45 exported names. It is what a run over any space
+needs around the loop: the driver for every strategy and the paired
+comparison, the metric schema and the recorder, the files of a run and its
+provenance, the term pool and resume, the search program and its samplers. It
+imports no training framework and nothing from `examples/`. Machinery that
+names no example's metric and no example's alphabet goes here, not into an
+example.
+
+`bayesian_optimization/examples/` is applications only: 24 modules, 12 070
+lines. An example holds its repository, its targets, its algebras, its
+evaluation and its command line. The dependency runs one way: an example may
+import the run layer and the core, the run layer the core, and no module of
+`bayesian_optimization/` outside `examples/` imports anything from inside it.
+The tests do, 33 of them. An example may never paper over a defect in the core
 or in `cosy` by handling the API cleverly. When a bug surfaces in an
 example,
 fix it at its root and take the workaround out.
