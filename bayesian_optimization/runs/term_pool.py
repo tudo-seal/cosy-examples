@@ -87,7 +87,7 @@ class TermRecord:
     term: Any
     metrics: dict = field(default_factory=dict)
     repeat: int = 0
-    #: The value the loop was handed for this evaluation, which a resumed design hands it again.
+    #: The value the loop was handed for this evaluation, which a resumed design is checked against.
     #: ``None`` where the writer did not know it, and for every record written before the field
     #: existed: such a record has no entry in its instance dictionary and reads the class default.
     loop_value: float | None = None

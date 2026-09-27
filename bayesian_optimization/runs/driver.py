@@ -5,7 +5,8 @@
 is drawn by the strategy, given as terms, or resumed from the records of an earlier run, and on
 every one of those paths each evaluation is written, row and term record, before the loop takes its
 value and before the next evaluation starts.  A resumed design is taken over term by term, each
-record read by the run's objective, or by the caller's reading of its metrics where one is named.
+record with the value it kept, checked against the run's objective, or with the caller's reading of
+its metrics where one is named.
 Everything that can be refused is refused before anything is drawn, opened or paid: a taken run
 name, a pass configuration no pass could use, a resumed record without a value.
 
@@ -79,16 +80,24 @@ def _resumed_values(
     """The value the loop is handed for each resumed record, refused where none can be named.
 
     The caller's reading, where it names one, reads every record.  Without one, a record hands the
-    loop this run's objective read off its metrics.  A loop value the record kept is the value the
-    loop of the run that WROTE it was handed, under that run's objective or under the reading it
-    took its design over with, so without a reading it has to agree with this run's: one that does
-    not was handed under another, and the record is refused rather than mixed in, as is a record
-    whose metrics do not report the objective.  Both refusals ask for the reading.
+    loop the value it kept, which is the value the loop of the run that WROTE it was handed, under
+    that run's objective or under the reading it took its design over with; so it has to be this
+    run's objective's reading of the record's metrics too, or it was handed under another, and the
+    record is refused rather than mixed in.  A record that kept no value is refused as well: its
+    metrics may name the objective's key and still mean another quantity, a caller's "objective
+    value" holding whatever that run maximized.  Every refusal asks for the reading.
     """
     values = []
     for index, record in enumerate(records):
         if resumed_value is not None:
             value = float(resumed_value(record.metrics))
+        elif record.loop_value is None:
+            msg = (
+                f"resumed record {index} kept no loop value, so nothing says what its metrics "
+                "meant to the loop that wrote it; name how they become the value this run's loop "
+                "maximizes with resumed_value"
+            )
+            raise ValueError(msg)
         else:
             try:
                 value = objective.loop_value(record.metrics)
@@ -98,7 +107,9 @@ def _resumed_values(
                     "name how its metrics become the value the loop maximizes with resumed_value"
                 )
                 raise ValueError(msg) from None
-            if record.loop_value is not None and float(record.loop_value) != value:
+            # A value that is not finite is refused below for what it is, not as a disagreement:
+            # nan agrees with nothing, not even the nan it was kept as.
+            if math.isfinite(value) and float(record.loop_value) != value:
                 msg = (
                     f"resumed record {index} kept the loop value {record.loop_value}, and this "
                     f"run's objective reads {value} off its metrics: the record was handed to a "
@@ -177,14 +188,16 @@ def run_search(
         design (Sequence | None): A design given as terms, evaluated as given. (Default value = None)
         resume (Sequence[TermRecord] | None): The design records of an earlier run of this
             configuration, taken over instead of evaluated: their terms are the design, and their
-            values are read off their metrics by the schema's objective or by ``resumed_value``.
-            Which records belong to which configuration is the caller's check (see
+            values the loop values they kept, checked against the schema's objective, or
+            ``resumed_value``'s reading of their metrics.  Which records belong to which
+            configuration is the caller's check (see
             :func:`~bayesian_optimization.runs.resume.load_design_records`). (Default value = None)
         resumed_value (Callable | None): How a resumed record's metrics become the value this
-            run's loop is handed.  Given, it reads every resumed record.  Omitted, the schema's
-            objective reads them, and a record that kept a loop value is refused unless the two
-            agree: a kept value is the value the loop of the run that wrote the record was handed,
-            under that run's objective or reading. (Default value = None)
+            run's loop is handed.  Given, it reads every resumed record.  Omitted, each record
+            hands the loop the value it kept, which must be the schema's objective's reading of
+            its metrics: a kept value is the value the loop of the run that wrote the record was
+            handed, under that run's objective or reading, and one that disagrees, like a record
+            that kept none, is refused. (Default value = None)
         provenance (Mapping | None): Written into the term pool's header. (Default value = None)
         budgets (StepBudgets | None): The watchdog's budgets; the CIFAR example's when omitted.
             (Default value = None)

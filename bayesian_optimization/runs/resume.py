@@ -67,8 +67,8 @@ def load_design_records(path, expected, phase="pre_sample"):
     """Load the design records of an earlier run, checked against this run's configuration.
 
     The records themselves rather than ``(term, metrics)`` pairs: a record carries the value the
-    loop was handed, which :func:`~bayesian_optimization.runs.driver.run_search` hands the loop
-    again when it resumes the design (``resume=``).  The provenance check is
+    loop was handed, which :func:`~bayesian_optimization.runs.driver.run_search` checks against
+    the resuming run's objective when it resumes the design (``resume=``).  The provenance check is
     :func:`load_initial_design`'s, which returns the pairs of these records.
 
     Args:

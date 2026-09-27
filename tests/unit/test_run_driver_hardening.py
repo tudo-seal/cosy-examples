@@ -130,6 +130,16 @@ def test_a_caller_s_reading_reads_every_resumed_record_and_a_disagreeing_kept_va
     assert not (tmp_path / "kept.csv").exists(), "refused before any file is opened"
 
 
+def test_a_resumed_nan_is_refused_as_not_finite_whatever_it_kept(tmp_path):
+    terms = _head(seed=3, count=2)
+    records = [TermRecord("pre_sample", i, term, {"score": math.nan}, loop_value=math.nan)
+               for i, term in enumerate(terms)]
+
+    with pytest.raises(ValueError, match="finite"):
+        _run(_random(3), _metrics, tmp_path / "run.csv", resume=records, n_passes=0)
+    assert not (tmp_path / "run.csv").exists()
+
+
 def test_a_pool_whose_values_another_reading_gave_does_not_resume_under_the_first_objective(
         tmp_path):
     """The chain a review found: a design measured under one objective, taken over under a second
@@ -151,6 +161,21 @@ def test_a_pool_whose_values_another_reading_gave_does_not_resume_under_the_firs
     outcome = _run(_random(6), _metrics, tmp_path / "d.csv", schema=length, resume=design_b,
                    n_passes=0)
     assert list(outcome.result["y"]) == [record.loop_value for record in design_b]
+
+
+def test_run_paired_hands_no_reading_on_for_a_design_its_first_arm_evaluated(tmp_path):
+    """A caller may pass a reading on every run; for a drawn design it reads nothing, and the arms
+    start from the values the first arm's loop was handed."""
+    outcomes = run_paired(
+        {"bo": _bo(5), "random": _random(5)}, _metrics, schema=SCHEMA, n_design=3, n_passes=1,
+        resumed_value=lambda metrics: 100.0 + metrics["length"],
+        csv_paths={"bo": str(tmp_path / "bo.csv"), "random": str(tmp_path / "random.csv")},
+        pretty_algebra=dict, echo=_quiet,
+    )
+
+    design = list(outcomes["bo"].result["y"][:3])
+    assert all(value < 1.0 for value in design), "scores, not the reading's values"
+    assert list(outcomes["random"].result["y"][:3]) == design
 
 
 def test_run_paired_resumes_every_arm_under_the_caller_s_reading(tmp_path):
@@ -253,7 +278,8 @@ REFUSALS = {
     "bo without a design": (lambda: _bo(0), {"n_design": 0, "n_passes": 1}, ValueError),
     "non-finite resumed value": (
         lambda: _random(0),
-        {"resume": [TermRecord("pre_sample", 0, Tree("a"), {}, loop_value=math.inf)]},
+        {"resume": [TermRecord("pre_sample", 0, Tree("a"), {"score": math.inf},
+                               loop_value=math.inf)]},
         ValueError,
     ),
 }
