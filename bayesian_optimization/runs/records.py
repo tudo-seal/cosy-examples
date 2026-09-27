@@ -241,8 +241,9 @@ class EvaluationRecorder:
     would forget, and a run that omits it cannot be repaired afterwards.
 
     The columns are the schema's (:class:`~bayesian_optimization.runs.schema.MetricSchema`), so a
-    caller records its own metrics under its own names; the term record keeps the metrics whole and
-    the value the loop was handed, which is what a resumed design hands the loop again.
+    caller records its own metrics under its own names; the term record keeps the metrics whole,
+    the value the loop was handed, which a resumed design is checked against, and whether the row
+    was taken over.
 
     Args:
         path (str): The run's CSV.  The term records go beside it as ``<run>_terms.pickle``.
@@ -291,7 +292,8 @@ class EvaluationRecorder:
         ``Suggestion`` that produced a pass and carries the acquisition value and the fallback
         state; a term of the design has none, and its cells stay empty.  ``loop_value`` is the
         value the loop was handed for this evaluation, kept in the term record.  ``taken_over``
-        marks a row whose value came from an earlier run's record, for the schema's column of it.
+        marks a row whose value came from an earlier run's record, in the schema's column of it and
+        in the term record.
         """
         structure = tree.interpret(self._pretty_algebra())
         self._writer.writerow(self._schema.row(
@@ -307,7 +309,8 @@ class EvaluationRecorder:
             taken_over=taken_over,
         ))
         self._file.flush()  # persist at once, so a crash mid-run loses no completed row
-        self._terms.write(phase, index, tree, metrics, loop_value=loop_value)
+        self._terms.write(phase, index, tree, metrics, loop_value=loop_value,
+                          taken_over=taken_over)
 
     def close(self):
         try:

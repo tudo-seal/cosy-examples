@@ -241,7 +241,7 @@ def build_search(
             covers the alphabet of the synthesized program, as ``make_alphabet_check`` of
             :mod:`bayesian_optimization.examples.recognizable_swap_laws` builds it.  It is
             called on the program before the determinization, and the ``terminals`` it reports
-            go into the provenance.  Required and without a default, because a search that
+            go into the provenance, sorted.  Required and without a default, because a search that
             skipped the check would determinize a program its abstraction may not cover, and
             nothing would say so.  ``sampling="depth-bounded"`` does not call it.
         sampling (str): ``"size-uniform"`` determinizes and counts from the program.
@@ -333,7 +333,8 @@ def build_search(
             "determinization_rules": rules,
             "determinization_state_limit": state_limit,
             "abstraction_count": len(determinization.abstractions),
-            "terminals": alphabet["terminals"],
+            # Sorted here rather than trusted sorted: the record is compared across runs.
+            "terminals": sorted(alphabet["terminals"]),
         },
     )
 

@@ -4,8 +4,8 @@
 :class:`~bayesian_optimization.runs.schema.MetricSchema`.  The design is the loop's first phase: it
 is drawn by the strategy, given as terms, or resumed from the records of an earlier run, and on
 every one of those paths each evaluation is written, row and term record, before the loop takes its
-value and before the next evaluation starts.  A resumed design is taken over term by term, with the
-value the loop was handed when it was measured, or with the caller's reading of its metrics.
+value and before the next evaluation starts.  A resumed design is taken over term by term, each
+record read by the run's objective, or by the caller's reading of its metrics where one is named.
 Everything that can be refused is refused before anything is drawn, opened or paid: a taken run
 name, a pass configuration no pass could use, a resumed record without a value.
 
@@ -72,27 +72,39 @@ def _run_kind(strategy: AskTellLoop, n_passes: int) -> str:
 
 
 def _resumed_values(
-    records: Sequence[TermRecord], resumed_value: Callable[[Mapping[str, Any]], float] | None
+    records: Sequence[TermRecord],
+    resumed_value: Callable[[Mapping[str, Any]], float] | None,
+    objective: Objective,
 ) -> list[float]:
     """The value the loop is handed for each resumed record, refused where none can be named.
 
-    The caller's reading, where it names one, reads every record: a kept loop value is the value
-    under the objective of the run that measured the record, and a run under another objective
-    reads its own.  Without a reading the kept values are the values.
+    The caller's reading, where it names one, reads every record.  Without one, a record hands the
+    loop this run's objective read off its metrics.  A loop value the record kept is the value the
+    loop of the run that WROTE it was handed, under that run's objective or under the reading it
+    took its design over with, so without a reading it has to agree with this run's: one that does
+    not was handed under another, and the record is refused rather than mixed in, as is a record
+    whose metrics do not report the objective.  Both refusals ask for the reading.
     """
     values = []
     for index, record in enumerate(records):
         if resumed_value is not None:
             value = float(resumed_value(record.metrics))
-        elif record.loop_value is not None:
-            value = float(record.loop_value)
         else:
-            msg = (
-                f"resumed record {index} carries no loop value, since it was written before the "
-                "pool kept one; name how its metrics become the value the loop maximizes with "
-                "resumed_value"
-            )
-            raise ValueError(msg)
+            try:
+                value = objective.loop_value(record.metrics)
+            except (KeyError, TypeError, ValueError) as error:
+                msg = (
+                    f"resumed record {index} cannot be read by this run's objective ({error}); "
+                    "name how its metrics become the value the loop maximizes with resumed_value"
+                )
+                raise ValueError(msg) from None
+            if record.loop_value is not None and float(record.loop_value) != value:
+                msg = (
+                    f"resumed record {index} kept the loop value {record.loop_value}, and this "
+                    f"run's objective reads {value} off its metrics: the record was handed to a "
+                    "loop under another objective or reading; name the reading with resumed_value"
+                )
+                raise ValueError(msg)
         if not math.isfinite(value):
             msg = f"resumed record {index} hands the loop {value}, and the loop takes finite values"
             raise ValueError(msg)
@@ -164,14 +176,15 @@ def run_search(
         n_passes (int): The budget of passes after the design. (Default value = 0)
         design (Sequence | None): A design given as terms, evaluated as given. (Default value = None)
         resume (Sequence[TermRecord] | None): The design records of an earlier run of this
-            configuration, taken over instead of evaluated: their terms are the design and their
-            loop values the values. Which records belong to which configuration is the caller's
-            check (see :func:`~bayesian_optimization.runs.resume.load_initial_design`).
-            (Default value = None)
+            configuration, taken over instead of evaluated: their terms are the design, and their
+            values are read off their metrics by the schema's objective or by ``resumed_value``.
+            Which records belong to which configuration is the caller's check (see
+            :func:`~bayesian_optimization.runs.resume.load_design_records`). (Default value = None)
         resumed_value (Callable | None): How a resumed record's metrics become the value this
-            run's loop is handed.  Given, it reads every resumed record, also one that kept a loop
-            value, since a kept value is the one the measuring run's objective gave; omitted, the
-            kept values are taken, and a record without one is refused. (Default value = None)
+            run's loop is handed.  Given, it reads every resumed record.  Omitted, the schema's
+            objective reads them, and a record that kept a loop value is refused unless the two
+            agree: a kept value is the value the loop of the run that wrote the record was handed,
+            under that run's objective or reading. (Default value = None)
         provenance (Mapping | None): Written into the term pool's header. (Default value = None)
         budgets (StepBudgets | None): The watchdog's budgets; the CIFAR example's when omitted.
             (Default value = None)
@@ -208,7 +221,7 @@ def run_search(
     terms: list[Any] | None = None
     if resume is not None:
         records = list(resume)
-        values = _resumed_values(records, resumed_value)
+        values = _resumed_values(records, resumed_value, schema.objective)
         terms = [record.term for record in records]
         source = "resumed"
     elif design is not None:
@@ -368,7 +381,8 @@ def run_paired(
     """Run several strategies from one design at one budget, the design evaluated once.
 
     The first strategy runs the design as :func:`run_search` would, drawn, given or resumed; every
-    other one takes that design over from the first run's records and then makes its own passes.
+    other one takes that design over from the first run's records, a resumed one under the same
+    ``resumed_value``, and then makes its own passes.
     Whether one strategy beats another is a question about the passes only if they start from the
     same place, and sharing the evaluated design is also what makes the comparison cost one extra
     budget of passes per strategy rather than one extra design.
@@ -419,8 +433,12 @@ def run_paired(
     )}
     _header, records = read_term_pool(RunArtifacts(csv_paths[first]).path("terms"))
     shared = [record for record in records if record.phase == DESIGN_PHASE]
+    # A design the first run took over under a reading carries that reading's values, which the
+    # objective may not read off the metrics; the other runs take it over under the same reading.
+    reading = resumed_value if resume is not None else None
     for name in names[1:]:
         outcomes[name] = run_search(
-            strategies[name], evaluate, csv_path=csv_paths[name], resume=shared, **common
+            strategies[name], evaluate, csv_path=csv_paths[name], resume=shared,
+            resumed_value=reading, **common,
         )
     return outcomes

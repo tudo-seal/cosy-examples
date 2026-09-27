@@ -1,7 +1,8 @@
 """The run layer's promises under the cases a review found unguarded.
 
-A minimizing objective enters the loop negated and comes back in its own sign.  A resumed record's
-own loop value wins over a caller's reading, and a resumed run keeps the values for the next resume.
+A minimizing objective enters the loop negated and comes back in its own sign.  A caller's reading
+reads every resumed record; without one, a kept value must be the run's objective's reading of the
+record, and a resumed run keeps the values for the next resume.
 An evaluation is on disk before the loop refuses its value, and before the run stops on a missing
 objective.  Everything that can be refused is refused before a file is opened, so a corrected retry
 under the same name runs; ``run_paired`` refuses a later strategy's mistakes before the first
@@ -104,12 +105,13 @@ def test_a_minimizing_objective_enters_negated_and_reports_in_its_own_sign(tmp_p
 
 # --- resume --------------------------------------------------------------------------------------
 
-def test_a_caller_s_reading_reads_every_resumed_record_and_the_kept_value_stands_otherwise(
+def test_a_caller_s_reading_reads_every_resumed_record_and_a_disagreeing_kept_value_is_refused(
         tmp_path):
-    """A kept loop value is the value under the objective of the run that measured the record.
+    """A kept loop value is the value the loop of the run that wrote the record was handed.
 
-    A run that names its own reading resumes under its own objective, which may be another one,
-    so the reading is taken for every record; without one, the kept values are the values.
+    A run that names its own reading resumes under it, whatever the records kept.  Without one, a
+    kept value that this run's objective does not read off the record's metrics was handed to a
+    loop under another objective or reading, and it is refused rather than mixed in.
     """
     terms = _head(seed=3, count=3)
     records = [TermRecord("pre_sample", i, term, {"score": 0.1 * (i + 1)}, loop_value=0.5 + i / 10)
@@ -117,14 +119,54 @@ def test_a_caller_s_reading_reads_every_resumed_record_and_the_kept_value_stands
 
     read = _run(_random(3), _metrics, tmp_path / "read.csv", resume=records, n_passes=0,
                 resumed_value=lambda metrics: metrics["score"])
-    kept = _run(_random(3), _metrics, tmp_path / "kept.csv", resume=records, n_passes=0)
-
     assert list(read.result["y"]) == pytest.approx([0.1, 0.2, 0.3])
-    assert list(kept.result["y"]) == [0.5, 0.6, 0.7]
     _header, rewritten = read_term_pool(tmp_path / "read_terms.pickle")
     assert [record.loop_value for record in rewritten] == pytest.approx([0.1, 0.2, 0.3]), (
         "the run's own records keep the value this run was handed, for the next resume"
     )
+
+    with pytest.raises(ValueError, match="kept"):
+        _run(_random(3), _metrics, tmp_path / "kept.csv", resume=records, n_passes=0)
+    assert not (tmp_path / "kept.csv").exists(), "refused before any file is opened"
+
+
+def test_a_pool_whose_values_another_reading_gave_does_not_resume_under_the_first_objective(
+        tmp_path):
+    """The chain a review found: a design measured under one objective, taken over under a second
+    with a reading, then resumed under the first without one, which mixed the two quantities."""
+    length = MetricSchema.for_metrics(Objective("length"), ["score", "length"])
+    _run(_random(4), _metrics, tmp_path / "a.csv", n_design=3, n_passes=0)
+    _header, from_a = read_term_pool(tmp_path / "a_terms.pickle")
+    _run(_random(5), _metrics, tmp_path / "b.csv", schema=length, resume=from_a, n_passes=0,
+         resumed_value=lambda metrics: float(metrics["length"]))
+    _header, from_b = read_term_pool(tmp_path / "b_terms.pickle")
+    design_b = [record for record in from_b if record.phase == "pre_sample"]
+    assert [r.loop_value for r in design_b] == [float(r.metrics["length"]) for r in design_b]
+
+    with pytest.raises(ValueError, match="resumed_value"):
+        _run(_random(6), _metrics, tmp_path / "c.csv", resume=design_b, n_passes=1)
+    assert not (tmp_path / "c.csv").exists()
+
+    # under the objective whose values the records kept, they resume without a reading
+    outcome = _run(_random(6), _metrics, tmp_path / "d.csv", schema=length, resume=design_b,
+                   n_passes=0)
+    assert list(outcome.result["y"]) == [record.loop_value for record in design_b]
+
+
+def test_run_paired_resumes_every_arm_under_the_caller_s_reading(tmp_path):
+    terms = _head(seed=4, count=3)
+    records = [TermRecord("pre_sample", i, term, {"score": 0.1 * (i + 1), "accuracy": 0.9 - i / 10})
+               for i, term in enumerate(terms)]
+
+    outcomes = run_paired(
+        {"bo": _bo(4), "random": _random(4)}, _metrics, schema=SCHEMA, resume=records,
+        resumed_value=lambda metrics: metrics["accuracy"], n_passes=1,
+        csv_paths={"bo": str(tmp_path / "bo.csv"), "random": str(tmp_path / "random.csv")},
+        pretty_algebra=dict, echo=_quiet,
+    )
+
+    for name in ("bo", "random"):
+        assert list(outcomes[name].result["y"][:3]) == pytest.approx([0.9, 0.8, 0.7]), name
 
 
 def test_a_resumed_run_keeps_the_loop_values_for_the_next_resume(tmp_path):
@@ -188,8 +230,10 @@ def test_an_evaluation_without_its_objective_is_on_disk_before_the_run_stops(tmp
     rows = _rows(tmp_path / "run.csv")
     assert len(rows) == 2
     assert rows[-1]["loop_value"] == ""
+    assert rows[-1]["taken_over"] == "False", "an evaluation this run made, if a failed one"
     _h, records = read_term_pool(tmp_path / "run_terms.pickle")
     assert records[-1].loop_value is None
+    assert records[-1].taken_over is False
 
 
 # --- refused before a file is opened, so the retry runs ------------------------------------------

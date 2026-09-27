@@ -91,6 +91,9 @@ class TermRecord:
     #: ``None`` where the writer did not know it, and for every record written before the field
     #: existed: such a record has no entry in its instance dictionary and reads the class default.
     loop_value: float | None = None
+    #: Whether the record was taken over from an earlier run's record rather than evaluated by the
+    #: run that wrote it; ``False`` for every record written before the field existed, as above.
+    taken_over: bool = False
 
 
 class TruncatedTermPool(Exception):
@@ -168,7 +171,7 @@ class TermPoolWriter:
         )
         self._file.flush()
 
-    def write(self, phase, index, term, metrics, repeat=0, loop_value=None):
+    def write(self, phase, index, term, metrics, repeat=0, loop_value=None, taken_over=False):
         """Append one evaluation and flush it.
 
         Args:
@@ -179,11 +182,12 @@ class TermPoolWriter:
                 its dict does not rewrite records already on disk.
             repeat (int): See :class:`TermRecord`. (Default value = 0)
             loop_value (float | None): See :class:`TermRecord`. (Default value = None)
+            taken_over (bool): See :class:`TermRecord`. (Default value = False)
         """
         pickle.dump(
             TermRecord(
                 phase=phase, index=index, term=term, metrics=dict(metrics), repeat=repeat,
-                loop_value=loop_value,
+                loop_value=loop_value, taken_over=taken_over,
             ),
             self._file,
         )

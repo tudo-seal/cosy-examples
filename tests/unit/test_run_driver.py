@@ -147,16 +147,39 @@ def test_a_row_says_whether_this_run_measured_it_or_took_it_over(tmp_path):
     )
 
 
-def test_a_record_without_the_loop_s_value_needs_the_caller_s_reading(tmp_path):
+def test_a_row_and_its_record_say_taken_over_on_every_resume(tmp_path):
+    """Through a caller's reading and from a pool that kept no values, as from kept ones."""
+    terms = _stream_head(seed=8, count=2)
+    legacy = [TermRecord("pre_sample", i, term, {"score": 0.3 + i / 10, "accuracy": 0.5 + i / 10})
+              for i, term in enumerate(terms)]
+
+    _run(_random(8), _metrics, tmp_path / "read.csv", resume=legacy, n_passes=1,
+         resumed_value=lambda metrics: metrics["accuracy"])
+    _run(_random(8), _metrics, tmp_path / "plain.csv", resume=legacy, n_passes=1)
+
+    for name in ("read", "plain"):
+        assert [row["taken_over"] for row in _rows(tmp_path / f"{name}.csv")] == [
+            "True", "True", "False"], name
+        _header, records = read_term_pool(tmp_path / f"{name}_terms.pickle")
+        assert [record.taken_over for record in records] == [True, True, False], name
+
+
+def test_a_resumed_record_hands_the_loop_the_run_s_objective_or_the_caller_s_reading(tmp_path):
+    """A record without a kept value, written before records kept one, is read by the objective."""
     terms = _stream_head(seed=2, count=3)
     legacy = [TermRecord("pre_sample", i, term, {"score": 0.5 + i / 10}) for i, term in enumerate(terms)]
 
+    outcome = _run(_random(2), _metrics, tmp_path / "read.csv", resume=legacy, n_passes=0)
+    assert list(outcome.result["y"]) == [0.5, 0.6, 0.7]
+
+    unread = [TermRecord("pre_sample", i, term, {"accuracy": 0.5 + i / 10})
+              for i, term in enumerate(terms)]
     with pytest.raises(ValueError, match="resumed_value"):
-        _run(_random(2), _metrics, tmp_path / "refused.csv", resume=legacy, n_passes=0)
+        _run(_random(2), _metrics, tmp_path / "refused.csv", resume=unread, n_passes=0)
     assert not (tmp_path / "refused.csv").exists(), "refused before any file is opened"
 
-    outcome = _run(_random(2), _metrics, tmp_path / "read.csv", resume=legacy, n_passes=0,
-                   resumed_value=lambda metrics: metrics["score"])
+    outcome = _run(_random(2), _metrics, tmp_path / "named.csv", resume=unread, n_passes=0,
+                   resumed_value=lambda metrics: metrics["accuracy"])
     assert list(outcome.result["y"]) == [0.5, 0.6, 0.7]
 
 

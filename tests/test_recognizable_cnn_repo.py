@@ -425,6 +425,23 @@ def test_the_size_uniform_mode_searches_the_coupled_program_and_counts_the_other
     assert provenance["terminals"], "the check has to have seen the program's terminals"
 
 
+def test_the_search_records_the_terminals_sorted_whatever_order_the_guard_returns(original):
+    """The provenance is compared across runs, so its alphabet has one order, not the guard's."""
+    from bayesian_optimization.runs import build_search as build_program
+
+    original_space, target = original
+
+    def reversed_guard(space):
+        found = check_alphabet(space)
+        return {**found, "terminals": list(reversed(found["terminals"]))}
+
+    program = build_program(
+        RecognizableCNNrepository(**PARAMETER_SETS), target, check_alphabet=reversed_guard
+    )
+
+    assert program.provenance["terminals"] == sorted(check_alphabet(original_space)["terminals"])
+
+
 def test_the_sampler_draws_the_terms_the_loop_s_program_derives(original):
     """The claim the split rests on: one language, so a drawn term is an inhabitant.
 

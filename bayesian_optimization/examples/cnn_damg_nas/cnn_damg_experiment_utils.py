@@ -986,7 +986,8 @@ def run_ask_tell_search(
                     source = ""
                 # Written before the loop takes the value, so that a value the loop refuses, a
                 # non-finite one, is on disk together with the metrics that explain it.
-                logger.log("pre_sample", idx, tree, metrics)
+                logger.log("pre_sample", idx, tree, metrics,
+                           taken_over=resume_design is not None)
                 print(f"  pre_sample[{idx}]: objective={as_reported(value):.5f} "
                       f"accuracy={metrics['accuracy']:.4f} "
                       f"params={metrics['n_params']} "

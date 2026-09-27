@@ -121,6 +121,10 @@ def test_a_resumed_run_does_not_call_the_objective(monkeypatch, bo_factory, tmp_
     )
 
     assert trained == [], "a resumed design must not retrain anything"
+    from bayesian_optimization.runs import read_term_pool
+
+    _header, records = read_term_pool(str(tmp_path / "resumed_terms.pickle"))
+    assert [record.taken_over for record in records if record.phase == "pre_sample"] == [True] * 3
     # And the metrics are where everything downstream looks for them.
     assert {tree: metrics["accuracy"] for tree, metrics in metrics_by_tree.items()} == {
         Tree("a"): 0.5, Tree("b"): 0.6, Tree("c"): 0.7
