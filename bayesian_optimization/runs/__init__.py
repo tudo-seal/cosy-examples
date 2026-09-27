@@ -24,7 +24,7 @@ from .records import (
     SurrogateLogger,
     kernel_hyperparameters,
 )
-from .resume import load_initial_design
+from .resume import load_design_records, load_initial_design
 from .run_diagnostics import write_run_diagnostics
 from .schema import LOOP_FIELDS, Column, MetricSchema, Objective
 from .search_program import (
@@ -89,6 +89,7 @@ __all__ = [
     "describe_sampler",
     "describe_search",
     "kernel_hyperparameters",
+    "load_design_records",
     "load_initial_design",
     "metadata_path_for",
     "read_term_pool",

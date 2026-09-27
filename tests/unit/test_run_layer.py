@@ -39,6 +39,15 @@ def _rows(path):
         return list(csv.reader(handle))
 
 
+def test_the_loader_of_design_records_is_the_run_layer_s():
+    """``run_search(resume=)`` takes records, and the loader that checks them is where it is."""
+    from bayesian_optimization import runs
+    from bayesian_optimization.runs import resume
+
+    assert runs.load_design_records is resume.load_design_records
+    assert "load_design_records" in runs.__all__
+
+
 # --- the objective ------------------------------------------------------------------------------
 
 def test_the_objective_reads_the_loop_s_value_off_the_metrics_in_its_direction():
