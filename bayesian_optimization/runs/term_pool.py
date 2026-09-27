@@ -220,6 +220,9 @@ def read_term_pool(path):
         TruncatedTermPool: If the file ends inside a record. The exception carries the records
             that decoded whole, so a caller that wants an interrupted run's results can take them,
             but has to ask.
+        ImportError, AttributeError: If a record's classes cannot be found where the pool is
+            read. Such a record is whole, and reading it as the end of an interrupted file would
+            let :func:`resume_term_pool` rewrite the pool without it.
     """
     with open(path, "rb") as handle:
         try:
@@ -241,6 +244,8 @@ def read_term_pool(path):
                 records.append(pickle.load(handle))
             except EOFError:
                 return header, records
+            except (ImportError, AttributeError):
+                raise
             except Exception as exc:  # noqa: BLE001
                 raise TruncatedTermPool(str(path), header, records, exc) from exc
 
@@ -269,6 +274,8 @@ def resume_term_pool(path):
 
     Raises:
         ValueError: If the file is not a term pool. See :func:`read_term_pool`.
+        ImportError, AttributeError: If a record's classes cannot be found here; the pool is left
+            as it is. See :func:`read_term_pool`.
         FileExistsError: If the rewrite's sibling path is already taken.
     """
     try:

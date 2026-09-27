@@ -100,6 +100,36 @@ def test_everything_written_before_an_interruption_is_readable(tmp_path):
     assert "interrupted" in str(raised.value)
 
 
+def test_a_record_whose_class_cannot_be_imported_is_not_read_as_a_torn_tail(tmp_path):
+    """A pool opened where its terms' classes do not import is a whole pool, not an interrupted
+    one: resuming it must not rewrite it from the records that decoded, which here are none."""
+    import sys
+
+    from bayesian_optimization.runs import resume_term_pool
+
+    module_dir = tmp_path / "gone"
+    module_dir.mkdir()
+    (module_dir / "vanishing_terms.py").write_text("class Term:\n    pass\n")
+    sys.path.insert(0, str(module_dir))
+    try:
+        import vanishing_terms
+
+        path = tmp_path / "run_terms.pickle"
+        with TermPoolWriter(path) as writer:
+            for index in range(3):
+                writer.write("pre_sample", index, vanishing_terms.Term(), {"score": 0.5})
+    finally:
+        sys.path.remove(str(module_dir))
+        sys.modules.pop("vanishing_terms", None)
+    before = path.read_bytes()
+
+    with pytest.raises(ImportError):
+        read_term_pool(path)
+    with pytest.raises(ImportError):
+        resume_term_pool(path)
+    assert path.read_bytes() == before, "the pool is left as it was"
+
+
 def test_a_file_that_is_not_a_term_pool_says_so(tmp_path):
     """Reading the wrong pickle must fail loudly rather than yield an empty pool."""
     path = tmp_path / "other.pickle"
