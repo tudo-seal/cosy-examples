@@ -269,7 +269,7 @@ def _check_request_against_space(search_space: Any, request: Any) -> None:
     raise ValueError(msg)
 
 
-# The diagnostics keys a trace row is read from.  ``Diagnostics`` declares three more, and no
+# The diagnostics keys a trace row is read from.  ``Diagnostics`` declares four more, and no
 # column of the row is built from any of them, so a row is complete without them.
 _TRACE_DIAGNOSTICS_KEYS: tuple[str, ...] = (
     "iteration",
@@ -296,28 +296,29 @@ def _require_trace_diagnostics(suggestion: Suggestion) -> tuple[Diagnostics, flo
 
     Raises:
         ValueError: If the suggestion carries no diagnostics, no acquisition value, or
-            diagnostics without every key a row is read from.  Every suggestion this class
-            produces carries all of them.  One that does not came from somewhere else, and a row
+            diagnostics without every key a row is read from.  Every pass this class suggests
+            carries all of them; a term of the design phase carries none, and :meth:`observe`
+            takes it back without asking this.  One that does not came from somewhere else, and a row
             of substitute values would be a run description nobody measured.
     """
     diagnostics = suggestion.diagnostics
     if diagnostics is None:
         msg = (
             "this suggestion carries no diagnostics, so there is nothing to write a trace row "
-            "from.  Every suggestion suggest() returns carries them."
+            "from.  Every pass suggest() returns carries them."
         )
         raise ValueError(msg)
     if suggestion.acquisition_value is None:
         msg = (
             "this suggestion carries no acquisition value, so its trace row would have no score "
-            "at the pick.  Every suggestion suggest() returns carries one."
+            "at the pick.  Every pass suggest() returns carries one."
         )
         raise ValueError(msg)
     missing = [key for key in _TRACE_DIAGNOSTICS_KEYS if key not in diagnostics]
     if missing:
         msg = (
             f"this suggestion's diagnostics are missing {', '.join(missing)}, so a trace row "
-            "cannot be written from them.  Every suggestion suggest() returns carries all of "
+            "cannot be written from them.  Every pass suggest() returns carries all of "
             "them, and a row assembled around a gap would be a run description nobody measured."
         )
         raise ValueError(msg)
@@ -378,6 +379,25 @@ class BayesianOptimization(Generic[NT, T, G]):
             y = objective(suggestion.candidate)
             bo.observe(suggestion.candidate, y)
         result = bo.finalize()
+
+    Workflow, ask/tell with the design as the loop's first phase::
+
+        bo = BayesianOptimization(search_space, request, optimizer=ea)
+        bo.check_configuration()          # refuse a pass configuration before anything is paid
+        bo.initialize(initial_size=mu_0)  # draws the design, evaluates nothing; or design=terms
+        for _ in range(len(bo.design) + budget):
+            suggestion = bo.suggest()     # the design terms first, in order, then the passes
+            y = objective(suggestion.candidate)
+            bo.observe(suggestion.candidate, y)
+        result = bo.finalize()
+
+    The design phase moves the evaluation of the initial design out of :meth:`initialize` and
+    changes nothing else: the terms it hands out are the terms the closed path evaluates, and the
+    first pass after it is the pass that follows ``initialize(x0, y0)`` on the same pairs.  What it
+    buys is the seam between drawing and evaluating.  A caller writes every value as it is measured,
+    takes over values that already exist by observing them instead of measuring them again, and
+    keeps every value it paid for when an evaluation fails, because each one is in the dataset the
+    moment it is observed.
 
     Parameters
     ----------
@@ -576,6 +596,12 @@ class BayesianOptimization(Generic[NT, T, G]):
         self._initializer: Initializer[NT, T, G] | None = None
         self._generator_query: Any = None
         self._iteration: int = 0
+        # The design phase: the initial design in the order it is handed out, the position of the
+        # next term to hand out, and whether the suggestion outstanding is a design term rather
+        # than a pass.  Kept apart from the diagnostics, which the caller holds and could alter.
+        self._design: tuple[Any, ...] = ()
+        self._design_next: int = 0
+        self._design_outstanding: bool = False
         self._warned_about_model_selection: bool = False
         self._warned_about_frozen_hyperparameters: bool = False
         self._warned_about_exploitation: bool = False
@@ -650,18 +676,29 @@ class BayesianOptimization(Generic[NT, T, G]):
         initial_size: int = 10,
         gp_params: dict[str, Any] | None = None,
         alpha: float = _JITTER,
+        design: Sequence[Any] | None = None,
     ) -> None:
-        """Build the initial dataset and transition to INITIALIZED state.
+        """Build the initial dataset, or start the design phase that builds it.
 
         This is the loop's first step, the dataset ``D <- ((t, sigma(q(t))) | t in init(mu_0))``
         of the terms the initializer draws paired with their objective values, with the
-        engineering layer's addition that the caller may hand the pairs over ready-made.
+        engineering layer's addition that the caller may hand the pairs over ready-made.  With an
+        objective, or with ``x0`` and ``y0``, the dataset is complete when this returns and the
+        state is INITIALIZED.
+
+        Without either, the design is the loop's first phase.  ``initialize(initial_size=mu_0)``
+        draws the design exactly as the closed path draws it, evaluates nothing, and enters DESIGN;
+        ``initialize(design=terms)`` does the same with terms the caller hands over.
+        :meth:`suggest` then hands the design out in order and :meth:`observe` takes each value
+        back, and after the last one the state is INITIALIZED and the passes begin.  The design
+        is readable as :attr:`design` from the moment it exists.
 
         Parameters
         ----------
         objective:
-            The objective ``sigma . q``, which is maximized.  Required when ``y0`` is
-            ``None``.
+            The objective ``sigma . q``, which is maximized.  With ``x0`` it is required when
+            ``y0`` is ``None``; without ``x0`` and without ``y0`` its absence starts the design
+            phase.
         x0:
             Initial candidate trees.  When ``None`` the initializer draws them
             (requires a non-``None`` ``search_space``).  Either way every term has to be
@@ -676,27 +713,39 @@ class BayesianOptimization(Generic[NT, T, G]):
             Extra kwargs forwarded to ``GaussianProcessRegressor``.
         alpha:
             The numerical diagonal added to the Gram matrix.  See :data:`_JITTER`.
+        design:
+            Terms whose values come back one at a time through :meth:`observe`, handed out by
+            :meth:`suggest` in this order.  A fixed design, given rather than drawn, so it needs
+            no search space.  It takes no ``x0``, ``y0`` or ``objective`` beside it, and it must
+            not repeat a term, since a repeated design term is an evaluation spent on a value the
+            dataset already holds.  An empty design is a complete one.
         """
         if self._bo_state != BOState.UNINITIALIZED:
             raise RuntimeError(
                 f"Cannot re-initialize: current state is {self._bo_state.value}. "
                 "Call reset() first."
             )
+        if design is not None:
+            # Checked before anything is built, so a refused call leaves nothing behind.
+            if x0 is not None or y0 is not None or objective is not None:
+                raise ValueError(
+                    "a design is handed over as terms whose values come back through observe(), "
+                    "so it takes no x0, y0 or objective beside it"
+                )
+            design_terms = list(design)
+            _require_hashable(design_terms, "design")
+            if len(set(design_terms)) != len(design_terms):
+                raise ValueError(
+                    "the design repeats a term: a repeated design term is an evaluation spent on "
+                    "a value the dataset already holds"
+                )
+            # A design handed over is not drawn, but the passes after it still replace a
+            # duplicate with a fresh draw, so the sampler is built here as on every other path.
+            self._resolve_sampling()
+            self._start_design(design_terms, 0, gp_params=gp_params, alpha=alpha)
+            return
 
-        # The sampler is built whenever there is a space to draw from: the duplicate fallback of
-        # suggest() draws from it whichever initializer the caller chose.
-        if self._sampler is None and self.search_space is not None:
-            self._sampler = (
-                SizeUniformSampler(DEFAULT_SIZE_BOUND, random.Random(self.seed))
-                if self.sampler is None
-                else self.sampler
-            )
-        if self._initializer is None and self._sampler is not None:
-            self._initializer = (
-                SampledInitialization(self._sampler)
-                if self.initializer is None
-                else self.initializer
-            )
+        self._resolve_sampling()
 
         if x0 is None:
             if self.search_space is None:
@@ -745,12 +794,19 @@ class BayesianOptimization(Generic[NT, T, G]):
             # it.  The count is about the repair, not about the design.
             repeats = 0
 
+        if x0 is None and y0 is None and objective is None:
+            # The design phase: drawn above exactly as the closed path draws it, and evaluated by
+            # the caller one term at a time, the values coming back through observe().
+            self._start_design(x0_list, repeats, gp_params=gp_params, alpha=alpha)
+            return
+
         # Resolve y0.  The lengths are compared before a single value is read, so that a mismatch
         # is reported as such rather than truncating the longer of the two.
         if y0 is None:
             if objective is None:
                 raise ValueError(
-                    "objective must be provided when y0 is None."
+                    "objective must be provided when y0 is None.  Terms whose values are to "
+                    "come back through observe() are handed over as design=."
                 )
             y0_list = [_finite_or_raise(objective(t), t) for t in x0_list]
         else:
@@ -778,6 +834,101 @@ class BayesianOptimization(Generic[NT, T, G]):
         self._iteration = 0
         self._bo_state = BOState.INITIALIZED
 
+    def _resolve_sampling(self) -> None:
+        """Build the sampler and the initializer the loop draws from, where there is a space.
+
+        The sampler is built whenever there is a space to draw from: the duplicate fallback of
+        :meth:`suggest` draws from it whichever initializer the caller chose, and whether the
+        design was drawn, handed over as terms, or handed over with its values.
+        """
+        if self._sampler is None and self.search_space is not None:
+            self._sampler = (
+                SizeUniformSampler(DEFAULT_SIZE_BOUND, random.Random(self.seed))
+                if self.sampler is None
+                else self.sampler
+            )
+        if self._initializer is None and self._sampler is not None:
+            self._initializer = (
+                SampledInitialization(self._sampler)
+                if self.initializer is None
+                else self.initializer
+            )
+
+    def _start_design(
+        self,
+        terms: list[Any],
+        repeats: int,
+        *,
+        gp_params: dict[str, Any] | None,
+        alpha: float,
+    ) -> None:
+        """Enter the design phase with ``terms`` as the design, and an empty dataset.
+
+        Args:
+            terms (list[Any]): The design, pairwise distinct, in the order it is handed out.
+            repeats (int): How many repeats the draw had to redraw, 0 for a design handed over.
+            gp_params (dict[str, Any] | None): As in :meth:`initialize`, stored for the passes.
+            alpha (float): As in :meth:`initialize`, stored for the passes.
+        """
+        self._design = tuple(terms)
+        self._design_next = 0
+        self._design_outstanding = False
+        self._x_list = []
+        self._y_list = []
+        self._x_set = set()
+        self._initial_repeats_rejected = repeats
+        self._last_suggestion = None
+        self._alpha = alpha
+        self._gp_params = gp_params
+        self._iteration = 0
+        # An empty design is complete the moment it exists, as ``initialize(x0=[], y0=[])`` is.
+        self._bo_state = BOState.DESIGN if self._design else BOState.INITIALIZED
+
+    @property
+    def design(self) -> tuple[Any, ...]:
+        """The initial design of the design phase, in the order :meth:`suggest` hands it out.
+
+        Empty where the design was not handed out through the phase: before :meth:`initialize`,
+        after :meth:`reset`, and where :meth:`initialize` received the values with the terms or an
+        objective to compute them.  It stays readable once the phase is over, as the record of
+        what the design was.
+
+        Returns:
+            tuple[Any, ...]: The design terms.
+        """
+        return self._design
+
+    def _suggest_design_term(self, verbose: bool) -> Suggestion:
+        """Hand out the next term of the design, which maximizes nothing and fits nothing.
+
+        Args:
+            verbose (bool): Log the suggestion.
+
+        Returns:
+            Suggestion: The design term, without an acquisition value, with the design phase and
+                the term's position in its diagnostics.
+        """
+        index = self._design_next
+        diagnostics: Diagnostics = {
+            "timestamp": time.time(),
+            "iteration": self._iteration,
+            "phase": "design",
+            "design_index": index,
+        }
+        suggestion = Suggestion(
+            candidate=self._design[index],
+            acquisition_value=None,
+            diagnostics=diagnostics,
+        )
+        self._design_next = index + 1
+        self._design_outstanding = True
+        self._last_suggestion = suggestion
+        self._bo_state = BOState.SUGGESTED
+        if verbose:
+            enable_verbose_logging()
+        log_suggestion(_LOG, suggestion)
+        return suggestion
+
     def suggest(
         self,
         *,
@@ -793,6 +944,11 @@ class BayesianOptimization(Generic[NT, T, G]):
         maximizes is the acquisition with the known-point floor beneath it, not the acquisition
         alone.  That floor is the first of the two mechanisms carrying the rejection of duplicates
         described below.
+
+        In the DESIGN state it hands out the next term of the design instead, in the design's
+        order, and fits and maximizes nothing: the suggestion carries no acquisition value, its
+        diagnostics name the phase ``"design"`` and the term's position, and none of the arguments
+        below is read.  See :meth:`initialize`.
 
         Parameters
         ----------
@@ -831,6 +987,8 @@ class BayesianOptimization(Generic[NT, T, G]):
             of the three modes, or if it asks for ``"single"`` and that acquisition has no lower
             bound to floor the terms already evaluated against.
         """
+        if self._bo_state == BOState.DESIGN:
+            return self._suggest_design_term(verbose)
         if self._bo_state not in (BOState.INITIALIZED, BOState.OBSERVED):
             raise RuntimeError(
                 f"suggest() is not allowed in state {self._bo_state.value}."
@@ -946,6 +1104,7 @@ class BayesianOptimization(Generic[NT, T, G]):
             diagnostics=diagnostics,
         )
         self._last_suggestion = suggestion
+        self._design_outstanding = False
         self._bo_state = BOState.SUGGESTED
         log_suggestion(_LOG, suggestion)
         return suggestion
@@ -1300,6 +1459,10 @@ class BayesianOptimization(Generic[NT, T, G]):
     def observe(self, candidate: Any, y: float) -> None:
         """Record the objective value for the last suggested candidate.
 
+        A term of the design phase goes into the dataset without a trace row and without counting
+        as a pass; after the design's last value the state is INITIALIZED.  A pass goes into the
+        dataset with its trace row and counts.
+
         Parameters
         ----------
         candidate:
@@ -1332,6 +1495,18 @@ class BayesianOptimization(Generic[NT, T, G]):
         # but the observation set has to hold exactly what was suggested.
         recorded = self._last_suggestion.candidate
         value = _finite_or_raise(y, recorded)
+        if self._design_outstanding:
+            # A design term goes into the dataset and nowhere else: it has no acquisition value
+            # and no pick, so it is no row of the trace and no pass of the count.  The phase ends
+            # with the value of its last term, and the passes begin.
+            self._x_list.append(recorded)
+            self._x_set.add(recorded)
+            self._y_list.append(value)
+            self._design_outstanding = False
+            self._bo_state = (
+                BOState.DESIGN if self._design_next < len(self._design) else BOState.INITIALIZED
+            )
+            return
         # Checked before the dataset grows, because the row is written after it has.  A suggestion
         # no row can be read from would otherwise leave a term and a value behind that no trace
         # row and no iteration count mention, and the state stays at SUGGESTED, so the very same
@@ -1446,6 +1621,9 @@ class BayesianOptimization(Generic[NT, T, G]):
         self._sampler = None
         self._initializer = None
         self._trace = []
+        self._design = ()
+        self._design_next = 0
+        self._design_outstanding = False
         self._warned_about_exploitation = False
         # A second run fits a second surrogate, and a caller whose kernel and optimizer still do
         # not match has to be told a second time.  Both model selection flags go back with it.
@@ -1476,7 +1654,7 @@ class BayesianOptimization(Generic[NT, T, G]):
         -------
         dict with keys:
             ``best_tree``, ``best_y``, ``x``, ``y``, ``gp_model``, ``iterations``, ``trace``,
-            ``dropped_suggestion``.
+            ``dropped_suggestion``, ``design_remaining``.
 
             ``gp_model`` is the surrogate the **last** :meth:`suggest` fitted, and nothing is
             fitted after it, so the model has seen nothing the run appended since.  A run that
@@ -1511,6 +1689,11 @@ class BayesianOptimization(Generic[NT, T, G]):
 
             ``trace`` is the per-pass table of the trace readings.  See :attr:`trace`.
 
+            ``design_remaining`` lists, in the design's order, the terms of the design phase that
+            no value reached: empty once the design is complete, and empty where the design was
+            not handed out through the phase.  A run finalized during its design keeps every value
+            it observed and names here what it never measured.
+
         Raises
         ------
         RuntimeError
@@ -1519,7 +1702,7 @@ class BayesianOptimization(Generic[NT, T, G]):
             ``(None, nan)`` instead reads downstream as a completed run with a worthless optimum.
         """
         if self._bo_state not in (
-            BOState.INITIALIZED, BOState.OBSERVED, BOState.SUGGESTED
+            BOState.DESIGN, BOState.INITIALIZED, BOState.OBSERVED, BOState.SUGGESTED
         ):
             raise RuntimeError(
                 f"finalize() is not allowed in state {self._bo_state.value}."
@@ -1544,8 +1727,8 @@ class BayesianOptimization(Generic[NT, T, G]):
             dropped = outstanding.candidate
             _LOG.warning(
                 "the run is finalized with the suggestion %s still outstanding.  No value ever "
-                "reached that pass, so the dataset holds none for the term and the pass is not "
-                "among the %d this result counts.  An evaluation that fails leaves the "
+                "reached it, so the dataset holds none for the term, and it is not among the %d "
+                "passes this result counts.  An evaluation that fails leaves the "
                 "closed loop in exactly this state, and a caller who did measure the term hands "
                 "it to observe() before finalizing.  The result names it under "
                 "dropped_suggestion.",
@@ -1553,6 +1736,11 @@ class BayesianOptimization(Generic[NT, T, G]):
                 self._iteration,
             )
         self._last_suggestion = None
+        self._design_outstanding = False
+        # The design terms without a value: the outstanding one, if it is a design term, and every
+        # one the phase never handed out.  Empty once the design is complete.
+        valued = set(valued_terms)
+        design_remaining = [term for term in self._design if term not in valued]
 
         self._bo_state = BOState.FINALIZED
         return {
@@ -1564,10 +1752,12 @@ class BayesianOptimization(Generic[NT, T, G]):
             "iterations": self._iteration,
             "trace": self.trace,
             "dropped_suggestion": dropped,
+            "design_remaining": design_remaining,
         }
 
     def get_state_snapshot(self) -> dict[str, Any]:
         """Return a serializable snapshot of the current Ask/Tell state."""
+        valued = set(self._x_list[: len(self._y_list)])
         return {
             "state": self._bo_state.value,
             "x_list": list(self._x_list),
@@ -1577,11 +1767,36 @@ class BayesianOptimization(Generic[NT, T, G]):
                 None if self._last_suggestion is None
                 else self._last_suggestion.candidate
             ),
+            # The design phase: the design, and how many of its terms still await a value.
+            "design": list(self._design),
+            "design_remaining": sum(1 for term in self._design if term not in valued),
         }
 
     # -------------------------------------------------------------------------
     # The closed loop
     # -------------------------------------------------------------------------
+
+    def check_configuration(
+        self, acquisition_fitness_mode: Literal["auto", "single", "batch"] = "batch"
+    ) -> None:
+        """Refuse, before anything is evaluated, a configuration no pass of this run could use.
+
+        :meth:`optimize` asks this for itself before it draws the design.  An ask/tell caller who
+        will run passes asks it before :meth:`initialize`, so that a mistyped acquisition, a
+        missing evolutionary algorithm or a score that algorithm cannot be given one candidate at
+        a time is refused before the design is paid, not at the first :meth:`suggest` after it.
+        A run of no passes maximizes nothing and has nothing to ask.
+
+        Args:
+            acquisition_fitness_mode (Literal["auto", "single", "batch"]): How the evolutionary
+                algorithm will be asked to score its population, the value the passes will hand
+                to :meth:`suggest`. (Default value = "batch")
+
+        Raises:
+            RuntimeError: If no evolutionary algorithm was configured.
+            ValueError: As :meth:`optimize` refuses a configuration before its design.
+        """
+        self._check_pass_configuration(acquisition_fitness_mode)
 
     def _check_pass_configuration(
         self, acquisition_fitness_mode: Literal["auto", "single", "batch"]
@@ -1610,8 +1825,9 @@ class BayesianOptimization(Generic[NT, T, G]):
         The checks inside :meth:`suggest` and inside the acquisitions themselves stay where they
         are.  Every value read here is a public attribute, and one assigned after construction
         reaches a pass without ever passing this.  A caller who reaches a pass through
-        :meth:`initialize` and :meth:`suggest` rather than through :meth:`optimize` passes nothing
-        here either, and pays the whole design as before.
+        :meth:`initialize` and :meth:`suggest` rather than through :meth:`optimize` passes here only
+        by calling :meth:`check_configuration` before :meth:`initialize`; one that does not pays the
+        whole design before the first pass refuses the configuration.
 
         Args:
             acquisition_fitness_mode (Literal["auto", "single", "batch"]): How the evolutionary

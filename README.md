@@ -157,13 +157,32 @@ for _ in range(5):
 result = bo.finalize()
 ```
 
-The state runs `UNINITIALIZED`, `INITIALIZED`, then `SUGGESTED` and `OBSERVED` in alternation, and
-`FINALIZED` at the end. Every method refuses a state it does not belong in with a `RuntimeError`
-naming that state, and `reset()` returns the loop to `UNINITIALIZED`. `get_state_snapshot()`
-reports the state, the observed terms and values, the pass count and any outstanding suggestion.
+The initial design can be the loop's first phase instead. Without an objective, `initialize()`
+draws the design exactly as above and evaluates nothing; `suggest()` then hands the design terms
+out in order, without fitting or maximizing anything, and `observe()` takes each value back. A
+caller writes every value as it is measured, takes over values that already exist by observing
+them, and keeps every value it paid for when an evaluation fails. `initialize(design=terms)` does
+the same with terms handed over rather than drawn. `check_configuration()` refuses, before
+anything is paid, a configuration no pass could use, as `optimize()` does for itself.
 
-`finalize()` returns `best_tree`, `best_y`, `x`, `y`, `gp_model`, `iterations`, `trace` and
-`dropped_suggestion`. The model it reports is the one the last `suggest()` fitted, so it has not
+```python
+bo.reset()
+bo.check_configuration()
+bo.initialize(initial_size=8)
+for _ in range(len(bo.design) + 5):
+    suggestion = bo.suggest()
+    bo.observe(suggestion.candidate, objective(suggestion.candidate))
+result = bo.finalize()
+```
+
+The state runs `UNINITIALIZED`, then `DESIGN` while a design phase awaits values, `INITIALIZED`,
+then `SUGGESTED` and `OBSERVED` in alternation, and `FINALIZED` at the end. Every method refuses a
+state it does not belong in with a `RuntimeError` naming that state, and `reset()` returns the loop
+to `UNINITIALIZED`. `get_state_snapshot()` reports the state, the observed terms and values, the
+pass count, any outstanding suggestion, the design and how many of its terms still await a value.
+
+`finalize()` returns `best_tree`, `best_y`, `x`, `y`, `gp_model`, `iterations`, `trace`,
+`dropped_suggestion` and `design_remaining`, the design terms no value reached. The model it reports is the one the last `suggest()` fitted, so it has not
 seen the pair the run ended on. A diagnostic that wants a surrogate over the whole dataset calls
 `surrogate_over_dataset()` instead.
 

@@ -96,6 +96,26 @@ def test_ask_tell_suggest_reports_the_iteration(bo_factory, tree_corpus, caplog)
     )
 
 
+def test_a_design_term_logs_as_one_and_not_as_a_pass_with_its_readings_missing(
+    bo_factory, tree_corpus, caplog
+):
+    """A design term is handed out, not maximized, and its line has to say so.
+
+    Printed as a pass, it reads ``iter=0 acq=nan m=? s=? fallback=?``: a pass whose readings were
+    never reported, which is exactly the absence the ``?`` marks.  The design phase has none of
+    those readings to report, and its line names the term's position instead.
+    """
+    bo = bo_factory()
+    bo.initialize(design=tree_corpus[:2])
+
+    with caplog.at_level(logging.INFO, logger=LOGGER_NAME):
+        bo.suggest()
+
+    messages = [r.getMessage() for r in caplog.records if r.levelno == logging.INFO]
+    assert any("design=0" in m for m in messages), messages
+    assert not any("acq=" in m for m in messages), messages
+
+
 def test_verbose_makes_output_reachable(monkeypatch, bo_factory, tree_corpus):
     """``verbose=True`` promises output, so it must attach a handler, not just set a level.
 

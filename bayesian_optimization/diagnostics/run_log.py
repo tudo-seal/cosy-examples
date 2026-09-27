@@ -88,6 +88,12 @@ def log_suggestion(logger: logging.Logger, suggestion: Suggestion) -> None:
     degenerate runs, and neither is visible in the acquisition value alone.
     """
     diagnostics = suggestion.diagnostics or {}
+    if diagnostics.get("phase") == "design":
+        # A design term is handed out, not maximized: it has no acquisition value, no posterior
+        # and no fallback, and printed as a pass it would read as a pass whose readings are absent.
+        logger.info("suggest  design=%s  (the design phase maximizes nothing)",
+                    diagnostics.get("design_index", "?"))
+        return
     incumbent = diagnostics.get("incumbent")
     logger.info(
         "suggest  iter=%s  acq=%.4f  m=%s  s=%s  fallback=%s  incumbent=%s",

@@ -7,6 +7,9 @@ from typing import Any, Literal, NotRequired, TypedDict
 
 class BOState(Enum):
     UNINITIALIZED = "UNINITIALIZED"
+    # The initial design is drawn, or handed over as terms, and some of it still awaits its
+    # values: ``suggest()`` hands the next design term out and ``observe()`` takes its value back.
+    DESIGN        = "DESIGN"
     INITIALIZED   = "INITIALIZED"
     SUGGESTED     = "SUGGESTED"
     OBSERVED      = "OBSERVED"
@@ -26,9 +29,11 @@ class Diagnostics(TypedDict, total=False):
     # both of those degenerate cases.
     mean_at_pick: float
     deviation_at_pick: float
-    # One phase is left: "reinit_presample" belonged to the pool-and-thin initial sampling that
-    # has since been removed, and an alternative nothing can produce is a reader's dead end.
-    phase: NotRequired[Literal["main"]]
+    # "main" is a pass of the loop; "design" is a term of the initial design handed out by the
+    # design phase, which maximizes nothing and so carries no acquisition reading.
+    phase: NotRequired[Literal["main", "design"]]
+    # The position of a design term in the design, only on a suggestion of the design phase.
+    design_index: NotRequired[int]
 
 
 @dataclass(frozen=True)
@@ -39,7 +44,8 @@ class Suggestion:
     returned, not of what the acquisition optimizer proposed.  Where
     ``diagnostics["fallback_used"]`` is true the optimizer's result was an already-evaluated
     candidate and was replaced by a random fallback sample, so the value describes that
-    replacement.  Read the two together or not at all.
+    replacement.  Read the two together or not at all.  A term of the design phase is scored by
+    nothing: it carries ``None`` here and ``phase == "design"`` in its diagnostics.
     """
 
     candidate: Any
