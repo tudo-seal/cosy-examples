@@ -43,15 +43,20 @@ from .diagnostics import (
 from .initial_sampling import _sample_fallback_tree
 from .kernels.graph_kernel import clear_kernel_caches
 from .kernels.tree_kernel import OrderedRootedSubtreeKernel
+from .loop import (  # noqa: F401  (re-exported: callers and tests import them from here)
+    DEFAULT_SIZE_BOUND,
+    AskTellLoop,
+    _check_request_against_space,
+    _distinct_dataset,
+    _finite_or_raise,
+    _require_hashable,
+)
 from .state import BOState, Diagnostics, Suggestion
 
 NT = TypeVar("NT", bound=Hashable)
 T = TypeVar("T", bound=Hashable)
 G = TypeVar("G", bound=Hashable)
 
-# The bound of the sampler built when the caller names none.  A placeholder that fits toy
-# spaces.  See the ``sampler`` parameter for why a real space needs its own.
-DEFAULT_SIZE_BOUND = 100
 
 _LOG = get_logger("bo")
 
@@ -99,174 +104,6 @@ def _unknown_acquisition(name: Any) -> str:
     """
     known = ", ".join(repr(candidate) for candidate in _ACQUISITIONS)
     return f"Unknown acquisition_function {name!r}.  It has to be one of {known}."
-
-
-def _finite_or_raise(value: Any, candidate: Any) -> float:
-    """Return ``value`` as a float, refusing anything that is not finite.
-
-    The objective is modeled as a total function on the terms, so the theory has no notion of a
-    failed evaluation, and this framework does not invent one.  A network that fails to train, an
-    interpretation that fails, a measurement that returns nothing: none of them get a substitute
-    number.  The failure propagates out of the loop, visibly, at the pass that caused it.
-
-    ``nan`` is the one worth naming.  It survives the fit, comes back out of the posterior at every
-    term, ties every acquisition value, and leaves a run that has stopped optimizing while still
-    producing suggestions.
-
-    Args:
-        value (Any): The observed value.
-        candidate (Any): The term it was observed at, for the message.
-
-    Returns:
-        float: The value.
-
-    Raises:
-        ValueError: If the value is not a finite real number.
-    """
-    observed = float(value)
-    if not math.isfinite(observed):
-        msg = (
-            f"the objective returned {observed} at {candidate}, and a value that is not finite "
-            f"cannot be observed: it makes the posterior undefined everywhere rather than at one "
-            f"term.  A failed evaluation is a failure, not a number, so let it propagate."
-        )
-        raise ValueError(msg)
-    return observed
-
-
-def _require_hashable(candidates: Sequence[Any], source: str) -> None:
-    """Refuse an initial design that holds a term which cannot be hashed.
-
-    The dataset is a set of terms, and every membership test this loop runs on it goes through a
-    hash: the fallback that replaces a repeat, the set the suggestion path tests a candidate
-    against, and the dictionary the pairs are checked for contradictions in.  A design that
-    cannot be hashed cannot become that dataset, and it is refused here rather than at the first
-    of those tests, which reaches the caller as a bare message about a type.
-
-    Asked of both designs this class accepts, and before either is paid for.  A drawn design is
-    deduplicated against a set on the way in, and a supplied one may cost an evaluation of the
-    quality measure per term, so a design refused afterwards is a design refused too late.
-
-    Args:
-        candidates (Sequence[Any]): The design to check.
-        source (str): Where the design came from, for the message.
-
-    Raises:
-        TypeError: If a candidate cannot be hashed.
-    """
-    for item in candidates:
-        try:
-            hash(item)
-        except TypeError as unhashable:
-            msg = (
-                f"All candidates in {source} must be hashable.  Got an unhashable item of type "
-                f"{type(item).__name__!r}."
-            )
-            raise TypeError(msg) from unhashable
-
-
-def _distinct_dataset(
-    drawn: Sequence[Any], sampler: Sampler, query: Any, count: int
-) -> tuple[list[Any], int]:
-    """Make an initial design pairwise distinct, keeping what the initializer chose.
-
-    Deduplicates in place rather than redrawing the whole design, because the initializer's terms
-    are the initializer's answer.  The kernel-diverse initializer draws each member biased away
-    from the members already drawn, so throwing the set away to draw a fresh one would silently
-    replace the informed design with the model-agnostic one.  Only the places a repeat occupied
-    are filled again.
-
-    Structural comparison here (``Tree.__eq__``), while the fallback rejects a repeat with a set.
-    The two answer alike as long as every label hashes consistently with its equality, compares
-    symmetrically, and does not change after its term is built, so the scan is a check on the
-    fallback rather than a second answer about identity.  See
-    :func:`~bayesian_optimization.initial_sampling.distinct_prefix`.
-
-    The set the fallback tests against is one set, carried through the draws.  A term takes its
-    hash in its constructor and keeps it, so a set built again over the same terms holds the same
-    terms under the same hashes and answers the same question, and one built per replacement asks
-    that question of the whole design again for each of them.  Holding one means the design has to
-    be hashable whether or not a repeat occurs, which is why
-    :meth:`BayesianOptimization.initialize` establishes that first, in its own words rather than
-    in the interpreter's.
-
-    Args:
-        drawn (Sequence[Any]): What the initializer returned.
-        sampler (Sampler): The loop's sampler, for the replacements.
-        query (Any): The generator query.
-        count (int): The design size that was asked for.
-
-    Returns:
-        tuple[list[Any], int]: The distinct design, and how many repeats were replaced.
-
-    Raises:
-        RuntimeError: If a replacement cannot be drawn.  ``_sample_fallback_tree`` raises on an
-            exhausted space, and a design topped up with repeats is what this prevents.  Also if a
-            drawn replacement turns out to equal a term the fallback's set had passed it against,
-            which takes a label that hashes against its own equality, compares asymmetrically, or
-            changed after its term was built.
-        TypeError: If a term cannot be hashed.  The design is held as a set here, so a caller
-            that has not checked its own design meets the interpreter's message rather than one
-            of its own.
-    """
-    kept: list[Any] = []
-    seen: set[Any] = set()
-    repeats = 0
-    for candidate in drawn:
-        if any(candidate == other for other in kept):
-            repeats += 1
-        else:
-            kept.append(candidate)
-            seen.add(candidate)
-    while len(kept) < count:
-        replacement = _sample_fallback_tree(sampler, query, seen)
-        if any(replacement == other for other in kept):
-            msg = (
-                "the fallback returned a term already in the initial design.  It rejects a "
-                "repeat with a set, which asks kept == candidate, while this scan asks "
-                "candidate == kept, and a term hashes once when it is built.  So a label in one "
-                "of these terms hashes against its own equality, compares asymmetrically, or "
-                "changed after its term was built"
-            )
-            raise RuntimeError(msg)
-        kept.append(replacement)
-        seen.add(replacement)
-    return kept, repeats
-
-
-def _check_request_against_space(search_space: Any, request: Any) -> None:
-    """Refuse a request the search space has no rules for, before a query is built from the pair.
-
-    A space queried at a non-terminal it has no rules for answers with the empty stream, and each
-    consumer downstream then reports what it can see, which is the sampler.  The initial design
-    and the evolutionary run both say that fewer inhabitants than were asked for lie inside the
-    sampler's bound and offer to widen it, the duplicate fallback says the bounded space is
-    exhausted, and the ``query`` property says nothing at all and hands back a query whose every
-    draw is empty.  Widening the bound is the one repair those messages name, and it is the one
-    that cannot help.
-
-    Membership, not a test against ``None``.  A non-terminal of some other space, a mistyped
-    target for instance, fails through those same messages, and a non-terminal is anything
-    hashable, so a space whose non-terminal is ``None`` is queried at ``None`` and draws terms.
-    The test is a lookup in the space's own rule table, ``SolutionSpace.__contains__``.
-
-    Args:
-        search_space (Any): The space, or None where there is none to query.
-        request (Any): The non-terminal the space would be queried at.
-
-    Raises:
-        ValueError: If the space has no rules for the request.
-    """
-    if search_space is None or request in search_space:
-        return
-    msg = (
-        f"the search space has no rules for the request {request}, so nothing can be drawn from "
-        "it.  The request is the non-terminal the space is queried at, and every term the loop "
-        "draws is an inhabitant of it: pass the non-terminal the space was synthesized for.  The "
-        "default None belongs to the ask/tell engine, which runs with search_space=None and poses "
-        "no query at all."
-    )
-    raise ValueError(msg)
 
 
 # The diagnostics keys a trace row is read from.  ``Diagnostics`` declares four more, and no
@@ -325,7 +162,7 @@ def _require_trace_diagnostics(suggestion: Suggestion) -> tuple[Diagnostics, flo
     return diagnostics, suggestion.acquisition_value
 
 
-class BayesianOptimization(Generic[NT, T, G]):
+class BayesianOptimization(AskTellLoop[NT, T, G]):
     """Bayesian optimization over CoSy solution spaces, as a closed loop and as an ask/tell layer.
 
     :meth:`optimize` is the closed loop: it takes the initial dataset from the initializer, runs
@@ -563,10 +400,9 @@ class BayesianOptimization(Generic[NT, T, G]):
         # for the same reason.  This reads the arguments, so it is not the guarantee on its own:
         # both attributes are public, and the pair is checked again in ``_query``, where it
         # becomes a query.
-        _check_request_against_space(search_space, request)
-
-        self.search_space = search_space
-        self.request = request
+        super().__init__(
+            search_space, request, initializer=initializer, seed=seed, sampler=sampler
+        )
         self.acquisition_function = acquisition_function
         self.ucb_beta = float(ucb_beta)
         self.pi_margin = float(pi_margin)
@@ -576,36 +412,18 @@ class BayesianOptimization(Generic[NT, T, G]):
         self.kernel_optimizer = kernel_optimizer
         self.n_restarts_kernel_optimizer = n_restarts_kernel_optimizer
         self.optimizer = optimizer
-        self.initializer = initializer
-        self.seed = seed
-        self.sampler = sampler
 
         self._gp_normalize_y: bool = gp_normalize_y
 
-        # --- Ask/Tell state ---------------------------------------------------
-        self._bo_state: BOState = BOState.UNINITIALIZED
-        self._x_list: list[Any] = []
-        self._y_list: list[float] = []
-        self._x_set: set[Any] = set()
-        self._initial_repeats_rejected: int = 0
-        self._last_suggestion: Suggestion | None = None
+        # --- The surrogate's state; the loop's own is AskTellLoop's -----------
         self._model: GaussianProcessRegressor | None = None
         self._alpha: float = _JITTER
         self._gp_params: dict[str, Any] | None = None
-        self._sampler: Sampler | None = None
-        self._initializer: Initializer[NT, T, G] | None = None
-        self._generator_query: Any = None
-        self._iteration: int = 0
-        # The design phase: the initial design in the order it is handed out, the position of the
-        # next term to hand out, and whether the suggestion outstanding is a design term rather
-        # than a pass.  Kept apart from the diagnostics, which the caller holds and could alter.
-        self._design: tuple[Any, ...] = ()
-        self._design_next: int = 0
-        self._design_outstanding: bool = False
         self._warned_about_model_selection: bool = False
         self._warned_about_frozen_hyperparameters: bool = False
         self._warned_about_exploitation: bool = False
-        self._logger: logging.Logger = _LOG
+        # The loop logs under this module's name, as it did before it was factored out.
+        self._logger = _LOG
         self._trace: list[TraceRecord] = []
 
         self.last_acquisition_run: AcquisitionRun | None = None
@@ -623,311 +441,6 @@ class BayesianOptimization(Generic[NT, T, G]):
         maximization returned, which after a duplicate fallback is **not** the term the loop went
         on to evaluate.
         """
-
-    def _query(self) -> Any:
-        """Return the generator query naming the search space and the requested type.
-
-        The one access path to a synthesized search space: every evolutionary component poses
-        resolution queries, so this is what the initializer and the evolutionary search receive
-        instead of the space itself.
-
-        Without a search space there is no query to pose.  That configuration exists, because the
-        ask/tell engine also drives optimizers that are not cosy's and the tests exercise it with
-        stubs, and those callers do not read the query.  Every path that genuinely needs a search
-        space checks for one before reaching this, and says so.
-
-        **One object, and it is not a micro-optimization.**  The query is determined by the
-        search space and the request, and the first call freezes that pair, so a second object would
-        denote the same SLAD-tree, but ``SizeUniformSampler`` keys its counting construction by
-        query *identity*, precisely because comparing a partial-term query structurally costs more
-        than the lookup saves.  Minting a fresh query per call therefore made every caller pay the
-        counting again: measured on the determinized CNN search space of the CIFAR-10 experiment
-        at ``D = 200``, that is 93 s for the initial dataset and another 93 s for each duplicate
-        fallback, against 0.04 s per draw once it is built.  Sharing the object is what makes the
-        sampler's own cache reachable at all.
-
-        Returns:
-            Any: The generator query, or None if this optimizer has no search space.
-
-        Raises:
-            ValueError: If the search space has no rules for the request.
-        """
-        if self.search_space is None:
-            return None
-        if self._generator_query is None:
-            # The pair the constructor read is not necessarily the pair the query is built from,
-            # because both attributes are public and writable.  Checking again at the one place
-            # the two are turned into a query is what makes the refusal hold for every query this
-            # class hands out, and it is what makes the silent path loud.
-            _check_request_against_space(self.search_space, self.request)
-            self._generator_query = generator_query(self.search_space, self.request)
-        return self._generator_query
-
-    # -------------------------------------------------------------------------
-    # Ask/Tell API
-    # -------------------------------------------------------------------------
-
-    def initialize(
-        self,
-        *,
-        objective: Callable[[Any], float] | None = None,
-        x0: Sequence[Any] | None = None,
-        y0: Sequence[float] | None = None,
-        initial_size: int = 10,
-        gp_params: dict[str, Any] | None = None,
-        alpha: float = _JITTER,
-        design: Sequence[Any] | None = None,
-    ) -> None:
-        """Build the initial dataset, or start the design phase that builds it.
-
-        This is the loop's first step, the dataset ``D <- ((t, sigma(q(t))) | t in init(mu_0))``
-        of the terms the initializer draws paired with their objective values, with the
-        engineering layer's addition that the caller may hand the pairs over ready-made.  With an
-        objective, or with ``x0`` and ``y0``, the dataset is complete when this returns and the
-        state is INITIALIZED.
-
-        Without either, the design is the loop's first phase.  ``initialize(initial_size=mu_0)``
-        draws the design exactly as the closed path draws it, evaluates nothing, and enters DESIGN;
-        ``initialize(design=terms)`` does the same with terms the caller hands over.
-        :meth:`suggest` then hands the design out in order and :meth:`observe` takes each value
-        back, and after the last one the state is INITIALIZED and the passes begin.  The design
-        is readable as :attr:`design` from the moment it exists.
-
-        Parameters
-        ----------
-        objective:
-            The objective ``sigma . q``, which is maximized.  With ``x0`` it is required when
-            ``y0`` is ``None``; without ``x0`` and without ``y0`` its absence starts the design
-            phase.
-        x0:
-            Initial candidate trees.  When ``None`` the initializer draws them
-            (requires a non-``None`` ``search_space``).  Either way every term has to be
-            hashable, and a design that is not is refused before a value is read for it.
-        y0:
-            Initial objective values.  When ``None`` ``objective`` is called on each element
-            of ``x0``.
-        initial_size:
-            The initial size ``mu_0``: how many terms the initializer draws when ``x0`` is
-            ``None``.
-        gp_params:
-            Extra kwargs forwarded to ``GaussianProcessRegressor``.
-        alpha:
-            The numerical diagonal added to the Gram matrix.  See :data:`_JITTER`.
-        design:
-            Terms whose values come back one at a time through :meth:`observe`, handed out by
-            :meth:`suggest` in this order.  A fixed design, given rather than drawn, so it needs
-            no search space.  It takes no ``x0``, ``y0`` or ``objective`` beside it, and it must
-            not repeat a term, since a repeated design term is an evaluation spent on a value the
-            dataset already holds.  An empty design is a complete one.
-        """
-        if self._bo_state != BOState.UNINITIALIZED:
-            raise RuntimeError(
-                f"Cannot re-initialize: current state is {self._bo_state.value}. "
-                "Call reset() first."
-            )
-        if design is not None:
-            # Checked before anything is built, so a refused call leaves nothing behind.
-            if x0 is not None or y0 is not None or objective is not None:
-                raise ValueError(
-                    "a design is handed over as terms whose values come back through observe(), "
-                    "so it takes no x0, y0 or objective beside it"
-                )
-            design_terms = list(design)
-            _require_hashable(design_terms, "design")
-            if len(set(design_terms)) != len(design_terms):
-                raise ValueError(
-                    "the design repeats a term: a repeated design term is an evaluation spent on "
-                    "a value the dataset already holds"
-                )
-            # A design handed over is not drawn, but the passes after it still replace a
-            # duplicate with a fresh draw, so the sampler is built here as on every other path.
-            self._resolve_sampling()
-            self._start_design(design_terms, 0, gp_params=gp_params, alpha=alpha)
-            return
-
-        self._resolve_sampling()
-
-        if x0 is None:
-            if self.search_space is None:
-                raise NotImplementedError(
-                    "initialize() without x0 requires a real search_space."
-                )
-            assert self._initializer is not None
-            assert self._sampler is not None
-            # The previous code drew a pool a hundred times the size and thinned it with a
-            # greedy determinantal point process, which is related work rather than either of the
-            # initializers this loop admits, and it warned and came back short where the stream
-            # simply raises.  Both of those initializers raise rather than return a short
-            # population.
-            x0_list = list(self._initializer.initialize(self._query(), initial_size))
-            # An initializer of the caller's own may answer with anything.  The two this
-            # package ships return terms, which are hashable by construction, so an unhashable
-            # candidate here is a broken initializer rather than an unusual term.
-            _require_hashable(x0_list, "the design the initializer returned")
-            # And then the dataset is made a *set*, which is not something the initializer can be
-            # asked for.  Sampled initialization builds a population, and a population is a finite
-            # multiset, so repeats are admissible there by definition.  The loop's dataset is not:
-            # a repeated term is a training point carrying no observation the previous one did
-            # not, one evaluation of the budget spent on nothing.
-            #
-            # The comment that used to stand here inherited the guarantee from the default
-            # sampler, whose stream lists each inhabitant within the bound exactly once, so that
-            # every prefix of it is a sample without replacement.  But ``sampler`` is a parameter
-            # of this class, and the depth-bounded random sampler draws independently, so its
-            # draws may repeat a term.  A guarantee that holds only until someone uses the
-            # parameter is the kind of unwritten invariant this API must not have.
-            x0_list, repeats = _distinct_dataset(
-                x0_list, self._sampler, self._query(), initial_size
-            )
-            if repeats:
-                self._logger.info(
-                    "the initializer returned %d repeated term(s) in an initial design of %d.  "
-                    "They were redrawn, as suggest() redraws a duplicate candidate.  The "
-                    "size-uniform sampler lists each inhabitant within its bound exactly once, so "
-                    "under it this number is 0",
-                    repeats, initial_size,
-                )
-        else:
-            x0_list = list(x0)
-            _require_hashable(x0_list, "x0")
-            # A design the caller hands over was not drawn here, so this loop redrew nothing in
-            # it.  The count is about the repair, not about the design.
-            repeats = 0
-
-        if x0 is None and y0 is None and objective is None:
-            # The design phase: drawn above exactly as the closed path draws it, and evaluated by
-            # the caller one term at a time, the values coming back through observe().
-            self._start_design(x0_list, repeats, gp_params=gp_params, alpha=alpha)
-            return
-
-        # Resolve y0.  The lengths are compared before a single value is read, so that a mismatch
-        # is reported as such rather than truncating the longer of the two.
-        if y0 is None:
-            if objective is None:
-                raise ValueError(
-                    "objective must be provided when y0 is None.  Terms whose values are to "
-                    "come back through observe() are handed over as design=."
-                )
-            y0_list = [_finite_or_raise(objective(t), t) for t in x0_list]
-        else:
-            if len(x0_list) != len(y0):
-                raise ValueError(
-                    f"len(x0)={len(x0_list)} != len(y0)={len(y0)}."
-                )
-            y0_list = [_finite_or_raise(v, t) for t, v in zip(x0_list, y0, strict=True)]
-
-        self._x_list = x0_list
-        self._y_list = y0_list
-        # Checked here rather than at the fit: a dataset that contradicts itself does so the moment
-        # it is handed over, and the first suggest() is far from the caller who assembled it.
-        self._distinct_pairs()
-        self._x_set = set(self._x_list)
-        # The count is stored with the dataset it describes and not where it is computed.
-        # Everything between the draw and the last line of this method can raise, the objective
-        # above all, and a failure there leaves the state UNINITIALIZED, which permits a second
-        # initialize().  Storing the count at the draw would carry the count of the abandoned
-        # design into whatever design the caller supplies next.
-        self._initial_repeats_rejected = repeats
-        self._last_suggestion = None
-        self._alpha = alpha
-        self._gp_params = gp_params
-        self._iteration = 0
-        self._bo_state = BOState.INITIALIZED
-
-    def _resolve_sampling(self) -> None:
-        """Build the sampler and the initializer the loop draws from, where there is a space.
-
-        The sampler is built whenever there is a space to draw from: the duplicate fallback of
-        :meth:`suggest` draws from it whichever initializer the caller chose, and whether the
-        design was drawn, handed over as terms, or handed over with its values.
-        """
-        if self._sampler is None and self.search_space is not None:
-            self._sampler = (
-                SizeUniformSampler(DEFAULT_SIZE_BOUND, random.Random(self.seed))
-                if self.sampler is None
-                else self.sampler
-            )
-        if self._initializer is None and self._sampler is not None:
-            self._initializer = (
-                SampledInitialization(self._sampler)
-                if self.initializer is None
-                else self.initializer
-            )
-
-    def _start_design(
-        self,
-        terms: list[Any],
-        repeats: int,
-        *,
-        gp_params: dict[str, Any] | None,
-        alpha: float,
-    ) -> None:
-        """Enter the design phase with ``terms`` as the design, and an empty dataset.
-
-        Args:
-            terms (list[Any]): The design, pairwise distinct, in the order it is handed out.
-            repeats (int): How many repeats the draw had to redraw, 0 for a design handed over.
-            gp_params (dict[str, Any] | None): As in :meth:`initialize`, stored for the passes.
-            alpha (float): As in :meth:`initialize`, stored for the passes.
-        """
-        self._design = tuple(terms)
-        self._design_next = 0
-        self._design_outstanding = False
-        self._x_list = []
-        self._y_list = []
-        self._x_set = set()
-        self._initial_repeats_rejected = repeats
-        self._last_suggestion = None
-        self._alpha = alpha
-        self._gp_params = gp_params
-        self._iteration = 0
-        # An empty design is complete the moment it exists, as ``initialize(x0=[], y0=[])`` is.
-        self._bo_state = BOState.DESIGN if self._design else BOState.INITIALIZED
-
-    @property
-    def design(self) -> tuple[Any, ...]:
-        """The initial design of the design phase, in the order :meth:`suggest` hands it out.
-
-        Empty where the design was not handed out through the phase: before :meth:`initialize`,
-        after :meth:`reset`, and where :meth:`initialize` received the values with the terms or an
-        objective to compute them.  It stays readable once the phase is over, as the record of
-        what the design was.
-
-        Returns:
-            tuple[Any, ...]: The design terms.
-        """
-        return self._design
-
-    def _suggest_design_term(self, verbose: bool) -> Suggestion:
-        """Hand out the next term of the design, which maximizes nothing and fits nothing.
-
-        Args:
-            verbose (bool): Log the suggestion.
-
-        Returns:
-            Suggestion: The design term, without an acquisition value, with the design phase and
-                the term's position in its diagnostics.
-        """
-        index = self._design_next
-        diagnostics: Diagnostics = {
-            "timestamp": time.time(),
-            "iteration": self._iteration,
-            "phase": "design",
-            "design_index": index,
-        }
-        suggestion = Suggestion(
-            candidate=self._design[index],
-            acquisition_value=None,
-            diagnostics=diagnostics,
-        )
-        self._design_next = index + 1
-        self._design_outstanding = True
-        self._last_suggestion = suggestion
-        self._bo_state = BOState.SUGGESTED
-        if verbose:
-            enable_verbose_logging()
-        log_suggestion(_LOG, suggestion)
-        return suggestion
 
     def suggest(
         self,
@@ -1217,44 +730,6 @@ class BayesianOptimization(Generic[NT, T, G]):
             )
         return candidate
 
-    def _distinct_pairs(self) -> tuple[list[Any], list[float]]:
-        """Return the distinct pairs of the dataset, in order of first appearance.
-
-        The loop conditions the surrogate on these rather than on the whole dataset, because an
-        evaluation may repeat and an exact observation repeats identically.  The order is the one
-        the pairs first arrived in, so that two runs from the same seed condition on the same
-        matrix rather than on a permutation of it.
-
-        Returns:
-            tuple[list[Any], list[float]]: The distinct terms and their values.
-
-        Raises:
-            ValueError: If one term carries two different values.  The loop observes a *function*,
-                so that is not a repetition.  Keeping one of the two would pick a measurement on
-                the caller's behalf, and keeping both is the singular Gram matrix this clause
-                exists to prevent.  A quality measure that genuinely varies between calls is the
-                stochastic case, and that one is modeled with a noise term on the diagonal rather
-                than with two rows.
-        """
-        values: dict[Any, float] = {}
-        terms: list[Any] = []
-        observations: list[float] = []
-        for candidate, value in zip(self._x_list, self._y_list, strict=True):
-            if candidate in values:
-                if values[candidate] != value:
-                    raise ValueError(
-                        f"the dataset gives {candidate} two different values, "
-                        f"{values[candidate]} and {value}: the loop observes a function, so a "
-                        f"repeated term repeats its value.  A quality measure that varies between "
-                        f"calls is the stochastic case, which belongs on the diagonal of the "
-                        f"kernel (WhiteKernel), not in the dataset."
-                    )
-                continue
-            values[candidate] = value
-            terms.append(candidate)
-            observations.append(value)
-        return terms, observations
-
     def _fit_surrogate(
         self, terms: Sequence[Any], values: Sequence[float]
     ) -> GaussianProcessRegressor:
@@ -1316,24 +791,6 @@ class BayesianOptimization(Generic[NT, T, G]):
             )
             raise RuntimeError(msg)
         return self._fit_surrogate(terms, values)
-
-    @property
-    def query(self) -> Any:
-        """The generator query this loop poses, or ``None`` where there is no search space.
-
-        The one object, so that a caller who wants to draw from :attr:`sampler` themselves, as a
-        paired random-search baseline does, draws through the same query the loop uses, and the
-        sampler's counting construction is built once for both.  Asking the sampler with a query
-        of one's own would be correct and would pay the counting twice.
-
-        Returns:
-            Any: The query, or None.
-
-        Raises:
-            ValueError: If the search space has no rules for the request.  This is the path that
-                used to report nothing and hand back a query every draw from which is empty.
-        """
-        return self._query()
 
     @property
     def surrogate(self) -> GaussianProcessRegressor | None:
@@ -1456,69 +913,6 @@ class BayesianOptimization(Generic[NT, T, G]):
                 theta.size,
             )
 
-    def observe(self, candidate: Any, y: float) -> None:
-        """Record the objective value for the last suggested candidate.
-
-        A term of the design phase goes into the dataset without a trace row and without counting
-        as a pass; after the design's last value the state is INITIALIZED.  A pass goes into the
-        dataset with its trace row and counts.
-
-        Parameters
-        ----------
-        candidate:
-            Must match the candidate from the last ``suggest()`` call.
-        y:
-            The objective value, exactly as measured.
-
-        Raises
-        ------
-        RuntimeError
-            If called outside the SUGGESTED state.
-        ValueError
-            If ``candidate`` does not match the last suggestion, if ``y`` is not finite, or if
-            the last suggestion carries no diagnostics a trace row can be read from.
-        """
-        if self._bo_state != BOState.SUGGESTED:
-            raise RuntimeError(
-                f"observe() is not allowed in state {self._bo_state.value}.  "
-                "Call suggest() first."
-            )
-        if self._last_suggestion is None:
-            raise RuntimeError("Internal error: _last_suggestion is None in SUGGESTED state.")
-        if candidate != self._last_suggestion.candidate:
-            raise ValueError(
-                "Observed candidate does not match the last suggested candidate."
-            )
-
-        # Record the tree suggest() produced, not the caller's argument.  The check above is
-        # structural on purpose, since a caller may legitimately hand back a reconstructed tree,
-        # but the observation set has to hold exactly what was suggested.
-        recorded = self._last_suggestion.candidate
-        value = _finite_or_raise(y, recorded)
-        if self._design_outstanding:
-            # A design term goes into the dataset and nowhere else: it has no acquisition value
-            # and no pick, so it is no row of the trace and no pass of the count.  The phase ends
-            # with the value of its last term, and the passes begin.
-            self._x_list.append(recorded)
-            self._x_set.add(recorded)
-            self._y_list.append(value)
-            self._design_outstanding = False
-            self._bo_state = (
-                BOState.DESIGN if self._design_next < len(self._design) else BOState.INITIALIZED
-            )
-            return
-        # Checked before the dataset grows, because the row is written after it has.  A suggestion
-        # no row can be read from would otherwise leave a term and a value behind that no trace
-        # row and no iteration count mention, and the state stays at SUGGESTED, so the very same
-        # call is accepted again and appends them a second time.
-        _require_trace_diagnostics(self._last_suggestion)
-        self._x_list.append(recorded)
-        self._x_set.add(recorded)
-        self._y_list.append(value)
-        self._trace.append(self._trace_record(self._last_suggestion, value))
-        self._iteration += 1
-        self._bo_state = BOState.OBSERVED
-
     def _trace_record(self, suggestion: Suggestion, observed: float) -> TraceRecord:
         """Close one pass into a row of the run trace.
 
@@ -1571,37 +965,41 @@ class BayesianOptimization(Generic[NT, T, G]):
         """
         return list(self._trace)
 
-    @property
-    def initial_repeats_rejected(self) -> int:
-        """How many repeated terms the initializer produced and this loop redrew.
+    def initialize(
+        self,
+        *,
+        objective: Callable[[Any], float] | None = None,
+        x0: Sequence[Any] | None = None,
+        y0: Sequence[float] | None = None,
+        initial_size: int = 10,
+        gp_params: dict[str, Any] | None = None,
+        alpha: float = _JITTER,
+        design: Sequence[Any] | None = None,
+    ) -> None:
+        """Build the initial dataset, or start the design phase that builds it.
 
-        Zero under the size-uniform sampler, whose stream lists each inhabitant within the bound
-        exactly once, so that every prefix of it is a sample without replacement.  A nonzero value
-        there says that guarantee did not hold, and under the depth-bounded random sampler, whose
-        draws are independent and may repeat, it says how much the repair had to do.  Reported
-        rather than absorbed: a run whose initial design needed redrawing is a run whose sampler
-        does not supply what its dataset needs, and the record has to be able to say so.
+        See :meth:`AskTellLoop.initialize` for ``objective``, ``x0``, ``y0``, ``initial_size`` and
+        ``design``; this class adds the two arguments of the surrogate's fit.
 
-        A design the caller hands to ``initialize()`` reports 0 whatever it contains, because the
-        number counts what this loop redrew and it redrew nothing there.
-
-        Returns:
-            int: The count, 0 before ``initialize()`` and 0 again after ``reset()``.
+        Parameters
+        ----------
+        gp_params:
+            Extra kwargs forwarded to ``GaussianProcessRegressor``.
+        alpha:
+            The numerical diagonal added to the Gram matrix.  See :data:`_JITTER`.
         """
-        return self._initial_repeats_rejected
+        super().initialize(
+            objective=objective, x0=x0, y0=y0, initial_size=initial_size, design=design
+        )
+        # Stored once the dataset or the design exists, as before the loop was factored out: a
+        # call that raises leaves the arguments of a run in progress untouched.
+        self._alpha = alpha
+        self._gp_params = gp_params
 
     def reset(self) -> None:
-        """Reset to UNINITIALIZED, clearing all observations.
+        """Reset to UNINITIALIZED, clearing all observations and the surrogate.
 
-        Constructor parameters are preserved.  The **default** initializer is rebuilt with it, so
-        a second run repeats the first: its sampler is seeded from ``self.seed``, and dropping it
-        here is what makes the stream start over rather than continue.
-
-        An initializer handed to the constructor is a different matter.  It carries its own
-        random state, which this cannot reach and does not reset.  A second run under one of those
-        continues where the first left off, and two runs of an otherwise identical configuration
-        draw different populations.  A caller who wants them to agree constructs a fresh
-        initializer between runs.
+        See :meth:`AskTellLoop.reset` for what a reset keeps and what it rebuilds.
 
         Resetting empties the graph kernels' caches, and that reaches past this optimization.
         They live on their module and their keys hold the terms, so the terms of a finished run
@@ -1610,20 +1008,8 @@ class BayesianOptimization(Generic[NT, T, G]):
         keys name the term and the translation and never the kernel that wrote the entry, so a
         dropped entry costs the conversion or the kernel evaluation again and nothing else.
         """
-        self._bo_state = BOState.UNINITIALIZED
-        self._x_list = []
-        self._y_list = []
-        self._x_set = set()
-        self._initial_repeats_rejected = 0
-        self._last_suggestion = None
+        super().reset()
         self._model = None
-        self._iteration = 0
-        self._sampler = None
-        self._initializer = None
-        self._trace = []
-        self._design = ()
-        self._design_next = 0
-        self._design_outstanding = False
         self._warned_about_exploitation = False
         # A second run fits a second surrogate, and a caller whose kernel and optimizer still do
         # not match has to be told a second time.  Both model selection flags go back with it.
@@ -1632,149 +1018,30 @@ class BayesianOptimization(Generic[NT, T, G]):
         self.last_acquisition_run = None
         clear_kernel_caches()
 
-    def best(self) -> tuple[Any, float]:
-        """Return the best observation as ``(candidate, y)``.
+    def _check_pass_suggestion(self, suggestion: Suggestion) -> None:
+        """A pass is refused before its value enters the dataset if no trace row can be read from it.
 
-        Best is the **largest** observed value: the loop maximises.
-
-        Raises
-        ------
-        RuntimeError
-            If called before any observations have been made.
+        Args:
+            suggestion (Suggestion): The pass.
         """
-        if not self._y_list:
-            raise RuntimeError("No observations available yet.")
-        idx = int(np.argmax(np.array(self._y_list, dtype=float)))
-        return self._x_list[idx], float(self._y_list[idx])
+        _require_trace_diagnostics(suggestion)
 
-    def finalize(self) -> dict[str, Any]:
-        """Transition to FINALIZED and return the optimization result.
+    def _record_pass(self, suggestion: Suggestion, observed: float) -> None:
+        """A closed pass becomes a row of the run trace.
 
-        Returns
-        -------
-        dict with keys:
-            ``best_tree``, ``best_y``, ``x``, ``y``, ``gp_model``, ``iterations``, ``trace``,
-            ``dropped_suggestion``, ``design_remaining``.
-
-            ``gp_model`` is the surrogate the **last** :meth:`suggest` fitted, and nothing is
-            fitted after it, so the model has seen nothing the run appended since.  A run that
-            ends on an observation reports a model that never saw the pair it ended on.  A run
-            that ends on an outstanding suggestion reports the model of that pass, which saw
-            every pair the dataset held, because that pass appended none of its own.  Either way
-            the fit is over the *distinct* pairs of what it was handed, which is fewer than the
-            dataset holds whenever a term repeats in it.  A diagnostic that wants a surrogate
-            over the whole dataset, as the fit scatter and the leave-one-out calibration of the
-            acceptance checks do, asks :meth:`surrogate_over_dataset` for one rather than reading
-            this.
-
-            :attr:`last_acquisition_run` is left standing too, but it describes that same pass
-            only where that :meth:`suggest` was asked to record a population.  Where it was not,
-            the attribute still holds the most recent pass that was asked, which is an earlier
-            one, or ``None`` if no pass was ever asked.
-
-            ``iterations`` counts the passes :meth:`observe` closed.  A suggestion that never got
-            a value is not one of them, and it is not a row of ``trace`` either.
-
-            ``dropped_suggestion`` is the candidate of a suggestion that no value ever reached.
-            It is ``None`` where no suggestion was open, and also where an open one already had
-            its value in the dataset.  Finalizing with a suggestion open is allowed, and it is how
-            an aborted run closes: a failing evaluation raises out of :meth:`optimize` between
-            :meth:`suggest` and :meth:`observe`, and this call is what puts such a run into
-            ``FINALIZED`` and names in one answer what it collected and which candidate it gave
-            up on.  What such a candidate must not do is vanish.  An evaluation of the ask/tell
-            layer may live outside this process and may already have been paid for, and
-            :meth:`observe` is the only way to get it into the dataset, so the term is named
-            here and logged instead.  The suggestion itself is
-            cleared on every path, so a snapshot taken after this reports none outstanding.
-
-            ``trace`` is the per-pass table of the trace readings.  See :attr:`trace`.
-
-            ``design_remaining`` lists, in the design's order, the terms of the design phase that
-            no value reached: empty once the design is complete, and empty where the design was
-            not handed out through the phase.  A run finalized during its design keeps every value
-            it observed and names here what it never measured.
-
-        Raises
-        ------
-        RuntimeError
-            If called in an invalid state, or on an empty dataset.  The loop answers with a term
-            of maximal observed value, and a run that observed nothing has none: reporting
-            ``(None, nan)`` instead reads downstream as a completed run with a worthless optimum.
+        Args:
+            suggestion (Suggestion): The pass.
+            observed (float): Its value.
         """
-        if self._bo_state not in (
-            BOState.DESIGN, BOState.INITIALIZED, BOState.OBSERVED, BOState.SUGGESTED
-        ):
-            raise RuntimeError(
-                f"finalize() is not allowed in state {self._bo_state.value}."
-            )
+        self._trace.append(self._trace_record(suggestion, observed))
 
-        best_tree, best_y = self.best()
+    def _result_model(self) -> GaussianProcessRegressor | None:
+        """The surrogate of the last pass, reported under ``gp_model``.
 
-        # A suggestion was dropped when the dataset holds no value for its term.  The state does
-        # not answer that question: observe() writes the term and its value before it moves the
-        # state, so a run interrupted in between sits in SUGGESTED with the value already
-        # recorded, and calling that term dropped would state the reverse of the truth.  The
-        # dataset answers it exactly, because the two lists are appended in step and read by
-        # position everywhere else, so a term has a value if and only if a y entry stands beside
-        # it.  Membership in the duplicate index is not the same test: the index is written
-        # between the two appends, so an interrupt there leaves it claiming a value the dataset
-        # does not hold.  A suggestion cannot turn up paired here by accident either, because
-        # suggest() replaces or refuses any candidate the observed set already holds.
-        valued_terms = self._x_list[: len(self._y_list)]
-        outstanding = self._last_suggestion
-        dropped = None
-        if outstanding is not None and outstanding.candidate not in valued_terms:
-            dropped = outstanding.candidate
-            _LOG.warning(
-                "the run is finalized with the suggestion %s still outstanding.  No value ever "
-                "reached it, so the dataset holds none for the term, and it is not among the %d "
-                "passes this result counts.  An evaluation that fails leaves the "
-                "closed loop in exactly this state, and a caller who did measure the term hands "
-                "it to observe() before finalizing.  The result names it under "
-                "dropped_suggestion.",
-                dropped,
-                self._iteration,
-            )
-        self._last_suggestion = None
-        self._design_outstanding = False
-        # The design terms without a value: the outstanding one, if it is a design term, and every
-        # one the phase never handed out.  Empty once the design is complete.
-        valued = set(valued_terms)
-        design_remaining = [term for term in self._design if term not in valued]
-
-        self._bo_state = BOState.FINALIZED
-        return {
-            "best_tree": best_tree,
-            "best_y": best_y,
-            "x": np.asarray(self._x_list, dtype=object),
-            "y": np.asarray(self._y_list, dtype=float),
-            "gp_model": self._model,
-            "iterations": self._iteration,
-            "trace": self.trace,
-            "dropped_suggestion": dropped,
-            "design_remaining": design_remaining,
-        }
-
-    def get_state_snapshot(self) -> dict[str, Any]:
-        """Return a serializable snapshot of the current Ask/Tell state."""
-        valued = set(self._x_list[: len(self._y_list)])
-        return {
-            "state": self._bo_state.value,
-            "x_list": list(self._x_list),
-            "y_list": list(self._y_list),
-            "iteration": self._iteration,
-            "last_suggestion": (
-                None if self._last_suggestion is None
-                else self._last_suggestion.candidate
-            ),
-            # The design phase: the design, and how many of its terms still await a value.
-            "design": list(self._design),
-            "design_remaining": sum(1 for term in self._design if term not in valued),
-        }
-
-    # -------------------------------------------------------------------------
-    # The closed loop
-    # -------------------------------------------------------------------------
+        Returns:
+            GaussianProcessRegressor | None: The model, or None before the first pass.
+        """
+        return self._model
 
     def check_configuration(
         self, acquisition_fitness_mode: Literal["auto", "single", "batch"] = "batch"
