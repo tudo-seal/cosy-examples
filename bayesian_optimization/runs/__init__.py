@@ -14,6 +14,7 @@ from .acquisition import (
 )
 from .artifacts import RunArtifacts, metadata_path_for
 from .budgets import StepBudgets, step_budget
+from .driver import DESIGN_PHASE, RunOutcome, run_paired, run_search
 from .metadata import write_run_metadata
 from .records import (
     EA_CSV_COLUMNS,
@@ -52,6 +53,7 @@ from .term_pool import (
 )
 
 __all__ = [
+    "DESIGN_PHASE",
     "DEFAULT_CROSSOVER_RATE",
     "DEFAULT_DEPTH_BOUND",
     "DEFAULT_MUTATION_RATE",
@@ -74,6 +76,7 @@ __all__ = [
     "MetricSchema",
     "Objective",
     "RunArtifacts",
+    "RunOutcome",
     "SearchProgram",
     "StepBudgets",
     "SurrogateLogger",
@@ -90,6 +93,8 @@ __all__ = [
     "metadata_path_for",
     "read_term_pool",
     "resume_term_pool",
+    "run_paired",
+    "run_search",
     "step_budget",
     "write_run_diagnostics",
     "write_run_metadata",

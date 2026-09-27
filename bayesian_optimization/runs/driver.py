@@ -1,0 +1,335 @@
+"""One driver for every strategy of the ask/tell loop, and the paired comparison of several.
+
+:func:`run_search` runs a strategy, Bayesian optimization or random search, under a caller's
+:class:`~bayesian_optimization.runs.schema.MetricSchema`.  The design is the loop's first phase: it
+is drawn by the strategy, given as terms, or resumed from the records of an earlier run, and on
+every one of those paths each evaluation is written, row and term record, before the loop takes its
+value and before the next evaluation starts.  A resumed design is taken over term by term, with the
+value the loop was handed when it was measured.  Everything that can be refused is refused before
+anything is drawn, opened or paid: a taken run name, a pass configuration no pass could use, a
+resumed record without a value.
+
+:func:`run_paired` runs several strategies from one design at one budget.  The first evaluates the
+design; the others take it over from the first one's records, so the design is paid once.  That is
+what the CIFAR driver's paired random-search arm did for one pair of strategies, as a helper any
+comparison can use, for instance of samplers at one budget.
+
+The evaluation is the caller's: ``evaluate(term)`` answers with the mapping of metrics, and the
+schema's objective reads the loop's value off it.
+"""
+
+from __future__ import annotations
+
+import contextlib
+import time
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
+from typing import Any
+
+from ..bo import BayesianOptimization
+from ..loop import AskTellLoop
+from ..random_search import RandomSearch
+from .artifacts import RunArtifacts
+from .budgets import StepBudgets, step_budget
+from .records import EAGenerationLogger, EvaluationRecorder, SurrogateLogger
+from .schema import MetricSchema
+from .term_pool import TermRecord, read_term_pool
+
+#: The phase of a design term in a run's rows and records, as the CIFAR driver has always named it.
+DESIGN_PHASE = "pre_sample"
+
+
+@dataclass
+class RunOutcome:
+    """What a run hands back beside its files.
+
+    Attributes:
+        result (dict[str, Any]): The strategy's ``finalize()``.
+        seconds (float): The run's wall clock, the design included.
+        summary (dict[str, Any]): The provenance of what ran: ``run_kind``, ``design_source``
+            (``drawn``, ``terms`` or ``resumed``), the evaluations made here and taken over, the
+            best value in the metric's own sign, and the strategy's repeat counts.
+    """
+
+    result: dict[str, Any]
+    seconds: float
+    summary: dict[str, Any]
+
+
+def _run_kind(strategy: AskTellLoop) -> str:
+    if isinstance(strategy, BayesianOptimization):
+        return "bayesian_optimization"
+    if isinstance(strategy, RandomSearch):
+        return "random_search"
+    return type(strategy).__name__
+
+
+def _resumed_values(
+    records: Sequence[TermRecord], resumed_value: Callable[[Mapping[str, Any]], float] | None
+) -> list[float]:
+    """The value the loop is handed for each resumed record, refused where none can be named."""
+    values = []
+    for index, record in enumerate(records):
+        if record.loop_value is not None:
+            values.append(float(record.loop_value))
+        elif resumed_value is not None:
+            values.append(float(resumed_value(record.metrics)))
+        else:
+            msg = (
+                f"resumed record {index} carries no loop value, since it was written before the "
+                "pool kept one; name how its metrics become the value the loop maximizes with "
+                "resumed_value"
+            )
+            raise ValueError(msg)
+    return values
+
+
+def run_search(
+    strategy: AskTellLoop,
+    evaluate: Callable[[Any], Mapping[str, Any]],
+    *,
+    schema: MetricSchema,
+    csv_path: str,
+    pretty_algebra: Callable[[], Any],
+    n_design: int | None = None,
+    n_passes: int = 0,
+    design: Sequence[Any] | None = None,
+    resume: Sequence[TermRecord] | None = None,
+    resumed_value: Callable[[Mapping[str, Any]], float] | None = None,
+    provenance: Mapping[str, Any] | None = None,
+    budgets: StepBudgets | None = None,
+    refuse_taken: bool = True,
+    verbose: bool = False,
+    echo: Callable[[str], None] = print,
+) -> RunOutcome:
+    """Run a strategy, writing every evaluation as it is measured.
+
+    Args:
+        strategy (AskTellLoop): The configured strategy, before ``initialize()``.
+        evaluate (Callable): Maps a term to the mapping of its metrics; the objective is one of
+            them.
+        schema (MetricSchema): The run's columns and the objective.
+        csv_path (str): The run's CSV; every other file is named after it.
+        pretty_algebra (Callable): The algebra that renders a term for the CSV.
+        n_design (int | None): The size of a drawn design; with ``design`` or ``resume`` it may be
+            left out, and given it must match. (Default value = None)
+        n_passes (int): The budget of passes after the design. (Default value = 0)
+        design (Sequence | None): A design given as terms, evaluated as given. (Default value = None)
+        resume (Sequence[TermRecord] | None): The design records of an earlier run of this
+            configuration, taken over instead of evaluated: their terms are the design and their
+            loop values the values. Which records belong to which configuration is the caller's
+            check (see :func:`~bayesian_optimization.runs.resume.load_initial_design`).
+            (Default value = None)
+        resumed_value (Callable | None): How a resumed record written before records kept the
+            loop's value becomes that value. (Default value = None)
+        provenance (Mapping | None): Written into the term pool's header. (Default value = None)
+        budgets (StepBudgets | None): The watchdog's budgets; the CIFAR example's when omitted.
+            (Default value = None)
+        refuse_taken (bool): Refuse a run whose files exist, before anything is opened.
+            (Default value = True)
+        verbose (bool): Passed to ``suggest``. (Default value = False)
+        echo (Callable[[str], None]): Where the per-evaluation lines go. (Default value = print)
+
+    Returns:
+        RunOutcome: The result, the wall clock and the summary.
+
+    Raises:
+        ValueError: For a design given both ways, a size that does not match it, a negative
+            budget, or a resumed record without a value; and as ``check_configuration()`` refuses
+            a pass configuration.  All before anything is drawn, opened or evaluated.
+        FileExistsError: If ``refuse_taken`` and a file of the run exists.
+    """
+    budgets = budgets if budgets is not None else StepBudgets()
+    # --- Everything that can be refused is refused before anything is drawn, opened or paid.
+    if design is not None and resume is not None:
+        raise ValueError("a design is given either as terms or as resumed records, not both")
+    if n_passes < 0:
+        raise ValueError(f"a budget of passes is a count, not {n_passes}")
+    values: list[float] | None = None
+    records: list[TermRecord] = []
+    terms: list[Any] | None = None
+    if resume is not None:
+        records = list(resume)
+        values = _resumed_values(records, resumed_value)
+        terms = [record.term for record in records]
+        source = "resumed"
+    elif design is not None:
+        terms = list(design)
+        source = "terms"
+    else:
+        if n_design is None:
+            raise ValueError("n_design is required when the strategy draws the design")
+        source = "drawn"
+    if terms is not None and n_design is not None and n_design != len(terms):
+        msg = f"n_design is {n_design}, and the design handed over has {len(terms)} terms"
+        raise ValueError(msg)
+    artifacts = RunArtifacts(csv_path)
+    if refuse_taken:
+        artifacts.refuse_taken()
+    if n_passes > 0:
+        strategy.check_configuration()
+
+    bayesian = isinstance(strategy, BayesianOptimization)
+    phase = strategy.PASS_PHASE
+    objective = schema.objective
+    evaluated_here = 0
+    taken_over = 0
+    metrics: Mapping[str, Any]
+    started = time.time()
+    with contextlib.ExitStack() as stack:
+        recorder = stack.enter_context(EvaluationRecorder(
+            csv_path, pretty_algebra, schema, provenance=provenance,
+            mode="x" if refuse_taken else "w",
+        ))
+        ea_logger = surrogate_logger = None
+        if bayesian and n_passes > 0:
+            ea_logger = stack.enter_context(EAGenerationLogger(artifacts.path("ea")))
+            surrogate_logger = stack.enter_context(SurrogateLogger(artifacts.path("surrogate")))
+
+        # --- The design, the loop's first phase: every term written before its value is taken.
+        size = len(terms) if terms is not None else n_design
+        assert size is not None
+        with step_budget(f"the design ({size} evaluations)", max(size, 1) * budgets.per_evaluation):
+            if terms is None:
+                strategy.initialize(initial_size=size)
+            else:
+                strategy.initialize(design=terms)
+            for index, expected in enumerate(strategy.design):
+                suggestion = strategy.suggest(verbose=verbose)
+                term = suggestion.candidate
+                if term != expected:
+                    msg = (
+                        f"the loop handed out design term {index} out of order: {term} where the "
+                        f"design holds {expected}"
+                    )
+                    raise RuntimeError(msg)
+                if values is not None:
+                    metrics = records[index].metrics
+                    value = values[index]
+                    taken_over += 1
+                    note = " (resumed)"
+                else:
+                    metrics = evaluate(term)
+                    value = objective.loop_value(metrics)
+                    evaluated_here += 1
+                    note = ""
+                # Written before the loop takes the value, so that a value the loop refuses, a
+                # non-finite one, is on disk with the metrics that explain it.
+                recorder.log(DESIGN_PHASE, index, term, metrics, loop_value=value)
+                echo(f"  {DESIGN_PHASE}[{index}]: objective={objective.as_reported(value):.5f} "
+                     f"{schema.live_line(metrics)}{note}".rstrip())
+                strategy.observe(term, value)
+
+        # --- The passes.
+        for step in range(n_passes):
+            proposal_started = time.time()
+            with step_budget(
+                f"pass {step}: the proposal",
+                budgets.acquisition_warn,
+                hard_limit_seconds=budgets.acquisition_hard_limit if bayesian else None,
+            ):
+                if bayesian:
+                    # The frontier read and the generation log need the population as scored.
+                    assert isinstance(strategy, BayesianOptimization)
+                    suggestion = strategy.suggest(verbose=verbose, record_population=True)
+                else:
+                    suggestion = strategy.suggest(verbose=verbose)
+            acquisition_seconds = time.time() - proposal_started
+            if ea_logger is not None and surrogate_logger is not None:
+                # Written before the evaluation, so an interrupted pass keeps its inner search.
+                ea_logger.log(step, getattr(strategy, "last_acquisition_run", None))
+                surrogate_logger.log(step, strategy)
+            term = suggestion.candidate
+            with step_budget(f"pass {step}: the evaluation", budgets.per_evaluation):
+                metrics = evaluate(term)
+            value = objective.loop_value(metrics)
+            evaluated_here += 1
+            recorder.log(phase, step, term, metrics, suggestion=suggestion,
+                         acquisition_seconds=acquisition_seconds, loop_value=value)
+            echo(f"  {phase}[{step}]: objective={objective.as_reported(value):.5f} "
+                 f"{schema.live_line(metrics)}".rstrip())
+            strategy.observe(term, value)
+
+    result = strategy.finalize()
+    seconds = time.time() - started
+    summary: dict[str, Any] = {
+        "run_kind": _run_kind(strategy),
+        "design_source": source,
+        "n_design": len(strategy.design),
+        "n_passes": n_passes,
+        "evaluated_here": evaluated_here,
+        "taken_over": taken_over,
+        "seconds": seconds,
+        "best_objective_value": objective.as_reported(float(result["best_y"])),
+        "best_loop_value": float(result["best_y"]),
+        "initial_repeats_rejected": strategy.initial_repeats_rejected,
+        "completed": True,
+    }
+    if isinstance(strategy, RandomSearch):
+        summary["terms_skipped"] = strategy.terms_skipped
+    return RunOutcome(result, seconds, summary)
+
+
+def run_paired(
+    strategies: Mapping[str, AskTellLoop],
+    evaluate: Callable[[Any], Mapping[str, Any]],
+    *,
+    schema: MetricSchema,
+    csv_paths: Mapping[str, str],
+    pretty_algebra: Callable[[], Any],
+    n_passes: int,
+    n_design: int | None = None,
+    design: Sequence[Any] | None = None,
+    resume: Sequence[TermRecord] | None = None,
+    resumed_value: Callable[[Mapping[str, Any]], float] | None = None,
+    provenance: Mapping[str, Any] | None = None,
+    budgets: StepBudgets | None = None,
+    verbose: bool = False,
+    echo: Callable[[str], None] = print,
+) -> dict[str, RunOutcome]:
+    """Run several strategies from one design at one budget, the design evaluated once.
+
+    The first strategy runs the design as :func:`run_search` would, drawn, given or resumed; every
+    other one takes that design over from the first run's records and then makes its own passes.
+    Whether one strategy beats another is a question about the passes only if they start from the
+    same place, and sharing the evaluated design is also what makes the comparison cost one extra
+    budget of passes per strategy rather than one extra design.
+
+    Args:
+        strategies (Mapping[str, AskTellLoop]): The strategies by name; the first draws the design.
+        csv_paths (Mapping[str, str]): One run CSV per name.
+        n_passes (int): Every strategy's budget of passes.
+        (The other arguments as for :func:`run_search`.)
+
+    Returns:
+        dict[str, RunOutcome]: The outcome of each strategy's run, by name.
+
+    Raises:
+        ValueError: If the names of the strategies and the paths differ.
+        FileExistsError: If a file of any of the runs exists, before the first run starts.
+    """
+    names = list(strategies)
+    if not names or set(names) != set(csv_paths):
+        raise ValueError("one CSV path per strategy, under the same names")
+    # Refused before the first run starts, so a second strategy's mistake costs no design.
+    for name in names:
+        RunArtifacts(csv_paths[name]).refuse_taken()
+    if n_passes > 0:
+        for name in names:
+            strategies[name].check_configuration()
+    common: dict[str, Any] = {
+        "schema": schema, "pretty_algebra": pretty_algebra, "n_passes": n_passes,
+        "provenance": provenance, "budgets": budgets, "verbose": verbose, "echo": echo,
+    }
+    first = names[0]
+    outcomes = {first: run_search(
+        strategies[first], evaluate, csv_path=csv_paths[first], n_design=n_design, design=design,
+        resume=resume, resumed_value=resumed_value, **common,
+    )}
+    _header, records = read_term_pool(RunArtifacts(csv_paths[first]).path("terms"))
+    shared = [record for record in records if record.phase == DESIGN_PHASE]
+    for name in names[1:]:
+        outcomes[name] = run_search(
+            strategies[name], evaluate, csv_path=csv_paths[name], resume=shared, **common
+        )
+    return outcomes

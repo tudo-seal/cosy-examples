@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable, Iterator, Sequence
-from typing import Any
+from typing import Any, ClassVar
 
 from cosy.core.solution_space import SolutionSpace
 from cosy.search import Sampler
@@ -49,6 +49,9 @@ class RandomSearch(AskTellLoop[NT, T, G]):
         stream, is skipped without counting against it.  Reachable only for a sampler that draws
         with replacement.
     """
+
+    #: A pass of random search, as the paired random-search arm was named in a run's rows.
+    PASS_PHASE: ClassVar[str] = "random_sample"
 
     def __init__(
         self,

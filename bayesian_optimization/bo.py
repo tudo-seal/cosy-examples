@@ -5,7 +5,7 @@ import math
 import random
 import time
 from collections.abc import Callable, Hashable, Sequence
-from typing import Any, Generic, Literal, TypeVar
+from typing import Any, ClassVar, Generic, Literal, TypeVar
 
 import numpy as np
 from cosy.core.solution_space import SolutionSpace
@@ -375,6 +375,9 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         the offset.  Centering inside the fit is the standard remedy and leaves the model intact,
         because it is undone before any value leaves the regressor.
     """
+
+    #: A pass of Bayesian optimization, as the CIFAR driver has always named it in its rows.
+    PASS_PHASE: ClassVar[str] = "bo_step"
 
     def __init__(
         self,

@@ -19,7 +19,7 @@ import math
 import random
 import time
 from collections.abc import Callable, Hashable, Sequence
-from typing import Any, Generic, TypeVar
+from typing import Any, ClassVar, Generic, TypeVar
 
 import numpy as np
 from cosy.core.solution_space import SolutionSpace
@@ -232,6 +232,9 @@ class AskTellLoop(Generic[NT, T, G]):
         The loop's own source of terms; ``None`` builds ``SizeUniformSampler(DEFAULT_SIZE_BOUND,
         Random(seed))`` counting from a materialized search tree, a placeholder for toy spaces.
     """
+
+    #: The phase a pass of this strategy is recorded under in a run's rows and term records.
+    PASS_PHASE: ClassVar[str] = "pass"
 
     def __init__(
         self,
