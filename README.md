@@ -123,7 +123,9 @@ is to be minimized is negated on the way in and the reported optimum on the way 
 
 | Module | What it holds |
 |---|---|
-| `bo.py` | `BayesianOptimization`, the closed loop and the ask and tell engine under it |
+| `loop.py` | `AskTellLoop`, the ask and tell engine every strategy runs: states, dataset, design phase |
+| `bo.py` | `BayesianOptimization`, the closed loop and the Gaussian process strategy on the engine |
+| `random_search.py` | `RandomSearch`, design and passes from one stream of a sampler, on the same engine |
 | `acquisition_function.py` | the three scores, `ExpectedImprovement` and its two siblings |
 | `acquisition_optimizer.py` | `AcquisitionOptimizer`, an acquisition as an evolutionary fitness |
 | `initial_sampling.py` | `KernelDiverseInitializer` and the weight strategies it draws with |
@@ -132,12 +134,12 @@ is to be minimized is negated on the way in and the reported optimum on the way 
 | `state.py` | `BOState`, `Suggestion`, `Diagnostics` |
 | `utils.py` | the conversions from a term to a labeled graph the graph kernels read |
 
-That is 19 modules of core, 5670 lines. `bayesian_optimization/examples/` holds 24 more modules and
-13 418 lines, and every one of them is an application: an example may not work around a defect in
+That is 21 modules of core, 6420 lines. `bayesian_optimization/examples/` holds 24 more modules and
+13 416 lines, and every one of them is an application: an example may not work around a defect in
 the core, it has to be fixed where it is. The dependency runs one way only, and no module outside
 `examples/` imports anything from inside it.
 
-`bayesian_optimization/__init__.py` exports 35 names, and nothing else is public API.
+`bayesian_optimization/__init__.py` exports 37 names, and nothing else is public API.
 
 ## The optimization loop
 

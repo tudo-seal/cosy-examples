@@ -12,13 +12,14 @@ path evaluates, and the pass after it is the pass that would have followed ``ini
 
 from __future__ import annotations
 
+import logging
 import random
 from typing import Any
 
 import pytest
 from cosy.search import DepthBoundedRandomSampler, SizeUniformSampler
 
-from bayesian_optimization.bo import BayesianOptimization
+from bayesian_optimization.bo import _JITTER, BayesianOptimization
 from bayesian_optimization.initial_sampling import distinct_prefix
 from tests.spaces import EXPR, LIST, expression_space, list_space
 
@@ -333,3 +334,38 @@ def test_a_drawn_design_counts_its_repeats_as_the_closed_path_does():
     assert closed.initial_repeats_rejected > 0, "this sampler has to repeat for the count to mean anything"
     assert phased.initial_repeats_rejected == closed.initial_repeats_rejected
     assert list(phased.design) == closed.get_state_snapshot()["x_list"]
+
+
+def test_bayesian_optimization_logs_the_loop_s_messages_under_its_own_logger(
+    bo_factory, tree_corpus, caplog
+):
+    """The loop's messages moved into ``AskTellLoop``; for this class they stay under its name.
+
+    A caller who configures or filters ``bayesian_optimization.bo`` keeps receiving the design
+    phase's lines and the warning about a suggestion left outstanding.
+    """
+    bo = bo_factory()
+    bo.initialize(design=tree_corpus[:3])
+    with caplog.at_level(logging.INFO, logger="bayesian_optimization.bo"):
+        first = bo.suggest()
+        bo.observe(first.candidate, 1.0)
+        bo.suggest()  # outstanding when the run is finalized
+        bo.finalize()
+
+    messages = [record.getMessage() for record in caplog.records]
+    assert {record.name for record in caplog.records} == {"bayesian_optimization.bo"}
+    assert any("design=0" in message for message in messages)
+    assert any("still outstanding" in message for message in messages)
+
+
+def test_a_refused_initialize_leaves_the_surrogate_s_arguments_untouched(bo_factory, tree_corpus):
+    """The fit's arguments are stored once the design or the dataset exists, never before."""
+    bo = bo_factory()
+    with pytest.raises(ValueError, match="repeat"):
+        bo.initialize(design=[tree_corpus[0], tree_corpus[0]], alpha=0.5, gp_params={"a": 1})
+    assert bo._alpha == _JITTER
+    assert bo._gp_params is None
+
+    bo.initialize(design=tree_corpus[:2], alpha=0.5, gp_params={"normalize_y": False})
+    assert bo._alpha == 0.5
+    assert bo._gp_params == {"normalize_y": False}

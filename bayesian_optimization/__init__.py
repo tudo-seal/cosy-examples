@@ -40,12 +40,15 @@ from .kernels.graph_kernel import (
 )
 from .kernels.kernel_base import StructuredKernelBase
 from .kernels.tree_kernel import OrderedRootedSubtreeKernel, SubsetTreeKernel
+from .loop import AskTellLoop
+from .random_search import RandomSearch
 from .state import BOState, Diagnostics, Suggestion
 
 __all__ = [
     "AcquisitionFunction",
     "AcquisitionOptimizer",
     "AcquisitionRun",
+    "AskTellLoop",
     "BOState",
     "BayesianOptimization",
     "CalibrationRead",
@@ -61,6 +64,7 @@ __all__ = [
     "OrderedRootedSubtreeKernel",
     "PiStrategy",
     "ProbabilityOfImprovement",
+    "RandomSearch",
     "StructuredKernelBase",
     "SubsetTreeKernel",
     "Suggestion",

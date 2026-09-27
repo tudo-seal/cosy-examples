@@ -500,12 +500,48 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
             of the three modes, or if it asks for ``"single"`` and that acquisition has no lower
             bound to floor the terms already evaluated against.
         """
-        if self._bo_state == BOState.DESIGN:
-            return self._suggest_design_term(verbose)
-        if self._bo_state not in (BOState.INITIALIZED, BOState.OBSERVED):
-            raise RuntimeError(
-                f"suggest() is not allowed in state {self._bo_state.value}."
-            )
+        return self._suggest(
+            verbose,
+            lambda: self._propose_pass(
+                acquisition_fitness_mode=acquisition_fitness_mode,
+                verbose=verbose,
+                record_population=record_population,
+            ),
+        )
+
+    def _propose(self, verbose: bool) -> Suggestion:
+        """A pass under the default arguments of :meth:`suggest`.
+
+        Args:
+            verbose (bool): Log the suggestion.
+
+        Returns:
+            Suggestion: The pass.
+        """
+        return self._propose_pass(
+            acquisition_fitness_mode="batch", verbose=verbose, record_population=False
+        )
+
+    def _propose_pass(
+        self,
+        *,
+        acquisition_fitness_mode: Literal["auto", "single", "batch"],
+        verbose: bool,
+        record_population: bool,
+    ) -> Suggestion:
+        """One pass: fit the surrogate, maximize the acquisition, replace a duplicate.
+
+        The body of :meth:`suggest`; the loop's state machine around it is
+        :meth:`AskTellLoop._suggest`, the same for every strategy.
+
+        Args:
+            acquisition_fitness_mode (Literal["auto", "single", "batch"]): See :meth:`suggest`.
+            verbose (bool): See :meth:`suggest`.
+            record_population (bool): See :meth:`suggest`.
+
+        Returns:
+            Suggestion: The pass.
+        """
         if self.optimizer is None:
             raise RuntimeError(_NO_OPTIMIZER)
 
@@ -611,16 +647,11 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
             "phase": "main",
         }
 
-        suggestion = Suggestion(
+        return Suggestion(
             candidate=candidate,
             acquisition_value=acq_value,
             diagnostics=diagnostics,
         )
-        self._last_suggestion = suggestion
-        self._design_outstanding = False
-        self._bo_state = BOState.SUGGESTED
-        log_suggestion(_LOG, suggestion)
-        return suggestion
 
     def _build_acquisition(
         self, model: GaussianProcessRegressor, incumbent: float

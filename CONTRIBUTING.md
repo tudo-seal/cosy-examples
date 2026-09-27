@@ -68,14 +68,14 @@ The slow tests are the end-to-end runs of the loop and are left to a local
 
 ## Two layers, held to two standards
 
-`bayesian_optimization/` outside `examples/` is a reusable core: 19 modules,
-5670 lines, and 35 exported names. A future caller has to be able to use
+`bayesian_optimization/` outside `examples/` is a reusable core: 21 modules,
+6420 lines, and 37 exported names. A future caller has to be able to use
 that
 API without prior knowledge and without unwritten invariants, so a change
 there
 carries its reason in the code rather than in a commit message.
 
-`bayesian_optimization/examples/` is applications only: 24 modules, 13 418
+`bayesian_optimization/examples/` is applications only: 24 modules, 13 416
 lines. The dependency runs one way, and no module of
 `bayesian_optimization/`
 outside `examples/` imports anything from inside it. The tests do, 32 of

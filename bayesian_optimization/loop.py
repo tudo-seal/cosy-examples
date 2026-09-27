@@ -125,8 +125,8 @@ def _distinct_dataset(
     terms under the same hashes and answers the same question, and one built per replacement asks
     that question of the whole design again for each of them.  Holding one means the design has to
     be hashable whether or not a repeat occurs, which is why
-    :meth:`BayesianOptimization.initialize` establishes that first, in its own words rather than
-    in the interpreter's.
+    :meth:`AskTellLoop.initialize` establishes that first, in its own words rather than in the
+    interpreter's.
 
     Args:
         drawn (Sequence[Any]): What the initializer returned.
@@ -397,41 +397,7 @@ class AskTellLoop(Generic[NT, T, G]):
                 raise NotImplementedError(
                     "initialize() without x0 requires a real search_space."
                 )
-            assert self._initializer is not None
-            assert self._sampler is not None
-            # The previous code drew a pool a hundred times the size and thinned it with a
-            # greedy determinantal point process, which is related work rather than either of the
-            # initializers this loop admits, and it warned and came back short where the stream
-            # simply raises.  Both of those initializers raise rather than return a short
-            # population.
-            x0_list = list(self._initializer.initialize(self._query(), initial_size))
-            # An initializer of the caller's own may answer with anything.  The two this
-            # package ships return terms, which are hashable by construction, so an unhashable
-            # candidate here is a broken initializer rather than an unusual term.
-            _require_hashable(x0_list, "the design the initializer returned")
-            # And then the dataset is made a *set*, which is not something the initializer can be
-            # asked for.  Sampled initialization builds a population, and a population is a finite
-            # multiset, so repeats are admissible there by definition.  The loop's dataset is not:
-            # a repeated term is a training point carrying no observation the previous one did
-            # not, one evaluation of the budget spent on nothing.
-            #
-            # The comment that used to stand here inherited the guarantee from the default
-            # sampler, whose stream lists each inhabitant within the bound exactly once, so that
-            # every prefix of it is a sample without replacement.  But ``sampler`` is a parameter
-            # of this class, and the depth-bounded random sampler draws independently, so its
-            # draws may repeat a term.  A guarantee that holds only until someone uses the
-            # parameter is the kind of unwritten invariant this API must not have.
-            x0_list, repeats = _distinct_dataset(
-                x0_list, self._sampler, self._query(), initial_size
-            )
-            if repeats:
-                self._logger.info(
-                    "the initializer returned %d repeated term(s) in an initial design of %d.  "
-                    "They were redrawn, as suggest() redraws a duplicate candidate.  The "
-                    "size-uniform sampler lists each inhabitant within its bound exactly once, so "
-                    "under it this number is 0",
-                    repeats, initial_size,
-                )
+            x0_list, repeats = self._draw_design(initial_size)
         else:
             x0_list = list(x0)
             _require_hashable(x0_list, "x0")
@@ -476,6 +442,56 @@ class AskTellLoop(Generic[NT, T, G]):
         self._last_suggestion = None
         self._iteration = 0
         self._bo_state = BOState.INITIALIZED
+
+    def _draw_design(self, size: int) -> tuple[list[Any], int]:
+        """Draw an initial design of ``size`` pairwise distinct terms, and count the repeats redrawn.
+
+        The loop's own draw: the configured initializer, then the repair that makes the design a
+        set.  A strategy that draws its terms another way, from one stream for design and passes
+        alike, overrides this.
+
+        Args:
+            size (int): The size of the design.
+
+        Returns:
+            tuple[list[Any], int]: The design, and how many repeated terms were redrawn.
+        """
+        assert self._initializer is not None
+        assert self._sampler is not None
+        # The previous code drew a pool a hundred times the size and thinned it with a
+        # greedy determinantal point process, which is related work rather than either of the
+        # initializers this loop admits, and it warned and came back short where the stream
+        # simply raises.  Both of those initializers raise rather than return a short
+        # population.
+        x0_list = list(self._initializer.initialize(self._query(), size))
+        # An initializer of the caller's own may answer with anything.  The two this
+        # package ships return terms, which are hashable by construction, so an unhashable
+        # candidate here is a broken initializer rather than an unusual term.
+        _require_hashable(x0_list, "the design the initializer returned")
+        # And then the dataset is made a *set*, which is not something the initializer can be
+        # asked for.  Sampled initialization builds a population, and a population is a finite
+        # multiset, so repeats are admissible there by definition.  The loop's dataset is not:
+        # a repeated term is a training point carrying no observation the previous one did
+        # not, one evaluation of the budget spent on nothing.
+        #
+        # The comment that used to stand here inherited the guarantee from the default
+        # sampler, whose stream lists each inhabitant within the bound exactly once, so that
+        # every prefix of it is a sample without replacement.  But ``sampler`` is a parameter
+        # of this class, and the depth-bounded random sampler draws independently, so its
+        # draws may repeat a term.  A guarantee that holds only until someone uses the
+        # parameter is the kind of unwritten invariant this API must not have.
+        x0_list, repeats = _distinct_dataset(
+            x0_list, self._sampler, self._query(), size
+        )
+        if repeats:
+            self._logger.info(
+                "the initializer returned %d repeated term(s) in an initial design of %d.  "
+                "They were redrawn, as suggest() redraws a duplicate candidate.  The "
+                "size-uniform sampler lists each inhabitant within its bound exactly once, so "
+                "under it this number is 0",
+                repeats, size,
+            )
+        return x0_list, repeats
 
     def _resolve_sampling(self) -> None:
         """Build the sampler and the initializer the loop draws from, where there is a space.
@@ -624,9 +640,10 @@ class AskTellLoop(Generic[NT, T, G]):
     def observe(self, candidate: Any, y: float) -> None:
         """Record the objective value for the last suggested candidate.
 
-        A term of the design phase goes into the dataset without a trace row and without counting
-        as a pass; after the design's last value the state is INITIALIZED.  A pass goes into the
-        dataset with its trace row and counts.
+        A term of the design phase goes into the dataset without counting as a pass and without a
+        record of the strategy's; after the design's last value the state is INITIALIZED.  A pass
+        goes into the dataset and counts, and the strategy records it where it keeps a trace
+        (``BayesianOptimization``: a row of its run trace).
 
         Parameters
         ----------
@@ -640,8 +657,9 @@ class AskTellLoop(Generic[NT, T, G]):
         RuntimeError
             If called outside the SUGGESTED state.
         ValueError
-            If ``candidate`` does not match the last suggestion, if ``y`` is not finite, or if
-            the last suggestion carries no diagnostics a trace row can be read from.
+            If ``candidate`` does not match the last suggestion, if ``y`` is not finite, or if the
+            strategy refuses the pass before its value enters the dataset
+            (``BayesianOptimization``: no diagnostics a trace row can be read from).
         """
         if self._bo_state != BOState.SUGGESTED:
             raise RuntimeError(
@@ -754,21 +772,22 @@ class AskTellLoop(Generic[NT, T, G]):
             ``best_tree``, ``best_y``, ``x``, ``y``, ``gp_model``, ``iterations``, ``trace``,
             ``dropped_suggestion``, ``design_remaining``.
 
-            ``gp_model`` is the surrogate the **last** :meth:`suggest` fitted, and nothing is
-            fitted after it, so the model has seen nothing the run appended since.  A run that
-            ends on an observation reports a model that never saw the pair it ended on.  A run
-            that ends on an outstanding suggestion reports the model of that pass, which saw
-            every pair the dataset held, because that pass appended none of its own.  Either way
-            the fit is over the *distinct* pairs of what it was handed, which is fewer than the
-            dataset holds whenever a term repeats in it.  A diagnostic that wants a surrogate
-            over the whole dataset, as the fit scatter and the leave-one-out calibration of the
-            acceptance checks do, asks :meth:`surrogate_over_dataset` for one rather than reading
-            this.
+            ``gp_model`` is the model the strategy reports, ``None`` for one without a model such as
+            ``RandomSearch``.  For ``BayesianOptimization`` it is the surrogate the **last**
+            :meth:`suggest` fitted, and nothing is fitted after it, so the model has seen nothing
+            the run appended since.  A run that ends on an observation reports a model that never
+            saw the pair it ended on.  A run that ends on an outstanding suggestion reports the
+            model of that pass, which saw every pair the dataset held, because that pass appended
+            none of its own.  Either way the fit is over the *distinct* pairs of what it was handed,
+            which is fewer than the dataset holds whenever a term repeats in it.  A diagnostic that
+            wants a surrogate over the whole dataset, as the fit scatter and the leave-one-out
+            calibration of the acceptance checks do, asks :meth:`surrogate_over_dataset` for one
+            rather than reading this.
 
-            :attr:`last_acquisition_run` is left standing too, but it describes that same pass
-            only where that :meth:`suggest` was asked to record a population.  Where it was not,
-            the attribute still holds the most recent pass that was asked, which is an earlier
-            one, or ``None`` if no pass was ever asked.
+            ``BayesianOptimization``'s :attr:`last_acquisition_run` is left standing too, but it
+            describes that same pass only where that :meth:`suggest` was asked to record a
+            population.  Where it was not, the attribute still holds the most recent pass that was
+            asked, which is an earlier one, or ``None`` if no pass was ever asked.
 
             ``iterations`` counts the passes :meth:`observe` closed.  A suggestion that never got
             a value is not one of them, and it is not a row of ``trace`` either.
@@ -776,7 +795,7 @@ class AskTellLoop(Generic[NT, T, G]):
             ``dropped_suggestion`` is the candidate of a suggestion that no value ever reached.
             It is ``None`` where no suggestion was open, and also where an open one already had
             its value in the dataset.  Finalizing with a suggestion open is allowed, and it is how
-            an aborted run closes: a failing evaluation raises out of :meth:`optimize` between
+            an aborted run closes: a failing evaluation raises between
             :meth:`suggest` and :meth:`observe`, and this call is what puts such a run into
             ``FINALIZED`` and names in one answer what it collected and which candidate it gave
             up on.  What such a candidate must not do is vanish.  An evaluation of the ask/tell
@@ -886,23 +905,44 @@ class AskTellLoop(Generic[NT, T, G]):
         Raises:
             RuntimeError: Outside the states a suggestion belongs in.
         """
+        return self._suggest(verbose, lambda: self._propose(verbose))
+
+    def _suggest(self, verbose: bool, propose: Callable[[], Suggestion]) -> Suggestion:
+        """The state machine around a suggestion, the same for every strategy.
+
+        A design term in DESIGN; otherwise the pass ``propose`` returns, recorded as outstanding
+        and logged.  A strategy whose :meth:`suggest` takes arguments of its own calls this with
+        a ``propose`` that closes over them.
+
+        Args:
+            verbose (bool): Log the suggestion.
+            propose (Callable[[], Suggestion]): The strategy's proposal of a pass.
+
+        Returns:
+            Suggestion: The term.
+
+        Raises:
+            RuntimeError: Outside the states a suggestion belongs in.
+        """
         if self._bo_state == BOState.DESIGN:
             return self._suggest_design_term(verbose)
         if self._bo_state not in (BOState.INITIALIZED, BOState.OBSERVED):
             raise RuntimeError(
                 f"suggest() is not allowed in state {self._bo_state.value}."
             )
-        if verbose:
-            enable_verbose_logging()
-        suggestion = self._propose()
+        suggestion = propose()
         self._last_suggestion = suggestion
         self._design_outstanding = False
         self._bo_state = BOState.SUGGESTED
         log_suggestion(self._logger, suggestion)
         return suggestion
 
-    def _propose(self) -> Suggestion:
+    def _propose(self, verbose: bool) -> Suggestion:
         """Propose the next pass: the one method a strategy has to supply.
+
+        Args:
+            verbose (bool): Whether the caller asked for verbose logging, which the strategy
+                switches on where it sees fit.
 
         Returns:
             Suggestion: A term the dataset does not hold, with the diagnostics of a pass.
