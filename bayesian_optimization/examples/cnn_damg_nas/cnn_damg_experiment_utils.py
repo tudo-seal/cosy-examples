@@ -1502,9 +1502,9 @@ def make_objective(x, y, x_val, y_val, batch_size, greater_is_better,
                    protocol=None, x_test=None, y_test=None, repeats=1, training_seeds=None):
     """Build the objective function and the store its measurements land in.
 
-    Every candidate's full metric set is kept, keyed by its term: the loop's ``initialize()``
-    evaluates the pre-samples internally and hands back objective values alone, so metrics measured
-    during those evaluations have nowhere else to go.
+    Every candidate's full metric set is kept, keyed by its term: the loop takes one value per
+    evaluation, while the run's CSV row and term pool need every metric that evaluation measured,
+    so the metrics are stored here and read back by the driver right after each call.
 
     Args:
         x (torch.Tensor): Training features.
@@ -1700,7 +1700,8 @@ def run_ask_tell_search(
         as_reported (Callable[[float], float]): The converter from :func:`objective_direction`.
         objective (str): The metric's name, for the printed summary.
         greater_is_better (bool): Whether the loop maximizes it directly.
-        n_pre_samples (int): How many candidates the initializer draws and evaluates.
+        n_pre_samples (int): The size of the initial design, drawn before anything is evaluated
+            and then evaluated term by term through the loop's design phase.
         n_iterations (int): The budget of loop passes.
         csv_path (str): Where the per-evaluation rows go.
         pretty_algebra (Callable): The algebra that renders a term for the CSV.
@@ -1718,6 +1719,10 @@ def run_ask_tell_search(
             on.  It bounds a legitimate duration, so it belongs to the cell being searched rather
             than to the code, and a large architecture at a large population can outlast the
             default. (Default value = ACQUISITION_HARD_LIMIT_SECONDS)
+        resume_design (list | None): The measured design of an earlier run of this
+            configuration, as :func:`load_initial_design` returns it.  Its terms are checked
+            against the design this run draws and its values are taken over rather than measured
+            again, on both paths. (Default value = None)
         resumed_value (Callable[[dict], float] | None): How a resumed record's metrics become
             the value the loop maximizes -- what ``f_obj`` would have returned for that term.
             ``None`` keeps the CIFAR example's convention, ``metrics["accuracy"]`` when greater
@@ -1734,6 +1739,10 @@ def run_ask_tell_search(
     print(f"Logging every evaluated structure to {csv_path}")
 
     started = time.time()
+    # A pass configuration the loop could not use is refused before the design is drawn or paid,
+    # as ``optimize()`` refuses it for itself.  A run without passes maximizes nothing.
+    if n_iterations > 0:
+        optimizer.check_configuration()
     # The paired baseline needs its terms before the loop starts, because the ones the loop
     # initializes on have to be the same objects.  One stream of as many draws as the two runs
     # together evaluate: on the size-uniform sampler every prefix of that stream is a sample without
@@ -1763,81 +1772,72 @@ def run_ask_tell_search(
         EAGenerationLogger(_sibling_path(csv_path, "_ea.csv")) as ea_logger,
         SurrogateLogger(_sibling_path(csv_path, "_surrogate.csv")) as surrogate_logger,
     ):
-        # The initial design is written as it is measured, not after it is complete.
+        # The initial design is the loop's first phase on both paths: drawn before anything is
+        # evaluated, handed out one term at a time, and written as it is measured.  The paired path
+        # hands the loop the head of its own stream, the unpaired path lets the loop draw.  Either
+        # way a run interrupted during its design leaves every network it trained on disk, and a
+        # resumed design is taken over term by term instead of being measured again.
         #
-        # The whole reason this function is not four lines is that results survive an interruption,
-        # and that used to hold for the loop passes and not for the initial design: the pre-samples
-        # were evaluated into a list and logged afterwards, so a run interrupted during
-        # initialization left an empty CSV however many networks it had trained.  With repeated
-        # measurements that window is hours rather than minutes, and hours in which nothing on disk
-        # says the run is producing anything at all is also the difference between "still running"
-        # and "stuck" seen from outside.
-        #
-        # Only the paired path can do this, because there the terms are known before the loop
-        # starts and can be measured one at a time in a known order.  Without a baseline the loop
-        # draws and evaluates them internally and there is nothing to interleave with, so that path
-        # keeps the older behavior and says so below rather than pretending otherwise.
+        # This used to hold on the paired path only.  The unpaired path drew and evaluated its
+        # design inside ``initialize()``, so its rows were written after the design was complete
+        # and a resumed design had no point at which it could be checked and taken over: a run
+        # that wanted either had to pay a random-search arm of the same budget for it.
         with step_budget(
             f"initialization ({n_pre_samples} networks)",
             n_pre_samples * PER_EVALUATION_WARN_SECONDS,
         ):
             if drawn is None:
-                optimizer.initialize(objective=f_obj, initial_size=n_pre_samples)
-                logged_prefix = None
+                optimizer.initialize(initial_size=n_pre_samples)
             else:
-                logged_prefix = drawn[:n_pre_samples]
+                optimizer.initialize(design=drawn[:n_pre_samples])
+            design = list(optimizer.design)
+            if resume_design is not None:
+                _check_resumed_design(resume_design, design)
+            for idx, expected in enumerate(design):
+                suggestion = optimizer.suggest(verbose=verbose)
+                tree = suggestion.candidate
+                if tree != expected:
+                    msg = (
+                        f"the loop handed out design term {idx} out of order: {tree} where the "
+                        f"design holds {expected}, so a value would be written against the "
+                        "wrong network"
+                    )
+                    raise RuntimeError(msg)
                 if resume_design is not None:
-                    _check_resumed_design(resume_design, logged_prefix)
-                values = []
-                for idx, tree in enumerate(logged_prefix):
-                    if resume_design is not None:
-                        # Measured already, in the run this one continues.  The value is taken
-                        # rather than measured again, which is the whole point, and it goes into
-                        # ``metrics_by_tree`` so that nothing downstream can tell the difference.
-                        metrics = resume_design[idx][1]
-                        metrics_by_tree[tree] = metrics
-                        if resumed_value is not None:
-                            values.append(float(resumed_value(metrics)))
-                        else:
-                            values.append(
-                                metrics["accuracy"] if greater_is_better
-                                else -metrics["objective_value"]
-                            )
-                        source = " (resumed)"
+                    # Measured already, in the run this one continues.  The value is taken
+                    # rather than measured again, which is the whole point, and it goes into
+                    # ``metrics_by_tree`` so that nothing downstream can tell the difference.
+                    metrics = resume_design[idx][1]
+                    metrics_by_tree[tree] = metrics
+                    if resumed_value is not None:
+                        value = float(resumed_value(metrics))
                     else:
-                        values.append(f_obj(tree))
-                        metrics = metrics_by_tree[tree]
-                        source = ""
-                    logger.log("pre_sample", idx, tree, metrics)
-                    print(f"  pre_sample[{idx}]: objective={as_reported(values[-1]):.5f} "
-                          f"accuracy={metrics['accuracy']:.4f} "
-                          f"params={metrics['n_params']} "
-                          f"train={metrics['train_seconds']:.1f}s{source}", flush=True)
-                optimizer.initialize(x0=logged_prefix, y0=values)
-
-        snapshot = optimizer.get_state_snapshot()
-        for idx, (tree, value) in enumerate(
-            zip(snapshot["x_list"], snapshot["y_list"], strict=True)
-        ):
-            # No substitute for a missing measurement: every pre-sample went through the
-            # objective, so a term without metrics means the loop handed back one it did not
-            # evaluate, and that is worth stopping for rather than filling in.  Checked on both
-            # paths, because the check is about what the loop reports and not about who wrote the
-            # row.
-            if tree not in metrics_by_tree:
-                msg = (
-                    f"pre-sample {idx} was never evaluated by the objective, yet the loop reports "
-                    f"a value for it: {tree}"
-                )
-                raise KeyError(msg)
-            if logged_prefix is not None:
-                continue  # already written above, while it was measured
-            metrics = metrics_by_tree[tree]
-            logger.log("pre_sample", idx, tree, metrics)
-            print(f"  pre_sample[{idx}]: objective={as_reported(value):.5f} "
-                  f"accuracy={metrics['accuracy']:.4f} "
-                  f"params={metrics['n_params']} "
-                  f"train={metrics['train_seconds']:.1f}s", flush=True)
+                        value = (
+                            metrics["accuracy"] if greater_is_better
+                            else -metrics["objective_value"]
+                        )
+                    source = " (resumed)"
+                else:
+                    value = f_obj(tree)
+                    # No substitute for a missing measurement: the objective records the metrics
+                    # of every term it evaluates, and a value without them is worth stopping for
+                    # rather than filling in.
+                    if tree not in metrics_by_tree:
+                        msg = (
+                            f"pre-sample {idx} was evaluated, yet the objective recorded no "
+                            f"metrics for it: {tree}"
+                        )
+                        raise KeyError(msg)
+                    metrics = metrics_by_tree[tree]
+                    source = ""
+                # Written before the loop takes the value, so that a value the loop refuses, a
+                # non-finite one, is on disk together with the metrics that explain it.
+                logger.log("pre_sample", idx, tree, metrics)
+                print(f"  pre_sample[{idx}]: objective={as_reported(value):.5f} "
+                      f"accuracy={metrics['accuracy']:.4f} "
+                      f"params={metrics['n_params']} "
+                      f"train={metrics['train_seconds']:.1f}s{source}", flush=True)
+                optimizer.observe(tree, value)
 
         for step in range(n_iterations):
             acquisition_started = time.time()

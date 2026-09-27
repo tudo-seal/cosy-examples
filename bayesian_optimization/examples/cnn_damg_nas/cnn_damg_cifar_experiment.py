@@ -458,11 +458,6 @@ def run_experiment(n_pre_samples: int, n_iterations: int, population_size: int,
 
     resume_design = None
     if resume_from is not None:
-        if not baseline:
-            # Without --baseline the loop draws its design inside initialize(), and there is no
-            # point at which handed-in terms could be checked against the ones it drew.
-            msg = "--resume-from needs --baseline: only the paired path draws its design up front"
-            raise ValueError(msg)
         # The fields that change what a measured number means. Population size, budget and kernel
         # may differ, because they change what the run does with the design and not what the design
         # itself says.
@@ -603,8 +598,9 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Path to the <run>_terms.pickle of an interrupted run whose initial "
                              "design is taken over instead of being trained again.  Cell, epochs "
                              "and repeats have to agree, and the loaded terms have to be the ones "
-                             "this run draws, and both are checked rather than assumed.  Only "
-                             "with --baseline.")
+                             "this run draws, and both are checked rather than assumed.  With "
+                             "or without --baseline: the design is the loop's first phase on "
+                             "both paths.")
     parser.add_argument("--acquisition-hard-limit", type=float,
                         default=ACQUISITION_HARD_LIMIT_SECONDS,
                         help="Seconds after which ONE acquisition maximization is given up on.  It "
@@ -633,15 +629,6 @@ def main(argv=None):
     """
     parser = build_parser()
     args = parser.parse_args(argv)
-
-    # run_experiment checks this condition too, but only after the search space is built and
-    # determinized, and on a large cell that is a long time to wait for an argument error. An
-    # argument check belongs in front of the work. The one inside stays for programmatic callers.
-    if args.resume_from is not None and not args.baseline:
-        parser.error(
-            "--resume-from needs --baseline: only the paired path draws its design up front, and "
-            "only there can the terms handed in be checked against the terms drawn"
-        )
 
     csv_path = args.csv_path
     if csv_path is None:

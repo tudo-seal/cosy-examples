@@ -115,19 +115,24 @@ def test_the_command_line_reaches_the_run_with_the_arguments_it_was_given(monkey
     assert seen["kwargs"]["repeats"] == 2
 
 
-def test_resume_from_without_baseline_is_rejected_before_the_search_is_built(monkeypatch, tmp_path):
-    """The same condition is checked inside the run, but only after the space is determinized.
+def test_resume_from_needs_no_baseline(monkeypatch, tmp_path):
+    """The design is the loop's first phase on both paths, so a resume needs no random arm.
 
-    On a large cell that is a long wait for an argument error, so the parser rejects it first.
+    The parser used to refuse ``--resume-from`` without ``--baseline``, because only the paired
+    path drew its design before evaluating it.
     """
-    called = []
-    monkeypatch.setattr(experiment, "run_experiment", lambda *a, **k: called.append(k))
+    seen = {}
 
-    with pytest.raises(SystemExit):
-        experiment.main(["--resume-from", str(tmp_path / "terms.pickle"),
-                         "--csv-path", str(tmp_path / "run.csv")])
+    def record(*args, **kwargs):
+        seen["kwargs"] = kwargs
+        return "result", 0.0
 
-    assert called == [], "the run started despite the rejected argument combination"
+    monkeypatch.setattr(experiment, "run_experiment", record)
+    pool = str(tmp_path / "terms.pickle")
+    experiment.main(["--resume-from", pool, "--csv-path", str(tmp_path / "run.csv")])
+
+    assert seen["kwargs"]["resume_from"] == pool
+    assert seen["kwargs"]["baseline"] is False
 
 
 def test_load_cifar10_does_not_fetch_anything_by_default(tmp_path):

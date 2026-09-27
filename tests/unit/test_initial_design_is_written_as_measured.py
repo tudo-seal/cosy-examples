@@ -13,11 +13,15 @@ measured, the file has to hold the k-1 before it already.
 from __future__ import annotations
 
 import csv
+import random
 
 import pytest
 from cosy.core.tree import Tree
+from cosy.search import SizeUniformSampler
 
+from bayesian_optimization.bo import BayesianOptimization
 from bayesian_optimization.examples.cnn_damg_nas import cnn_damg_experiment_utils as utils
+from tests.spaces import LIST, list_space
 
 
 def _rows(path):
@@ -113,6 +117,53 @@ def test_the_design_is_written_once_and_in_stream_order(paired_run, tmp_path):
     assert [round(float(row["accuracy"]), 2) for row in rows] == [0.50, 0.51, 0.52, 0.53]
 
 
-# The unpaired path has no test here on purpose.  It draws inside ``initialize()``, which needs a
-# real search space, and a test that stubbed that out would assert the stub rather than the
-# behavior.
+def _list_loop(seed):
+    """A loop over the lists over ``{0, 1, 2}``: a real space, so the loop draws its own design."""
+    return BayesianOptimization(
+        search_space=list_space(),
+        request=LIST,
+        sampler=SizeUniformSampler(6, random.Random(seed)),
+        seed=seed,
+    )
+
+
+def test_without_a_random_arm_each_pre_sample_is_on_disk_before_the_next_one_is_trained(tmp_path):
+    """The same property on the unpaired path, where the loop draws the design itself.
+
+    It used to hold on the paired path only, so a run that wanted its design written as measured
+    had to pay a random-search arm of the same budget for it.
+    """
+    path = tmp_path / "run.csv"
+    seen_before_each = []
+    metrics_by_tree = {}
+
+    def f_obj(tree):
+        seen_before_each.append(len(_rows(path)) if path.exists() else 0)
+        metrics_by_tree[tree] = {
+            "objective_value": 1.0, "accuracy": 0.5, "n_params": 10,
+            "train_seconds": 0.1, "diverged": False, "epochs_completed": 1,
+        }
+        return 0.5
+
+    utils.run_ask_tell_search(
+        optimizer=_list_loop(0),
+        f_obj=f_obj,
+        metrics_by_tree=metrics_by_tree,
+        as_reported=lambda v: v,
+        objective="accuracy",
+        greater_is_better=True,
+        n_pre_samples=4,
+        n_iterations=0,
+        csv_path=str(path),
+        pretty_algebra=dict,
+        baseline=False,
+        verbose=False,
+    )
+
+    assert seen_before_each == [0, 1, 2, 3], (
+        "the unpaired design was written after it was complete, not as it was measured "
+        f"(saw {seen_before_each})"
+    )
+    rows = _rows(path)
+    assert [row["phase"] for row in rows] == ["pre_sample"] * 4
+    assert [row["index"] for row in rows] == ["0", "1", "2", "3"]
