@@ -26,7 +26,7 @@ import functools
 import math
 import os
 import time
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -264,6 +264,46 @@ def _draws_from_its_stream(strategy: AskTellLoop) -> bool:
     )
 
 
+def _require_batch_size(strategy: AskTellLoop, batch_size: Any, name: str = "the strategy") -> None:
+    """Refuse a round the strategy cannot hold outstanding at once."""
+    capacity = getattr(strategy, "max_outstanding", 1)
+    if isinstance(batch_size, bool) or not isinstance(batch_size, int) or not 1 <= batch_size <= capacity:
+        msg = (
+            f"batch_size is how many suggestions a round holds, a count from 1 to what {name} "
+            f"holds outstanding at once (max_outstanding={capacity}), not {batch_size!r}"
+        )
+        raise ValueError(msg)
+
+
+def _answers(round_terms, evaluate, evaluate_many):
+    """The round's terms with their metrics, in the order the evaluations complete.
+
+    ``evaluate_many`` answers each term of the round once, in any order; without it the round is
+    evaluated one term after the other with ``evaluate``.
+
+    Raises:
+        RuntimeError: If ``evaluate_many`` answers a term the round did not ask, one twice, or
+            leaves one unanswered.
+    """
+    if evaluate_many is None:
+        for term in round_terms:
+            yield term, evaluate(term)
+        return
+    waiting = list(round_terms)
+    for term, metrics in evaluate_many(list(round_terms)):
+        position = next((index for index, asked in enumerate(waiting) if asked == term), None)
+        if position is None:
+            msg = (
+                f"evaluate_many answered {term!r}, which the round did not ask or had answered "
+                "already: each term of a round is answered once"
+            )
+            raise RuntimeError(msg)
+        yield waiting.pop(position), metrics
+    if waiting:
+        msg = f"evaluate_many left {len(waiting)} of the round's terms unanswered: {waiting!r}"
+        raise RuntimeError(msg)
+
+
 def _pairs(records):
     return [(record.term, record.metrics) for record in records]
 
@@ -287,6 +327,8 @@ def run_search(
     echo: Callable[[str], None] | None = None,
     drawn_up_front: DesignDraw | None = None,
     hold_resumed_design: bool = True,
+    batch_size: int = 1,
+    evaluate_many: Callable[[list[Any]], Iterable[tuple[Any, Mapping[str, Any]]]] | None = None,
 ) -> RunOutcome:
     """Run a strategy, writing every evaluation as it is measured.
 
@@ -335,6 +377,14 @@ def run_search(
         hold_resumed_design (bool): Hold a drawn resumed design against the stream, as ``resume``
             says; :func:`run_paired` turns it off where it held the design itself or where the
             design is another strategy's. (Default value = True)
+        batch_size (int): How many suggestions a round holds: the design goes out that many terms
+            at a time, then the passes, and a round is evaluated before the next is suggested; at
+            most the strategy's ``max_outstanding``.  A pass's row carries its label, the passes
+            suggested before it. (Default value = 1)
+        evaluate_many (Callable | None): Evaluates a round side by side: handed the round's terms,
+            it answers ``(term, metrics)`` for each, once, in the order the evaluations complete,
+            and each answer is written and observed as it arrives.  ``None`` evaluates a round one
+            term after the other with ``evaluate``. (Default value = None)
 
     Returns:
         RunOutcome: The result, the wall clock and the summary.
@@ -357,6 +407,7 @@ def run_search(
         strategy, n_design=n_design, n_passes=n_passes, design=design, resume=resume,
         resumed_value=resumed_value, objective=schema.objective,
     )
+    _require_batch_size(strategy, batch_size)
     artifacts = RunArtifacts(csv_path)
     if refuse_taken:
         artifacts.refuse_taken()
@@ -407,65 +458,95 @@ def run_search(
                 strategy.initialize(initial_size=size)
             else:
                 strategy.initialize(design=terms)
-            for index, expected in enumerate(strategy.design):
-                suggestion = strategy.suggest(verbose=verbose)
-                term = suggestion.candidate
-                if term != expected:
-                    msg = (
-                        f"the loop handed out design term {index} out of order: {term} where the "
-                        f"design holds {expected}"
-                    )
-                    raise RuntimeError(msg)
-                if values is not None:
-                    metrics = records[index].metrics
-                    value = values[index]
-                    taken_over += 1
-                    note = " (resumed)"
-                else:
-                    metrics = evaluate(term)
-                    evaluated_here += 1
-                    value = _loop_value_or_record(objective, recorder, DESIGN_PHASE, index, term,
-                                                  metrics)
-                    note = ""
-                # Written before the loop takes the value, so that a value the loop refuses, a
-                # non-finite one, is on disk with the metrics that explain it.
-                recorder.log(DESIGN_PHASE, index, term, metrics, loop_value=value,
-                             taken_over=values is not None)
-                echo(f"  {DESIGN_PHASE}[{index}]: objective={objective.as_reported(value):.5f} "
-                     f"{schema.live_line(metrics)}{note}".rstrip())
-                strategy.observe(term, value)
-
-        # --- The passes.
-        for step in range(n_passes):
-            proposal_started = time.time()
-            with step_budget(
-                f"pass {step}: the proposal",
-                budgets.acquisition_warn,
-                hard_limit_seconds=budgets.acquisition_hard_limit if bayesian else None,
-            ):
-                if bayesian:
-                    # The frontier read and the generation log need the population as scored.
-                    assert isinstance(strategy, BayesianOptimization)
-                    suggestion = strategy.suggest(verbose=verbose, record_population=True)
-                else:
+            design = list(strategy.design)
+            # A design taken over is answered at once; one evaluated here goes out in rounds.
+            width = 1 if values is not None else batch_size
+            for start in range(0, len(design), width):
+                positions: list[tuple[int, Any]] = []
+                for index in range(start, min(start + width, len(design))):
                     suggestion = strategy.suggest(verbose=verbose)
-            acquisition_seconds = time.time() - proposal_started
-            if ea_logger is not None and surrogate_logger is not None:
-                # Written before the evaluation, so an interrupted pass keeps its inner search.
-                ea_logger.log(step, getattr(strategy, "last_acquisition_run", None))
-                surrogate_logger.log(step, strategy)
-            term = suggestion.candidate
-            with step_budget(f"pass {step}: the evaluation", budgets.per_evaluation):
-                metrics = evaluate(term)
-            evaluated_here += 1
-            value = _loop_value_or_record(objective, recorder, phase, step, term, metrics,
-                                          suggestion=suggestion,
-                                          acquisition_seconds=acquisition_seconds)
-            recorder.log(phase, step, term, metrics, suggestion=suggestion,
-                         acquisition_seconds=acquisition_seconds, loop_value=value)
-            echo(f"  {phase}[{step}]: objective={objective.as_reported(value):.5f} "
-                 f"{schema.live_line(metrics)}".rstrip())
-            strategy.observe(term, value)
+                    term = suggestion.candidate
+                    if term != design[index]:
+                        msg = (
+                            f"the loop handed out design term {index} out of order: {term} where "
+                            f"the design holds {design[index]}"
+                        )
+                        raise RuntimeError(msg)
+                    positions.append((index, term))
+                if values is not None:
+                    index, term = positions[0]
+                    answers: Iterable[tuple[Any, Mapping[str, Any]]] = [
+                        (term, records[index].metrics)
+                    ]
+                else:
+                    answers = _answers([term for _index, term in positions], evaluate,
+                                       evaluate_many)
+                for term, metrics in answers:
+                    index = next(index for index, asked in positions if asked is term)
+                    if values is not None:
+                        value = values[index]
+                        taken_over += 1
+                        note = " (resumed)"
+                    else:
+                        evaluated_here += 1
+                        value = _loop_value_or_record(objective, recorder, DESIGN_PHASE, index,
+                                                      term, metrics)
+                        note = ""
+                    # Written before the loop takes the value, so that a value the loop refuses,
+                    # a non-finite one, is on disk with the metrics that explain it.
+                    recorder.log(DESIGN_PHASE, index, term, metrics, loop_value=value,
+                                 taken_over=values is not None)
+                    echo(f"  {DESIGN_PHASE}[{index}]: objective={objective.as_reported(value):.5f} "
+                         f"{schema.live_line(metrics)}{note}".rstrip())
+                    strategy.observe(term, value)
+
+        # --- The passes, in rounds of up to batch_size suggestions.
+        for first in range(0, n_passes, batch_size):
+            passes: list[tuple[int, Any, float]] = []
+            for step in range(first, min(first + batch_size, n_passes)):
+                proposal_started = time.time()
+                with step_budget(
+                    f"pass {step}: the proposal",
+                    budgets.acquisition_warn,
+                    hard_limit_seconds=budgets.acquisition_hard_limit if bayesian else None,
+                ):
+                    if bayesian:
+                        # The frontier read and the generation log need the population as scored.
+                        assert isinstance(strategy, BayesianOptimization)
+                        suggestion = strategy.suggest(verbose=verbose, record_population=True)
+                    else:
+                        suggestion = strategy.suggest(verbose=verbose)
+                acquisition_seconds = time.time() - proposal_started
+                if ea_logger is not None and surrogate_logger is not None:
+                    # Written before the evaluation, so an interrupted pass keeps its inner search;
+                    # in a round, the surrogate of a later pass holds the earlier ones as assumed.
+                    ea_logger.log(step, getattr(strategy, "last_acquisition_run", None))
+                    surrogate_logger.log(step, strategy)
+                passes.append((step, suggestion, acquisition_seconds))
+            label = (
+                f"pass {first}: the evaluation" if len(passes) == 1
+                else f"passes {first} to {passes[-1][0]}: the evaluations"
+            )
+            # A round evaluated term by term takes as long as its terms together; one evaluated
+            # side by side, as long as its slowest.
+            budget = budgets.per_evaluation * (len(passes) if evaluate_many is None else 1)
+            with step_budget(label, budget):
+                for term, metrics in _answers(
+                    [suggestion.candidate for _step, suggestion, _seconds in passes], evaluate,
+                    evaluate_many,
+                ):
+                    step, suggestion, acquisition_seconds = next(
+                        entry for entry in passes if entry[1].candidate is term
+                    )
+                    evaluated_here += 1
+                    value = _loop_value_or_record(objective, recorder, phase, step, term, metrics,
+                                                  suggestion=suggestion,
+                                                  acquisition_seconds=acquisition_seconds)
+                    recorder.log(phase, step, term, metrics, suggestion=suggestion,
+                                 acquisition_seconds=acquisition_seconds, loop_value=value)
+                    echo(f"  {phase}[{step}]: objective={objective.as_reported(value):.5f} "
+                         f"{schema.live_line(metrics)}".rstrip())
+                    strategy.observe(term, value)
 
     result = strategy.finalize()
     # A draw up front is the run's: its time in the run's.  Where it drew the run's design it is
@@ -517,6 +598,8 @@ def run_paired(
     refuse_taken: bool = True,
     verbose: bool = False,
     echo: Callable[[str], None] | None = None,
+    batch_size: int = 1,
+    evaluate_many: Callable[[list[Any]], Iterable[tuple[Any, Mapping[str, Any]]]] | None = None,
 ) -> dict[str, RunOutcome]:
     """Run several strategies from one design at one budget, the design evaluated once.
 
@@ -544,6 +627,9 @@ def run_paired(
         refuse_taken (bool): Refuse every run whose files exist, before the first run starts; a
             caller that refused them itself and wrote each run's configuration first passes
             False. (Default value = True)
+        batch_size (int), evaluate_many (Callable | None): Every run's rounds, as for
+            :func:`run_search`; a round larger than any strategy holds is refused before the first
+            run starts. (Defaults: 1, None)
         (The other arguments as for :func:`run_search`.)
 
     Returns:
@@ -575,6 +661,7 @@ def run_paired(
             claimed[file] = name
     for name in names:
         _require_uninitialized(strategies[name], f"the strategy {name!r}")
+        _require_batch_size(strategies[name], batch_size, f"the strategy {name!r}")
         if refuse_taken:
             RunArtifacts(csv_paths[name]).refuse_taken()
     if n_passes > 0:
@@ -583,7 +670,7 @@ def run_paired(
     common: dict[str, Any] = {
         "schema": schema, "pretty_algebra": pretty_algebra, "n_passes": n_passes,
         "provenance": provenance, "budgets": budgets, "verbose": verbose, "echo": echo,
-        "refuse_taken": refuse_taken,
+        "refuse_taken": refuse_taken, "batch_size": batch_size, "evaluate_many": evaluate_many,
     }
     first = names[0]
     leader = strategies[first]
