@@ -331,6 +331,14 @@ A name outside those three is refused with a `ValueError` before the run spends 
 a message that names the three the loop knows. That list is read off the same table the check
 reads, so the message cannot name a set the check does not admit.
 
+An acquisition of the caller's own takes the place of a name: an `AcquisitionFactory`, a callable
+`(gp, *, incumbent, known_points)` called once per pass with the surrogate that pass fitted, the
+incumbent and the points already observed, and answering a new `AcquisitionFunction` that scores
+with that surrogate and holds those points, so that its known-point floor keeps them below every
+novel candidate. It is tried once before the design, on a stand-in posterior, and one that returns
+something else, drops the points or scores with another model is refused before the run spends an
+evaluation. Its `lower_bound` decides the fitness modes it admits, as it does for the three.
+
 Both parameters are fixed for the run rather than passed per `suggest()` call, so two passes of one
 run cannot maximize two different functions without anything recording which.
 

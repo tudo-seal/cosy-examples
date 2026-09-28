@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from .acquisition_function import (
+    AcquisitionFactory,
     AcquisitionFunction,
     ExpectedImprovement,
     MarginalPosterior,
@@ -45,6 +46,7 @@ from .random_search import RandomSearch
 from .state import BOState, Diagnostics, Suggestion
 
 __all__ = [
+    "AcquisitionFactory",
     "AcquisitionFunction",
     "AcquisitionOptimizer",
     "AcquisitionRun",

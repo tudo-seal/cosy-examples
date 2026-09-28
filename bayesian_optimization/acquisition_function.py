@@ -45,6 +45,21 @@ def require_term(item: Any) -> Tree[Any]:
     return item
 
 
+class AcquisitionFactory(Protocol):
+    """Builds the acquisition a pass maximizes, from what that pass has.
+
+    Called once per pass with the surrogate the pass fitted, the incumbent (the largest value
+    observed), and the points already observed, and answering a new
+    :class:`AcquisitionFunction` each time: one that scores with that surrogate and was handed
+    those points, so that its known-point floor keeps them below every novel candidate.  The
+    three scores the loop names by string are built the same way.
+    """
+
+    def __call__(
+        self, gp: MarginalPosterior, *, incumbent: float, known_points: set[Any]
+    ) -> AcquisitionFunction: ...
+
+
 class AcquisitionFunction:
     """Base class for the three standard acquisition functions, all of them maximized.
 

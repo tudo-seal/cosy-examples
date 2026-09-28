@@ -19,6 +19,7 @@ from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import Kernel
 
 from .acquisition_function import (
+    AcquisitionFactory,
     AcquisitionFunction,
     ExpectedImprovement,
     ProbabilityOfImprovement,
@@ -103,7 +104,61 @@ def _unknown_acquisition(name: Any) -> str:
         str: The message.
     """
     known = ", ".join(repr(candidate) for candidate in _ACQUISITIONS)
-    return f"Unknown acquisition_function {name!r}.  It has to be one of {known}."
+    return (
+        f"Unknown acquisition_function {name!r}.  It has to be one of {known}, or a callable "
+        "that builds an AcquisitionFunction for each pass."
+    )
+
+
+class _DryRunPosterior:
+    """What a caller's acquisition factory is tried on before the design: it builds and scores
+    nothing, so a factory that asks it for a prediction is told so."""
+
+    def predict(self, X: Any, return_std: bool = False) -> Any:
+        raise RuntimeError(
+            "an acquisition factory asked for a prediction while it was only being tried on a "
+            "stand-in, before the design; it has to build the acquisition, not score with it"
+        )
+
+
+# A point no search space holds, to see that a factory hands the points it is given through.
+_DRY_RUN_POINT = object()
+
+
+def _built_by(
+    factory: Callable[..., Any], gp: Any, *, incumbent: float, known_points: set[Any]
+) -> AcquisitionFunction:
+    """The acquisition a caller's factory builds for one pass, refused unless it can serve that pass.
+
+    It has to be an :class:`AcquisitionFunction`, score with the surrogate the pass fitted, and hold
+    the points the pass has observed: without them the known-point floor is gone, a pass may pick a
+    point it has, and the duplicate's replacement becomes a random draw.
+
+    Raises:
+        TypeError: If the factory does not build an ``AcquisitionFunction``, or does not take the
+            three arguments.
+        ValueError: If the acquisition scores with another surrogate, or lacks the known points.
+    """
+    built = factory(gp, incumbent=incumbent, known_points=known_points)
+    if not isinstance(built, AcquisitionFunction):
+        msg = (
+            f"the acquisition factory {factory!r} returned {type(built).__name__}, not an "
+            "AcquisitionFunction"
+        )
+        raise TypeError(msg)
+    if built.gp is not gp:
+        msg = (
+            f"the acquisition factory's {type(built).__name__} scores with another surrogate than "
+            "the one the pass fitted and handed it"
+        )
+        raise ValueError(msg)
+    if built.known_points != known_points:
+        msg = (
+            f"the acquisition factory's {type(built).__name__} does not hold the known points the "
+            "pass handed it: without them nothing keeps an observed term below a novel one"
+        )
+        raise ValueError(msg)
+    return built
 
 
 # The diagnostics keys a trace row is read from.  ``Diagnostics`` declares four more, and no
@@ -248,7 +303,11 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         has none is refused, here and again where the query is built.  Its default ``None`` is
         the setting for ``search_space=None``, where there is no query to pose.
     acquisition_function:
-        Which of the three standard acquisition scores to maximize.
+        Which of the three standard acquisition scores to maximize, by name, or an
+        :class:`~bayesian_optimization.acquisition_function.AcquisitionFactory` that builds one of
+        the caller's own for each pass from the surrogate it fitted, the incumbent and the points
+        observed.  A factory is tried once before the design, on a stand-in posterior, so that one
+        that cannot serve a pass is refused before anything is paid.
     ucb_beta:
         The exploration parameter of the upper confidence bound, strictly positive.  That score is
         the posterior mean plus ``beta`` times the posterior standard deviation, so a larger
@@ -386,7 +445,8 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         *,
         acquisition_function: Literal[
             "ExpectedImprovement", "ProbabilityOfImprovement", "UpperConfidenceBound"
-        ] = "ExpectedImprovement",
+        ]
+        | AcquisitionFactory = "ExpectedImprovement",
         ucb_beta: float = 2.0,
         pi_margin: float = 0.0,
         kernel: Kernel | None = None,
@@ -634,7 +694,7 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
                 # After a fallback the value describes a random replacement, and a replacement at
                 # the floor says nothing about what the maximization found.
                 lower_bound=None if fallback_used else af.lower_bound,
-                acquisition_name=self.acquisition_function,
+                acquisition_name=type(af).__name__,
             )
 
         diagnostics: Diagnostics = {
@@ -685,6 +745,9 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         # exactly what the diagnostics keep one for.
         known_points = set(self._x_set)
 
+        setting = self.acquisition_function
+        if callable(setting) and not isinstance(setting, str):
+            return _built_by(setting, model, incumbent=incumbent, known_points=known_points)
         af: AcquisitionFunction
         if self.acquisition_function == "ExpectedImprovement":
             af = ExpectedImprovement(
@@ -1148,22 +1211,33 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         # so answers a list or a dict with a TypeError about hashing, where the caller was
         # promised a ValueError about the name.
         name = self.acquisition_function
-        acquisition = _ACQUISITIONS.get(name) if isinstance(name, str) else None
-        if acquisition is None:
-            raise ValueError(_unknown_acquisition(name))
+        lower_bound: float | None
+        label: str
+        if callable(name) and not isinstance(name, str):
+            # Tried once on a stand-in, so that a factory that cannot serve a pass is refused
+            # here and not after the design; the pass tries what it builds again.
+            built = _built_by(
+                name, _DryRunPosterior(), incumbent=0.0, known_points={_DRY_RUN_POINT}
+            )
+            lower_bound, label = built.lower_bound, type(built).__name__
+        else:
+            acquisition = _ACQUISITIONS.get(name) if isinstance(name, str) else None
+            if acquisition is None:
+                raise ValueError(_unknown_acquisition(name))
 
-        if name == "UpperConfidenceBound":
-            require_beta(self.ucb_beta)
-        elif name == "ProbabilityOfImprovement":
-            require_margin(self.pi_margin)
+            if name == "UpperConfidenceBound":
+                require_beta(self.ucb_beta)
+            elif name == "ProbabilityOfImprovement":
+                require_margin(self.pi_margin)
+            lower_bound, label = acquisition.lower_bound, name
 
         # The mode is resolved by the same function the maximization resolves it with, so that
         # what this refusal reads and what the run would use are one value.  Read as the plain
         # question "is this the string batch", it would refuse an upper confidence bound under
         # "auto", which is a mode that puts it on the batch path.
         mode = resolve_fitness_mode(acquisition_fitness_mode)
-        if mode != "batch" and acquisition.lower_bound is None:
-            raise ValueError(unbounded_below_message(name, "acquisition_fitness_mode"))
+        if mode != "batch" and lower_bound is None:
+            raise ValueError(unbounded_below_message(label, "acquisition_fitness_mode"))
 
     def optimize(
         self,
