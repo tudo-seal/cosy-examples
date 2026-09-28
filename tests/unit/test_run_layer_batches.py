@@ -172,3 +172,25 @@ def test_a_design_measured_out_of_order_resumes_in_its_order(tmp_path):
         pretty_algebra=dict, echo=_quiet,
     )
     assert paired["random"].summary["taken_over"] == 4
+
+
+def test_a_pair_refuses_an_unclaimed_evaluation_of_rounds_before_it_draws(tmp_path, monkeypatch):
+    import bayesian_optimization.runs.driver as driver
+    from bayesian_optimization.runs import RunArtifacts, RunClaim
+
+    draws: list[Any] = []
+    draw = driver.draw_design
+    monkeypatch.setattr(driver, "draw_design",
+                        lambda *args, **kwargs: draws.append(1) or draw(*args, **kwargs))
+    loop = _bo(4)
+    arm = RandomSearch(list_space(), LIST, sampler=twin_sampler(loop.sampler, loop.query,
+                                                                random.Random(4)),
+                       seed=4, max_outstanding=2)
+    paths = {"bo": str(tmp_path / "bo.csv"), "random": str(tmp_path / "random.csv")}
+    with pytest.raises(ValueError, match="evaluate_many"), RunClaim(
+        [RunArtifacts(path) for path in paths.values()]
+    ) as claim:
+        run_paired({"bo": loop, "random": arm}, claim.evaluate(_metrics), schema=SCHEMA,
+                   n_design=2, n_passes=2, csv_paths=paths, pretty_algebra=dict, echo=_quiet,
+                   batch_size=2, evaluate_many=_backwards([]), refuse_taken=False)
+    assert draws == []

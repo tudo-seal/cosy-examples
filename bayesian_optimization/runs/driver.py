@@ -275,6 +275,27 @@ def _require_batch_size(strategy: AskTellLoop, batch_size: Any, name: str = "the
         raise ValueError(msg)
 
 
+def _require_claimed_alike(evaluate: Any, evaluate_many: Any) -> None:
+    """Refuse an evaluation of rounds left unwrapped beside an evaluation a RunClaim wraps.
+
+    run_search asks ``evaluate_many`` where it is given and never ``evaluate``, so a claim wrapping
+    only ``evaluate`` would keep its window open past the first evaluation, and a failure after
+    paid evaluations would give the run's files back.
+    """
+    claim = getattr(evaluate, "_run_claim", None)
+    if (
+        claim is not None
+        and evaluate_many is not None
+        and getattr(evaluate_many, "_run_claim", None) is not claim
+    ):
+        msg = (
+            "evaluate is wrapped by a RunClaim and evaluate_many is not: the run asks "
+            "evaluate_many in place of evaluate, so the claim would never see its first "
+            "evaluation; wrap it alike, evaluate_many=claim.evaluate(evaluate_many)"
+        )
+        raise ValueError(msg)
+
+
 def _answers(round_terms, evaluate, evaluate_many):
     """The round's terms with their metrics, in the order the evaluations complete.
 
@@ -408,6 +429,7 @@ def run_search(
         resumed_value=resumed_value, objective=schema.objective,
     )
     _require_batch_size(strategy, batch_size)
+    _require_claimed_alike(evaluate, evaluate_many)
     artifacts = RunArtifacts(csv_path)
     if refuse_taken:
         artifacts.refuse_taken()
@@ -659,6 +681,7 @@ def run_paired(
                 msg = f"the runs {claimed[file]!r} and {name!r} would both write {path}"
                 raise ValueError(msg)
             claimed[file] = name
+    _require_claimed_alike(evaluate, evaluate_many)
     for name in names:
         _require_uninitialized(strategies[name], f"the strategy {name!r}")
         _require_batch_size(strategies[name], batch_size, f"the strategy {name!r}")

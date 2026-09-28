@@ -323,3 +323,33 @@ def test_a_claim_wraps_an_evaluation_of_rounds_as_it_wraps_one_of_terms(tmp_path
                    echo=lambda line: None, refuse_taken=False, n_design=2, n_passes=0,
                    batch_size=2, evaluate_many=claim.evaluate(gives_out))
     assert {"x.csv", "x_config.json", "x_terms.pickle"} <= set(_names(tmp_path))
+
+
+def test_an_evaluation_of_rounds_beside_a_claimed_evaluation_is_claimed_too_or_refused(tmp_path):
+    """run_search calls evaluate_many where it is given and never evaluate: a claim wrapping only
+    evaluate would keep its window open past the first evaluation, and give paid files back."""
+    import random
+
+    from cosy.search import SizeUniformSampler
+
+    from bayesian_optimization import BayesianOptimization
+    from bayesian_optimization.acquisition_optimizer import SampleMaximizer
+    from tests.spaces import LIST, list_space
+
+    loop = BayesianOptimization(
+        list_space(), LIST, sampler=SizeUniformSampler(6, random.Random(2)), seed=2,
+        maximizer=SampleMaximizer(SizeUniformSampler(6, random.Random(102)), 8), max_outstanding=2,
+    )
+
+    def many(terms: list[Any]) -> Any:
+        for term in terms:
+            yield term, _metrics(term)
+
+    csv_path = tmp_path / "x.csv"
+    with pytest.raises(ValueError, match="evaluate_many"), RunClaim(
+        [RunArtifacts(str(csv_path))]
+    ) as claim:
+        run_search(loop, claim.evaluate(_metrics), schema=SCHEMA, csv_path=str(csv_path),
+                   pretty_algebra=dict, echo=lambda line: None, refuse_taken=False, n_design=2,
+                   n_passes=0, batch_size=2, evaluate_many=many)
+    assert _names(tmp_path) == [], "refused before anything was written, and given back"

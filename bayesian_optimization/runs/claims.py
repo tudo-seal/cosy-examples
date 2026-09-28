@@ -67,6 +67,10 @@ class RunClaim:
             run_search(strategy, claim.evaluate(evaluate), csv_path=csv_path,
                        refuse_taken=False, ...)
 
+    and, for a run in rounds, the evaluation of rounds wrapped alike --
+    ``evaluate_many=claim.evaluate(evaluate_many)`` -- which ``run_search`` asks in place of
+    ``evaluate``; one left unwrapped beside a wrapped ``evaluate`` is refused.
+
     Attributes:
         runs (list[RunArtifacts]): The runs whose names this takes.
         evaluations_begun (bool): Whether the first evaluation has begun.
@@ -114,6 +118,8 @@ class RunClaim:
                     _restore(self._caught)
             return measure(term)
 
+        # which claim wraps it, for run_search to hold an evaluation of rounds beside it to
+        evaluate._run_claim = self  # type: ignore[attr-defined]
         return evaluate
 
     def __exit__(self, exc_type: Any, exc: BaseException | None, tb: Any) -> None:
