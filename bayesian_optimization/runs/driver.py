@@ -24,6 +24,7 @@ from __future__ import annotations
 import contextlib
 import functools
 import math
+import os
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -417,7 +418,7 @@ def run_paired(
         ValueError: If the names of the strategies and the paths differ, if two runs would share
             a file, or if one strategy object appears under two names.
         RuntimeError: If a strategy has already run.
-        FileExistsError: If a file of any of the runs exists.
+        FileExistsError: With ``refuse_taken``, if a file of any of the runs exists.
         All of these, and a pass configuration a later strategy could not use, before the first
         run starts, so that a later strategy's mistake costs no design.
     """
@@ -429,10 +430,14 @@ def run_paired(
     claimed: dict[str, str] = {}
     for name in names:
         for path in RunArtifacts(csv_paths[name]).paths().values():
-            if path in claimed:
-                msg = f"the runs {claimed[path]!r} and {name!r} would both write {path}"
+            # Compared as the files they name, not as strings: ``sub/../a.csv`` is ``a.csv``, and
+            # without the refusal of taken files nothing else would stop the second run
+            # overwriting the first one's.
+            file = os.path.realpath(path)
+            if file in claimed:
+                msg = f"the runs {claimed[file]!r} and {name!r} would both write {path}"
                 raise ValueError(msg)
-            claimed[path] = name
+            claimed[file] = name
     for name in names:
         _require_uninitialized(strategies[name], f"the strategy {name!r}")
         if refuse_taken:

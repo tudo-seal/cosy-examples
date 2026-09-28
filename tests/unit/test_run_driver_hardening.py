@@ -200,6 +200,46 @@ def test_run_paired_leaves_the_refusal_to_a_caller_that_wrote_its_own_files_firs
         )
 
 
+def test_run_paired_refuses_one_file_named_two_ways_with_or_without_the_refusal_of_taken_files(
+        tmp_path):
+    (tmp_path / "sub").mkdir()
+    aliased = {"bo": str(tmp_path / "a.csv"), "random": str(tmp_path / "sub" / ".." / "a.csv")}
+    for refuse in (True, False):
+        with pytest.raises(ValueError, match="would both write"):
+            run_paired(
+                {"bo": _bo(7), "random": _random(7)}, _metrics, schema=SCHEMA, n_design=2,
+                n_passes=1, csv_paths=aliased, pretty_algebra=dict, echo=_quiet,
+                refuse_taken=refuse,
+            )
+        assert not (tmp_path / "a.csv").exists(), "refused before the first run starts"
+    # and one path named twice, which the refusal of taken files cannot see without the first run
+    with pytest.raises(ValueError, match="would both write"):
+        run_paired(
+            {"bo": _bo(7), "random": _random(7)}, _metrics, schema=SCHEMA, n_design=2,
+            n_passes=1, csv_paths={"bo": str(tmp_path / "b.csv"), "random": str(tmp_path / "b.csv")},
+            pretty_algebra=dict, echo=_quiet, refuse_taken=False,
+        )
+
+
+def test_run_paired_refuses_a_later_run_s_file_that_appeared_while_the_first_one_ran(tmp_path):
+    """The up-front refusal sees the files that exist when it looks.  One that appears while the
+    first run evaluates -- another process's -- is refused by the later run's own check."""
+    late = tmp_path / "random.csv"
+
+    def evaluate(term):
+        if not late.exists():
+            late.write_text("another process's run\n")
+        return _metrics(term)
+
+    with pytest.raises(FileExistsError, match="random.csv"):
+        run_paired(
+            {"bo": _bo(8), "random": _random(8)}, evaluate, schema=SCHEMA, n_design=2, n_passes=1,
+            csv_paths={"bo": str(tmp_path / "bo.csv"), "random": str(late)},
+            pretty_algebra=dict, echo=_quiet,
+        )
+    assert late.read_text() == "another process's run\n"
+
+
 def test_run_paired_resumes_every_arm_under_the_caller_s_reading(tmp_path):
     terms = _head(seed=4, count=3)
     records = [TermRecord("pre_sample", i, term, {"score": 0.1 * (i + 1), "accuracy": 0.9 - i / 10})

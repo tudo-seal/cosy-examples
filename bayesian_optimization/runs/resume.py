@@ -3,7 +3,7 @@
 from bayesian_optimization.runs.term_pool import read_term_pool
 
 
-def _check_resumed_design(resume_design, drawn_prefix):
+def check_resumed_design(resume_design, drawn_prefix):
     """Refuse a resumed design whose terms are not the ones this run would have drawn.
 
     The resumed values describe those terms.  If the sampler now produces different ones, after a
@@ -34,6 +34,10 @@ def _check_resumed_design(resume_design, drawn_prefix):
                 f"networks than the ones being paired with them"
             )
             raise ValueError(msg)
+
+
+# The name the CIFAR driver and its tests import.
+_check_resumed_design = check_resumed_design
 
 
 def load_initial_design(path, expected, phase="pre_sample"):

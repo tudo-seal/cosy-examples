@@ -15,6 +15,7 @@ from cosy.evolutionary_algorithms import EvolutionarySearch
 from cosy.search import DepthBoundedRandomSampler, SizeUniformSampler, generator_query
 from cosy.search.determinize import determinize
 
+from bayesian_optimization.initial_sampling import distinct_prefix
 from bayesian_optimization.runs.budgets import step_budget
 
 # --- Time budgets ---------------------------------------------------------------------------
@@ -197,11 +198,12 @@ def twin_sampler(sampler, query, rng):
     past the design, without counting the program again.  Given a random source seeded as the
     first sampler's was, the twin draws the same terms in the same order.
 
-    A sampler that counts, cosy's ``SizeUniformSampler``, caches its table per query object: the
-    table is built here for ``query`` before it is shared, and a twin drawing for another query
-    object counts again.  :class:`DeterminizedSizeUniformSampler` queries its own program and
-    shares its table whatever query it is handed.  A sampler that does not count has nothing to
-    share and is copied with the new random source.
+    :class:`DeterminizedSizeUniformSampler`, the counting sampler :func:`build_search` returns,
+    queries its own program and shares its table whatever query it is handed.  cosy's plain
+    ``SizeUniformSampler`` caches its table per query OBJECT: the table is built here for ``query``
+    before it is shared, but every loop builds its own query, so in a paired run the plain
+    sampler's twin counts the program again.  A sampler that does not count has nothing to share
+    and is copied with the new random source.
 
     Args:
         sampler: The sampler to twin.
@@ -224,6 +226,47 @@ def twin_sampler(sampler, query, rng):
     twin = copy.copy(sampler)
     twin.rng = rng
     return twin
+
+
+class _DesignFirst:
+    """A sampler whose stream opens with a given design and continues with another sampler's."""
+
+    def __init__(self, design, sampler):
+        self._design = list(design)
+        self._sampler = sampler
+
+    def sample(self, query):
+        yield from self._design
+        yield from self._sampler.sample(query)
+
+
+def draw_design(sampler, query, size, *, then=0, design=None):
+    """Draw a loop's design up front from one stream, and the terms a paired arm draws past it.
+
+    ``size`` distinct terms from one stream of ``sampler``, a ``design`` given as terms heading the
+    stream where there is one, and ``then`` distinct terms after them: what a paired random arm on
+    a twin of the sampler (:func:`twin_sampler`) draws past the design.  The sampler's random source
+    is left where drawing all of them left it.  That is the point.  The loop's duplicate fallback
+    draws from a stream opened at that state, so after this it draws beyond everything the paired
+    arm draws, where a sampler that never drew would hand the loop the arm's first term; and a
+    resumed design can be held against the head, the stream it was drawn from if it is this run's
+    (:func:`~bayesian_optimization.runs.resume.check_resumed_design`).
+
+    Args:
+        sampler: The loop's sampler.
+        query: The query it draws for.
+        size (int): The size of the design.
+        then (int): The terms a paired arm draws past the design. (Default value = 0)
+        design (Sequence | None): A design given as terms, which heads the stream.
+            (Default value = None)
+
+    Returns:
+        tuple[list, int]: The design, the first ``size`` terms, and how many repeats the stream
+            delivered on the way and were skipped.
+    """
+    source = sampler if design is None else _DesignFirst(design, sampler)
+    terms, repeats = distinct_prefix(source, query, size + then)
+    return terms[:size], repeats
 
 
 @dataclass(frozen=True)

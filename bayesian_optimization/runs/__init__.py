@@ -24,7 +24,7 @@ from .records import (
     SurrogateLogger,
     kernel_hyperparameters,
 )
-from .resume import load_design_records, load_initial_design
+from .resume import check_resumed_design, load_design_records, load_initial_design
 from .run_diagnostics import write_run_diagnostics
 from .schema import LOOP_FIELDS, Column, MetricSchema, Objective
 from .search_program import (
@@ -38,6 +38,7 @@ from .search_program import (
     build_search,
     describe_sampler,
     describe_search,
+    draw_design,
     twin_sampler,
 )
 from .term_pool import (
@@ -87,8 +88,10 @@ __all__ = [
     "as_pool",
     "build_acquisition_optimizer",
     "build_search",
+    "check_resumed_design",
     "describe_sampler",
     "describe_search",
+    "draw_design",
     "kernel_hyperparameters",
     "load_design_records",
     "load_initial_design",
