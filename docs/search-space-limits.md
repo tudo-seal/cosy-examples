@@ -14,7 +14,7 @@ sampler no bound is wrong by that definition, whatever the sampler then does.
 
 `BayesianOptimization` therefore takes a `Sampler` object rather than two numbers. Passing `None`
 builds `SizeUniformSampler(100, Random(seed))`, which is a placeholder for toy spaces and the first
-thing to replace on a real one.
+thing to replace on a real one; the loop says so in a warning once per run.
 
 ## Three bounds that are not the same quantity
 

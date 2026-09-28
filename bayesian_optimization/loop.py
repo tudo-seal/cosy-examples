@@ -230,7 +230,8 @@ class AskTellLoop(Generic[NT, T, G]):
         RNG seed of the default sampler.
     sampler:
         The loop's own source of terms; ``None`` builds ``SizeUniformSampler(DEFAULT_SIZE_BOUND,
-        Random(seed))`` counting from a materialized search tree, a placeholder for toy spaces.
+        Random(seed))`` counting from a materialized search tree, a placeholder for toy spaces,
+        and says so in a warning once per run.
     """
 
     #: The phase a pass of this strategy is recorded under in a run's rows and term records.
@@ -504,11 +505,19 @@ class AskTellLoop(Generic[NT, T, G]):
         design was drawn, handed over as terms, or handed over with its values.
         """
         if self._sampler is None and self.search_space is not None:
-            self._sampler = (
-                SizeUniformSampler(DEFAULT_SIZE_BOUND, random.Random(self.seed))
-                if self.sampler is None
-                else self.sampler
-            )
+            if self.sampler is not None:
+                self._sampler = self.sampler
+            else:
+                self._sampler = SizeUniformSampler(DEFAULT_SIZE_BOUND, random.Random(self.seed))
+                # Said where it is built, which is once per run: reset() drops the sampler.
+                self._logger.warning(
+                    "no sampler was given, so the loop draws its design and its replacements "
+                    "from SizeUniformSampler(%d, Random(%r)): terms of up to %d symbols, counted "
+                    "over the derivation tree cosy's default construction builds. That suits "
+                    "small spaces only; pass sampler= (the run layer's build_search pairs a "
+                    "program with the sampler that fits it).",
+                    DEFAULT_SIZE_BOUND, self.seed, DEFAULT_SIZE_BOUND,
+                )
         if self._initializer is None and self._sampler is not None:
             self._initializer = (
                 SampledInitialization(self._sampler)

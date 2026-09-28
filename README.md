@@ -218,7 +218,8 @@ A space that admits one sampler and not another would otherwise get a working in
 fallback that cannot run.
 
 Passing `None` builds `SizeUniformSampler(100, Random(seed))` counting from a materialized search
-tree. That is a placeholder for toy spaces, and it is the first thing to replace on a real one.
+tree, and the loop says so in a warning once per run. That is a placeholder for toy spaces, and it
+is the first thing to replace on a real one.
 
 Three bounds are easy to confuse and are not the same quantity. The bound of `SizeUniformSampler`
 is a term **size**, the number of symbols. The bound of `DepthBoundedRandomSampler` is a **depth**,

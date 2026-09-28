@@ -350,8 +350,8 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         duplicate ever sends it looking.
 
         ``None`` builds ``SizeUniformSampler(100, Random(seed))`` counting from a materialized
-        search tree.  That is a placeholder for toy spaces and the first thing to replace on a real
-        one, in two respects:
+        search tree, and says so in a warning once per run.  That is a placeholder for toy spaces
+        and the first thing to replace on a real one, in two respects:
 
         * The bound is a term **size**, not a depth and not a dataset.  Size-uniform sampling
           draws a realized term size uniformly and then an inhabitant of that size uniformly, both
