@@ -87,8 +87,9 @@ jobs:
 
   # The core and the run layer without the examples' dependencies, which are extras. The suite
   # leaves out every test module that needs one of them and names each in its summary
-  # (tests/conftest.py), so a module of the core or the run layer that came to import torch fails
-  # here, where the two jobs above cannot see it.
+  # (tests/conftest.py); one test imports every module outside examples/ and is never left out
+  # (tests/unit/test_the_core_imports_without_the_extras.py), so a module of the core or the run
+  # layer that came to import torch fails here, where the two jobs above cannot see it.
   tests-without-torch:
     runs-on: ubuntu-latest
     timeout-minutes: 20

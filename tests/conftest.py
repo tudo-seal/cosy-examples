@@ -32,6 +32,8 @@ def _missing_dependency_of(path: Path) -> str | None:
     Decided by importing what the module imports at its top level, this repository's modules
     included, so a module that needs torch through the CIFAR example is found without a list of
     such modules to keep. An import inside a test is that test's own business: it skips itself.
+    A module of the core or the run layer that came to need one would be left out here with its
+    tests; ``tests/unit/test_the_core_imports_without_the_extras.py`` is what fails on that.
     """
     for node in ast.parse(path.read_text()).body:
         if isinstance(node, ast.Import):
@@ -45,22 +47,26 @@ def _missing_dependency_of(path: Path) -> str | None:
             top = name.split(".")[0]
             if top in _ABSENT:
                 return top
-            if top in ("bayesian_optimization", "tests"):
-                try:
-                    importlib.import_module(name)
-                except ModuleNotFoundError as error:
-                    missing = (error.name or "").split(".")[0]
-                    if missing in _ABSENT:
-                        return missing
-                    if error.name != name:  # not merely a name that is no module
-                        raise
+            try:
+                importlib.import_module(name)
+            except ModuleNotFoundError as error:
+                missing = (error.name or "").split(".")[0]
+                if missing in _ABSENT:
+                    return missing
+                if error.name != name:  # not merely a name that is no module
+                    raise
     return None
 
 
 def pytest_ignore_collect(collection_path: Path, config: pytest.Config) -> bool | None:
     if not _ABSENT or collection_path.suffix != ".py" or not collection_path.name.startswith("test_"):
         return None
-    missing = _missing_dependency_of(collection_path)
+    try:
+        missing = _missing_dependency_of(collection_path)
+    except Exception:  # noqa: BLE001
+        # Anything else -- a syntax error, an import that fails for another reason -- is left to
+        # the module's own collection, which reports it against the module, not its directory.
+        return None
     if missing is None:
         return None
     _LEFT_OUT[str(collection_path.relative_to(config.rootpath))] = missing

@@ -11,9 +11,10 @@ python -m pip install -e ".[dev,cnn,examples]"
 ```
 
 The core and the run layer import none of `cnn` and `examples`. Without
-them, the suite leaves out every test module that needs one and names each
-in its summary (`tests/conftest.py`); the checks run that way too, so a
-module of the core that came to import torch fails there.
+them, a run of the suite leaves out every test module that needs one and
+names each in its summary (`tests/conftest.py`). The checks run that way too,
+and one test there imports every module outside `examples/` and is never left
+out, so a module of the core that came to import torch fails it.
 
 The `cosy` library comes along as the declared `combinatory-synthesizer`
 dependency, and the tests import it directly. `pyproject.toml` puts the
@@ -34,7 +35,7 @@ for a quick run:
 pytest -m "not slow"
 ```
 
-Five of the 1 000 tests carry `slow`, and the other 995 finish in about 106
+Five of the 1 001 tests carry `slow`, and the other 996 finish in about 106
 seconds in one process on the machine this was measured on.
 
 ## Measuring coverage
@@ -60,8 +61,9 @@ mypy bayesian_optimization tests
 ```
 
 Both come with the `dev` extra and both read their configuration from
-`pyproject.toml`. `mypy` covers 126 files over those two paths and reports no
-error, only its twenty standing notes about unchecked bodies of untyped
+`pyproject.toml`. `mypy` reads the examples against torch's own types, so it
+needs the `cnn` extra as well, which the setup above installs; with it, `mypy`
+covers 127 files over those two paths and reports no error, only its twenty standing notes about unchecked bodies of untyped
 functions, so a new error is one this change introduced.
 
 `.github/workflows/checks.yml` runs these two and the fast half of the suite on
