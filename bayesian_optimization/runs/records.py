@@ -6,7 +6,6 @@ import os
 import time
 
 import numpy as np
-from sklearn.gaussian_process import GaussianProcessRegressor
 
 from bayesian_optimization.diagnostics import read_calibration, read_fit
 
@@ -54,6 +53,26 @@ SURROGATE_CSV_COLUMNS = [
     # its optimizer over an empty parameter vector without complaining.
     "kernel_hyperparameters",
 ]
+
+
+#: What the run layer reads off a fitted Gaussian process, and only there.
+GAUSSIAN_PROCESS_READS = ("L_", "alpha_", "y_train_", "X_train_", "log_marginal_likelihood_value_",
+                          "kernel_")
+
+
+def reads_as_a_gaussian_process(posterior):
+    """Whether a posterior answers what the run layer reads off a fitted Gaussian process.
+
+    Read off what it has, not off its class: a subclass's surrogate or a caller's may answer a
+    posterior that delegates to one.
+
+    Args:
+        posterior: A fitted surrogate.
+
+    Returns:
+        bool: Whether it has every attribute of :data:`GAUSSIAN_PROCESS_READS`.
+    """
+    return all(hasattr(posterior, name) for name in GAUSSIAN_PROCESS_READS)
 
 
 def kernel_hyperparameters(surrogate):
@@ -176,9 +195,10 @@ class SurrogateLogger:
         if surrogate is None:
             return
         # The reads only a Gaussian process answers -- its calibration, its training set, its
-        # marginal likelihood, its fitted kernel.  A caller's surrogate has none of them, and its
-        # cells stay empty rather than failing the run after its design.
-        gaussian = isinstance(surrogate, GaussianProcessRegressor)
+        # marginal likelihood, its fitted kernel -- read off any posterior that has them, whatever
+        # its class.  One that has not leaves its cells empty rather than failing the run after its
+        # design.
+        gaussian = reads_as_a_gaussian_process(surrogate)
         calibration = read_calibration(surrogate) if gaussian else None
 
         # The same split by parity that the diagnostics use, over the data this pass saw.  The
@@ -211,7 +231,8 @@ class SurrogateLogger:
 
         self._writer.writerow([
             bo_iteration,
-            len(surrogate.X_train_) if gaussian else "",
+            # the pairs this pass conditioned on: the Gaussian process's own count, or the loop's
+            len(surrogate.X_train_) if gaussian else len(set(terms)),
             surrogate.log_marginal_likelihood_value_ if gaussian else "",
             "" if calibration is None else calibration.root_mean_square,
             "" if calibration is None else calibration.standard_deviation,

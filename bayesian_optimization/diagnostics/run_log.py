@@ -139,6 +139,7 @@ def warn_if_exploitation_stalls(
     acquisition_value: float,
     lower_bound: float | None,
     acquisition_name: str,
+    gaussian_process: bool = True,
 ) -> bool:
     """Say so when the maximization found nothing that promises anything.
 
@@ -163,12 +164,27 @@ def warn_if_exploitation_stalls(
         acquisition_value (float): The value at the pick.
         lower_bound (float | None): The acquisition's lower bound, where its definition fixes one.
         acquisition_name (str): Its name, for the message.
+        gaussian_process (bool): Whether the surrogate is the loop's Gaussian process, whose repair
+            the message then names; a caller's own surrogate is pointed at its held-out fit.
+            (Default value = True)
 
     Returns:
         bool: Whether the warning fired, so that a caller can hold it to once per run.
     """
     if lower_bound is None or acquisition_value > lower_bound:
         return False
+    if not gaussian_process:
+        logger.warning(
+            "iteration %d: the best %s over the whole search space is %.4g, its smallest possible "
+            "value, so no candidate promises an improvement over the incumbent.  The surrogate is "
+            "the caller's own: posterior deviations too small put the acquisition at its floor, "
+            "and its held-out fit (read_fit) says whether they are.  On a finite space, "
+            "exhaustion produces the same reading and is a legitimate end state.",
+            iteration,
+            acquisition_name,
+            acquisition_value,
+        )
+        return True
     logger.warning(
         "iteration %d: the best %s over the whole search space is %.4g, its smallest possible "
         "value, so no candidate promises an improvement over the incumbent.  This is the "

@@ -26,10 +26,12 @@ class MarginalPosterior(Protocol):
 class Surrogate(Protocol):
     """What conditions a posterior on a pass's data, in place of the Gaussian process.
 
-    ``fit`` is handed the distinct pairs of the dataset, in the order their terms first appeared,
-    and answers a :class:`MarginalPosterior`, a new one for every fit: a recorded acquisition holds
-    the posterior its pass maximized against, and a fit that changed an earlier one in place would
-    change what every earlier record says.
+    At every pass ``fit`` is handed the distinct pairs of the dataset, in the order their terms
+    first appeared, and answers a :class:`MarginalPosterior`.  The loop keeps a copy of every
+    posterior it answers, so ``fit`` may refit the surrogate and answer the surrogate itself, as a
+    scikit-learn estimator does.  The diagnostics hand a copy of the surrogate the pairs they
+    choose -- a half of them for a held-out fit, all of them for a calibration -- so that a state it
+    keeps between fits moves with the passes alone.  It has to be deep-copyable.
     """
 
     def fit(self, terms: Sequence[Any], values: Sequence[float]) -> MarginalPosterior:

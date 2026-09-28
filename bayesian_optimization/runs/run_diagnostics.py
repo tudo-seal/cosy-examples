@@ -3,8 +3,6 @@
 import csv
 import json
 
-from sklearn.gaussian_process import GaussianProcessRegressor
-
 from bayesian_optimization.diagnostics import (
     read_calibration,
     read_fit,
@@ -15,6 +13,7 @@ from bayesian_optimization.diagnostics import (
     trace_rows,
 )
 from bayesian_optimization.runs.artifacts import _sibling_path
+from bayesian_optimization.runs.records import reads_as_a_gaussian_process
 
 
 def write_run_diagnostics(csv_path, optimizer, result):
@@ -95,11 +94,13 @@ def write_run_diagnostics(csv_path, optimizer, result):
     # --- 3. The uncertainty, over the whole dataset -------------------------------------------
     # Not ``result["gp_model"]``, which is the surrogate of the last ``suggest()`` and never saw the
     # evaluation the run ended on.  A calibration is a statement about the data that was collected.
-    # Only a Gaussian process has the factor and the weights the read takes apart; a caller's
-    # surrogate has none, and the read is null.
-    whole = optimizer.surrogate_over_dataset() if terms and with_the_kernel else None
+    # Only a Gaussian process has the factor and the weights the read takes apart, read off what
+    # the posterior has, as the per-pass log reads them; for a posterior without them it is null.
+    whole = optimizer.surrogate_over_dataset() if terms else None
     calibration = (
-        read_calibration(whole) if isinstance(whole, GaussianProcessRegressor) else None
+        read_calibration(whole)
+        if whole is not None and reads_as_a_gaussian_process(whole)
+        else None
     )
 
     # --- 4. The inner evolutionary run --------------------------------------------------------

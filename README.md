@@ -317,14 +317,19 @@ kernel with a non-empty `theta` and no optimizer is reported once per run, as is
 a kernel with an empty one.
 
 A surrogate of the caller's own replaces the Gaussian process as `surrogate_model=`: a `Surrogate`,
-whose `fit(terms, values)` is handed the distinct pairs of the dataset in the order their terms
-first appeared and answers a posterior, anything with `predict(X, return_std=...)`, a new one for
-every fit. The acquisition, the diagnostics' held-out fit and `finalize()["gp_model"]` read that
-posterior. The settings of the Gaussian process -- `kernel`, `kernel_optimizer`,
-`n_restarts_kernel_optimizer`, `gp_normalize_y`, and a run's `gp_params` and `alpha` -- would reach
-nothing beside it and are refused. The run layer leaves the reads only a Gaussian process answers,
-its calibration, marginal likelihood, fitted kernel and the constructor kernel's Gram matrix, empty
-or `null`, rather than failing the run after its design.
+whose `fit(terms, values)` is handed, at every pass, the distinct pairs of the dataset in the order
+their terms first appeared, and answers a posterior, anything with `predict(X, return_std=...)`.
+Each pass keeps a copy of that posterior, so that a later fit cannot change what an earlier pass
+recorded, and a scikit-learn estimator, which refits itself, can be passed as it is. The
+diagnostics fit a copy of the surrogate on the pairs they choose, so that a surrogate with a state of
+its own makes the same passes with and without them; one that cannot be copied is refused before
+the design. The acquisition, the diagnostics and `finalize()["gp_model"]` read those posteriors. The
+settings of the Gaussian process -- `kernel`, `kernel_optimizer`, `n_restarts_kernel_optimizer`,
+`gp_normalize_y`, and a run's `gp_params` and `alpha` -- set beside it to anything but their
+defaults would reach nothing and are refused, at construction and again before a run. The run layer
+reads what only a Gaussian process answers -- its calibration, marginal likelihood and fitted kernel
+-- off any posterior that has them, and leaves those cells empty or `null` for one that has not; the
+constructor kernel's Gram matrix is read only where the Gaussian process is the surrogate.
 
 ## Acquisition functions
 
