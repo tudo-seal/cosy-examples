@@ -51,15 +51,12 @@ through anyway is replaced by a fresh draw from the sampler.
 
 Those three answer different cases and are not interchangeable. Conditioning on the distinct pairs
 handles an exact observation repeating identically. The acquisition floor handles the maximization
-being pulled toward a point the surrogate is already certain about, before a duplicate is returned
-at
+being pulled toward a point the surrogate is already certain about, before a duplicate is returned at
 all. The replacement handles the maximization returning one anyway. A fourth case none of the three
 touches is a quality measure that is itself stochastic: that one needs a noise term on the diagonal,
-and this loop adds none by default, and this loop adds none by default: `_JITTER` is `1e-6` and it
-is
-a numerical guard on a Gram matrix of near-duplicate rows, not a noise level. A stochastic quality
-measure, a training run for instance, needs a `WhiteKernel` in the kernel. That
-does not loosen the distinct pairs clause: `_distinct_pairs` still raises on a dataset that gives
+and this loop adds none by default: `_JITTER` is `1e-6` and it is a numerical guard on a Gram matrix
+of near-duplicate rows, not a noise level. A stochastic quality measure, a training run for instance,
+needs a `WhiteKernel` in the kernel. That does not loosen the distinct pairs clause: `_distinct_pairs` still raises on a dataset that gives
 one term two different values, whatever the kernel says. The repetitions are averaged into the one
 value a term carries before the loop sees them, which is what the CNN driver's `--repeats` does.
 

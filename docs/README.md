@@ -2,8 +2,7 @@
 
 Three files, and each one collects the things a reader would otherwise have to find out by running
 into them. None of them is a bug list. What stands here is a property of the method or of a search
-space rather than a defect waiting to be fixed, and knowing it in advance is the difference, and
-knowing it in advance is the difference
+space rather than a defect waiting to be fixed, and knowing it in advance is the difference
 between reading a result and misreading one.
 
 | File | What it covers |

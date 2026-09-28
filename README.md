@@ -191,7 +191,8 @@ The state runs `UNINITIALIZED`, then `DESIGN` while a design phase awaits values
 then `SUGGESTED` and `OBSERVED` in alternation, and `FINALIZED` at the end. Every method refuses a
 state it does not belong in with a `RuntimeError` naming that state, and `reset()` returns the loop
 to `UNINITIALIZED`. `get_state_snapshot()` reports the state, the observed terms and values, the
-pass count, any outstanding suggestion, the design and how many of its terms still await a value.
+pass count, the last suggestion handed out (observed or not; `finalize()` clears it), the design and
+how many of its terms still await a value.
 
 `finalize()` returns `best_tree`, `best_y`, `x`, `y`, `gp_model`, `iterations`, `trace`,
 `dropped_suggestion` and `design_remaining`, the design terms no value reached. The model it reports is the one the last `suggest()` fitted, so it has not
