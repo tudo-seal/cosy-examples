@@ -22,8 +22,10 @@ class TraceRecord:
             what :attr:`fallback_used` is beside it for.
         mean (float): ``m_D`` at the pick, from the surrogate of that pass.
         deviation (float): ``s_D`` at the pick.
-        incumbent (float): The largest value observed *before* the pass, the ``y*`` the
-            acquisition was built with.
+        incumbent (float): The largest value observed *before* the pass.  Without repeated
+            measurements it is the ``y*`` the acquisition was built with; with them the acquisition
+            compared against the largest posterior mean over the measured terms, which the pass's
+            diagnostics carry as ``incumbent``.
         observed (float): The value the objective returned at the pick.
         best (float): The largest value observed after the pass.
         fallback_used (bool): Whether the maximization returned an already evaluated term and the

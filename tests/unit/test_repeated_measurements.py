@@ -173,3 +173,55 @@ def test_a_posterior_of_noise_alone_has_no_latent_variance(tree_corpus):
     _mean, latent = _latent(posterior).predict(terms, return_std=True)
     assert np.all(observed > 0) and np.all(latent == 0)
     assert posterior.predict(terms, return_std=True)[1] == pytest.approx(observed), "left as it was"
+
+
+# --- the incumbent, the answer and the trace ------------------------------------------------------
+
+
+def _measured_twice(bo_factory: Any, tree_corpus: Any) -> Any:
+    """t0 measured at 1.0 and 3.0 (mean 2.0), t1 at 2.5, t2 at 0.5: the largest single value and
+    the largest mean belong to different terms."""
+    bo = _loop(bo_factory, [tree_corpus[0], tree_corpus[3]])
+    bo.initialize(x0=tree_corpus[:3], y0=[1.0, 2.5, 0.5])
+    bo.observe(bo.suggest().candidate, 3.0)
+    return bo
+
+
+def test_the_incumbent_is_the_largest_posterior_mean_over_the_measured_terms(bo_factory, tree_corpus):
+    bo = _measured_twice(bo_factory, tree_corpus)
+
+    suggestion = bo.suggest()
+    means, _deviations = bo.surrogate.predict(tree_corpus[:3], return_std=True)
+    assert suggestion.diagnostics["incumbent"] == pytest.approx(float(np.max(means)))
+    assert suggestion.diagnostics["incumbent"] < 3.0, "not the largest single observation"
+
+
+def test_the_answer_is_the_term_with_the_largest_mean_of_its_observations(bo_factory, tree_corpus):
+    bo = _measured_twice(bo_factory, tree_corpus)
+
+    assert bo.best() == (tree_corpus[1], 2.5)
+    result = bo.finalize()
+    assert (result["best_tree"], result["best_y"]) == (tree_corpus[1], 2.5)
+
+
+def test_the_trace_reads_the_observations_the_acquisition_the_posterior(bo_factory, tree_corpus):
+    """A trace row's incumbent is the largest value observed before it, its best the largest
+    after, as without repeated measurements; what the acquisition compared against, the largest
+    posterior mean, is the pass's own diagnostic."""
+    bo = _loop(bo_factory, [tree_corpus[0], tree_corpus[3], tree_corpus[4]])
+    bo.initialize(x0=tree_corpus[:3], y0=[1.0, 2.5, 0.5])
+    bo.observe(bo.suggest().candidate, 3.0)
+    suggestion = bo.suggest()
+    bo.observe(suggestion.candidate, 0.2)
+    bo.observe(bo.suggest().candidate, 4.0)
+
+    assert [(row.incumbent, row.best) for row in bo.trace] == [(2.5, 3.0), (3.0, 3.0), (3.0, 4.0)]
+    assert suggestion.diagnostics["incumbent"] != bo.trace[1].incumbent
+
+
+def test_a_tie_between_two_means_goes_to_the_term_measured_first(bo_factory, tree_corpus):
+    bo = _loop(bo_factory, [tree_corpus[0]])
+    bo.initialize(x0=tree_corpus[:3], y0=[1.0, 2.0, 0.5])
+    bo.observe(bo.suggest().candidate, 3.0)
+
+    assert bo.best() == (tree_corpus[0], 2.0), "t0's mean of 1.0 and 3.0 ties t1's 2.0"

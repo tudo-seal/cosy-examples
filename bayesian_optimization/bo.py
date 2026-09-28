@@ -5,6 +5,7 @@ import inspect
 import logging
 import math
 import random
+import statistics
 import time
 from collections.abc import Callable, Hashable, Sequence
 from typing import Any, ClassVar, Generic, Literal, TypeVar
@@ -762,8 +763,13 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         # The incumbent the three scores compare against is the best observation, and best means
         # largest.  Read off the whole dataset rather than off the distinct pairs, which is the
         # same number, since removing repetitions removes no value, but says which of the two it
-        # is a property of.
-        incumbent = float(np.max(np.array(self._y_list, dtype=float)))
+        # is a property of.  Under repeated measurements the largest single observation is the
+        # one most inflated by the noise, so the incumbent is the largest posterior mean over the
+        # measured terms instead.
+        if self.repeated_measurements:
+            incumbent = self._largest_posterior_mean(model)
+        else:
+            incumbent = float(np.max(np.array(self._y_list, dtype=float)))
 
         # --- Build acquisition function ---------------------------------------
         # Under repeated measurements the acquisition scores the latent function: at a measured
@@ -1189,14 +1195,20 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
                 the values the row is then built from.
         """
         diagnostics, acquisition = _require_trace_diagnostics(suggestion)
+        # The trace reads the observations: the largest value observed before this row.  Without
+        # repeated measurements that is the incumbent the acquisition was built with; with them the
+        # acquisition compared against a posterior mean, which its diagnostics keep.
+        incumbent = (
+            max(self._y_list[:-1]) if self.repeated_measurements else diagnostics["incumbent"]
+        )
         return TraceRecord(
             iteration=diagnostics["iteration"],
             acquisition=acquisition,
             mean=diagnostics["mean_at_pick"],
             deviation=diagnostics["deviation_at_pick"],
-            incumbent=diagnostics["incumbent"],
+            incumbent=incumbent,
             observed=observed,
-            best=max(observed, diagnostics["incumbent"]),
+            best=max(observed, incumbent),
             fallback_used=diagnostics["fallback_used"],
             evaluations=len(self._x_list),
             distinct_observations=len(self._x_set),
@@ -1350,6 +1362,51 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
                 f"once"
             )
             raise ValueError(msg)
+
+    def _largest_posterior_mean(self, model: MarginalPosterior) -> float:
+        """The largest posterior mean over the measured terms, the incumbent under repeated
+        measurements.
+
+        Asked the way an acquisition asks the surrogate, so that any posterior a pass accepts
+        answers it.
+
+        Args:
+            model (MarginalPosterior): The pass's posterior.
+
+        Returns:
+            float: The incumbent.
+
+        Raises:
+            ValueError: If the posterior answers a mean that is not finite.
+        """
+        measured = list(dict.fromkeys(self._x_list))
+        means, _deviations = model.predict(measured, return_std=True)
+        means = np.asarray(means, dtype=float).reshape(-1)
+        if means.shape != (len(measured),) or not np.all(np.isfinite(means)):
+            msg = "the surrogate returned a posterior mean that is not finite at a measured term"
+            raise ValueError(msg)
+        return float(np.max(means))
+
+    def best(self) -> tuple[Any, float]:
+        """Return the answer of the run as ``(candidate, y)``.
+
+        The largest observation, the loop maximizing.  Under repeated measurements, the term with
+        the largest mean of its observations, and that mean: the largest single observation is
+        the one the noise inflated most, and the mean needs no model.  It is then not a value any
+        one evaluation returned.  A tie goes to the term measured first.
+
+        Raises:
+            RuntimeError: If called before any observations have been made.
+        """
+        if not self.repeated_measurements:
+            return super().best()
+        if not self._y_list:
+            raise RuntimeError("No observations available yet.")
+        observations: dict[Any, list[float]] = {}
+        for term, value in zip(self._x_list, self._y_list, strict=False):
+            observations.setdefault(term, []).append(float(value))
+        term = max(observations, key=lambda measured: statistics.fmean(observations[measured]))
+        return term, statistics.fmean(observations[term])
 
     def _conditioning_pairs(self) -> tuple[list[Any], list[float]]:
         """What the surrogate conditions on: every row under repeated measurements, else the
