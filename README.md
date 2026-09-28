@@ -43,9 +43,9 @@ The two checks need the `dev` extra, which carries `mypy` and `ruff`, and `mypy`
 against torch's own types, so it needs `cnn` as well. The tests need `test`, and
 `pip install -e ".[dev,cnn,examples]"` covers all of it.
 
-The suite holds 1 001 tests in 59 test modules. Five carry the `slow` marker, and the remaining 996
-finish in about 106 seconds in one process on the machine this was measured on. `mypy` reports
-nothing over the 127 files those two paths cover. `pyproject.toml` declares `slow`,
+The suite holds 1 164 tests in 67 test modules. Six carry the `slow` marker, and the remaining
+1 158 finish in about 140 seconds in one process on the machine this was measured on. `mypy` reports
+nothing over the 136 files those two paths cover. `pyproject.toml` declares `slow`,
 `integration` and `property`, and it puts the repository root on `sys.path`, so
 `bayesian_optimization` is taken from the checkout rather than from an installed copy.
 `CONTRIBUTING.md` covers coverage measurement and the conventions the two layers are held to.
@@ -141,15 +141,15 @@ is to be minimized is negated on the way in and the reported optimum on the way 
 | `utils.py` | the conversions from a term to a labeled graph the graph kernels read |
 | `runs/` | the run layer: one driver for every strategy and the paired comparison, the metric schema and the recorder, the files of a run, the claim of its names and its provenance, the term pool and resume, the search program and its samplers, the acquisition-optimizer builder, the watchdog |
 
-That is 21 modules of core, 6426 lines, and the run layer's 12 modules, 2590 lines, which import
+That is 21 modules of core, 7166 lines, and the run layer's 13 modules, 3321 lines, which import
 no training framework and hold what a run over any space needs around the loop.
-`bayesian_optimization/examples/` holds 24 more modules and 12 070 lines, and every one of them is
+`bayesian_optimization/examples/` holds 24 more modules and 11 816 lines, and every one of them is
 an application: an example may not work around a defect in the core or the run layer, it has to be
 fixed where it is. The dependency runs one way only: an example may import the run layer and the
 core, the run layer the core, and no module outside `examples/` imports anything from inside it.
 
-`bayesian_optimization/__init__.py` exports 37 names and `bayesian_optimization/runs/__init__.py`
-46, and nothing else is public API.
+`bayesian_optimization/__init__.py` exports 41 names and `bayesian_optimization/runs/__init__.py`
+52, and nothing else is public API.
 
 ## The optimization loop
 
