@@ -188,6 +188,27 @@ def _draw_up_front(strategy, size, *, then, design, budgets, echo):
     return head, DesignDraw(size, then, repeats, seconds, drawn=design is None)
 
 
+def _draws_from_its_stream(strategy: AskTellLoop) -> bool:
+    """Whether a Bayesian loop's design is the head of its own sampler's stream.
+
+    So it is with a sampler of its own and the default initializer, which collects the design from
+    one stream of that sampler.  An initializer of the caller's draws the design otherwise, and a
+    design drawn up front from the sampler would be another one; a loop without a sampler of its own
+    draws from a placeholder the run layer does not hold.
+
+    Args:
+        strategy (AskTellLoop): The strategy.
+
+    Returns:
+        bool: Whether its design can be drawn up front, and a resumed one held against that head.
+    """
+    return (
+        isinstance(strategy, BayesianOptimization)
+        and getattr(strategy, "sampler", None) is not None
+        and getattr(strategy, "initializer", None) is None
+    )
+
+
 def _pairs(records):
     return [(record.term, record.metrics) for record in records]
 
@@ -231,10 +252,13 @@ def run_search(
             ``resumed_value``'s reading of their metrics.  Which records belong to which
             configuration is the caller's check (see
             :func:`~bayesian_optimization.runs.resume.load_design_records`).  Under Bayesian
-            optimization a design its pool says was drawn (``ResumedDesign.origin``, ``"drawn"``
-            for a plain list) is held against the head of the loop's own stream, and the sampler
-            moved past it, as the run it resumes had drawn it; a design given as terms is not, and
-            resumes under any seed. (Default value = None)
+            optimization that draws its design from a sampler of its own -- the default
+            initializer, which collects it from one stream of that sampler -- a design its pool
+            says was drawn (``ResumedDesign.origin``, ``"drawn"`` for a plain list) is held against
+            the head of the loop's stream, and the sampler moved past it, as the run it resumes had
+            drawn it; a design given as terms is not, and resumes under any seed.  A loop with an
+            initializer of the caller's, or with no sampler of its own, takes the design over as it
+            stands. (Default value = None)
         resumed_value (Callable | None): How a resumed record's metrics become the value this
             run's loop is handed.  Given, it reads every resumed record.  Omitted, each record
             hands the loop the value it kept, which must be the schema's objective's reading of
@@ -332,8 +356,7 @@ def run_search(
         and hold_resumed_design
         and drawn_up_front is None
         and origin == "drawn"
-        and bayesian
-        and getattr(strategy, "sampler", None) is not None
+        and _draws_from_its_stream(strategy)
     ):
         # The loop's replacement for a duplicate draws from where its sampler stands, so a loop
         # that takes a drawn design over has to stand where the run that drew it stood: past it.
@@ -476,13 +499,16 @@ def run_paired(
     The first strategy runs the design as :func:`run_search` would, drawn, given or resumed; every
     other one takes that design over from the first run's records, a resumed one under the same
     ``resumed_value``, and then makes its own passes.  Where the first strategy is Bayesian
-    optimization with a sampler of its own, its design and the other arms' terms are drawn up front
-    from that sampler, as the paired path always drew them: an arm on a twin of the sampler
+    optimization that draws its design from a sampler of its own -- the default initializer -- its
+    design and the other arms' terms, ``n_passes`` of them whatever the other arms are, are drawn up
+    front from that sampler, as the paired path always drew them: an arm on a twin of the sampler
     (:func:`~bayesian_optimization.runs.twin_sampler`) draws the stream past the design, and the
     loop's replacement for a duplicate, a stream opened where its sampler stands, then draws past
     everything the arm draws.  A resumed design is held against that head where its pool says it
     was drawn; without passes nothing is drawn up front, and the first strategy holds a resumed
-    design as it would run alone.
+    design as it would run alone.  A first strategy with an initializer of the caller's draws its
+    design as it would alone, and its replacement for a duplicate is not held apart from an arm's
+    terms.
     Whether one strategy beats another is a question about the passes only if they start from the
     same place, and sharing the evaluated design is also what makes the comparison cost one extra
     budget of passes per strategy rather than one extra design.
@@ -538,11 +564,7 @@ def run_paired(
     first = names[0]
     leader = strategies[first]
     leader_design, drawn = design, None
-    if (
-        n_passes > 0
-        and isinstance(leader, BayesianOptimization)
-        and getattr(leader, "sampler", None) is not None
-    ):
+    if n_passes > 0 and _draws_from_its_stream(leader):
         # The design and the other arms' terms from the leader's own sampler, up front, so that
         # its replacement for a duplicate draws past everything an arm on a twin draws.
         up_front = {

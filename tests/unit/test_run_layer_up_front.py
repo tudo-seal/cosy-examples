@@ -271,3 +271,47 @@ def test_a_paired_resume_without_passes_holds_its_design_against_the_stream_as_o
     assert not (tmp_path / "other_seed.csv").exists(), "refused before anything was opened"
     outcomes = pair(1, "own_seed")
     assert outcomes["bo"].summary["taken_over"] == 3
+
+
+class _Reversed:
+    """An initializer of the caller's own: the first three times ``size`` distinct terms of the
+    sampler's stream, reversed, the first ``size`` of them."""
+
+    def __init__(self, sampler: Any) -> None:
+        self.sampler = sampler
+
+    def initialize(self, query: Any, size: int) -> list[Any]:
+        seen: list[Any] = []
+        for term in self.sampler.sample(query):
+            if term not in seen:
+                seen.append(term)
+            if len(seen) == 3 * size:
+                break
+        return list(reversed(seen))[:size]
+
+
+def _initialized(seed: int) -> BayesianOptimization:
+    sampler = _sampler(seed)
+    return BayesianOptimization(
+        list_space(), LIST, sampler=sampler, seed=seed, initializer=_Reversed(sampler),
+        maximizer=SampleMaximizer(_sampler(seed + 100), 8),
+    )
+
+
+def test_a_design_an_initializer_of_the_caller_s_draws_is_the_one_a_pair_runs_and_resumes(tmp_path):
+    """Drawn up front from the sampler, the design would be the stream's head and not the
+    initializer's; so a loop with an initializer of its own draws its design as it would alone,
+    and its pool resumes under its own seed."""
+    alone = run_search(_initialized(1), _metrics, schema=SCHEMA, csv_path=str(tmp_path / "a.csv"),
+                       pretty_algebra=dict, n_design=3, n_passes=1, echo=_quiet)
+    loop = _initialized(1)
+    paired = run_paired(
+        {"bo": loop, "random": _twin_of(loop, 1)}, _metrics, schema=SCHEMA, n_design=3, n_passes=1,
+        csv_paths={"bo": str(tmp_path / "p.csv"), "random": str(tmp_path / "r.csv")},
+        pretty_algebra=dict, echo=_quiet,
+    )
+
+    assert list(paired["bo"].result["x"][:3]) == list(alone.result["x"][:3])
+    assert "design_drawn_up_front" not in paired["bo"].summary
+    _measured(tmp_path, "again", _initialized(1),
+              resume=load_design_records(str(tmp_path / "a_terms.pickle"), {}), n_passes=1)
