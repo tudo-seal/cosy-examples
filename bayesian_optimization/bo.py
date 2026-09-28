@@ -18,7 +18,7 @@ from cosy.evolutionary_algorithms import (
 )
 from cosy.search import Sampler, SizeUniformSampler, generator_query
 from sklearn.gaussian_process import GaussianProcessRegressor
-from sklearn.gaussian_process.kernels import Kernel
+from sklearn.gaussian_process.kernels import Kernel, WhiteKernel
 
 from .acquisition_function import (
     AcquisitionFactory,
@@ -136,6 +136,47 @@ def _refuse_gaussian_process_settings(configured: Sequence[str]) -> None:
             "replaces: set beside it to anything but their defaults, they would reach nothing"
         )
         raise ValueError(msg)
+
+
+def _white_noise(kernel: Any) -> list[str]:
+    """The parameter paths of the ``WhiteKernel`` terms of a kernel; the kernel itself is ``""``.
+
+    Args:
+        kernel (Any): A scikit-learn kernel.
+
+    Returns:
+        list[str]: One path per white-noise term, empty for a kernel that models no noise.
+    """
+    if isinstance(kernel, WhiteKernel):
+        return [""]
+    parameters = kernel.get_params(deep=True) if hasattr(kernel, "get_params") else {}
+    return [path for path, value in parameters.items() if isinstance(value, WhiteKernel)]
+
+
+def _latent(posterior: Any) -> Any:
+    """The same posterior with its white noise taken out of the predictive variance.
+
+    scikit-learn's ``predict`` reads the variance at a term off ``kernel_.diag``, which holds every
+    ``WhiteKernel``'s noise level, while the cross-covariances with the training terms hold none of
+    it; the factorization it solves against is the fit's.  A copy whose ``kernel_`` has those noise
+    levels at 0 therefore predicts the latent function: the same mean, the observation's variance
+    less the noise, rescaled by ``predict`` as the fit normalized the targets.
+
+    Args:
+        posterior (Any): A fitted ``GaussianProcessRegressor``.
+
+    Returns:
+        Any: The copy, sharing the fit's training data and factorization.
+    """
+    latent = copy.copy(posterior)
+    kernel = posterior.kernel_
+    paths = _white_noise(kernel)
+    if paths == [""]:
+        latent.kernel_ = WhiteKernel(noise_level=0.0)
+    elif paths:
+        latent.kernel_ = copy.deepcopy(kernel)
+        latent.kernel_.set_params(**{f"{path}__noise_level": 0.0 for path in paths})
+    return latent
 
 
 def _require_factory_signature(factory: Callable[..., Any]) -> None:
@@ -488,6 +529,18 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         ``gp_normalize_y``, and a run's ``gp_params`` and ``alpha`` -- set to anything but their
         defaults reach nothing beside it and are refused.  A run layer reads what only a Gaussian
         process answers off a posterior that has it, and leaves it empty for one that has not.
+    repeated_measurements:
+        Off, the loop observes a function: a term is measured once, a pass never proposes a term
+        the dataset holds, and the surrogate conditions on the distinct pairs.  On, it observes a
+        quality measure that varies between calls: a pass may propose a measured term where the
+        acquisition prefers it, every evaluation is a row of its own, and the surrogate conditions
+        on every row.  That takes a model of the variation, a ``WhiteKernel`` in the kernel, and
+        a kernel without one is refused before anything is evaluated; the acquisition then scores
+        the latent function, the posterior with that noise taken out of its variance, since at a
+        measured term the observation's deviation never falls below the noise, and an acquisition
+        reading it would measure the same term again and again.  A caller's ``surrogate_model``
+        models its noise, and answers its latent posterior, itself.  A design stays a set: a term
+        is measured again only by a pass.
     """
 
     #: A pass of Bayesian optimization, as the CIFAR driver has always named it in its rows.
@@ -514,6 +567,7 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         sampler: Sampler | None = None,
         gp_normalize_y: bool = True,
         surrogate_model: Surrogate | None = None,
+        repeated_measurements: bool = False,
     ) -> None:
         # The pair is refused where the caller writes it down, so a mistyped target costs no
         # evaluation of the objective.  ``optimize`` refuses a negative budget in the same way and
@@ -537,7 +591,9 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         self.maximizer = maximizer
 
         self.surrogate_model = surrogate_model
+        self.repeated_measurements = bool(repeated_measurements)
         self._gp_normalize_y: bool = gp_normalize_y
+        self._require_noise_model(None)
         if surrogate_model is not None:
             # A parameter that reaches nothing is a parameter that lies: beside a caller's
             # surrogate the Gaussian process is never built, so its settings are refused where
@@ -692,7 +748,7 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         # dataset assembled from outside, and there it is what keeps the noise-free Gram matrix
         # invertible, since two identical rows are linearly dependent and only the jitter would
         # stand between that and a failed factorization.
-        conditioned_x, conditioned_y = self._distinct_pairs()
+        conditioned_x, conditioned_y = self._conditioning_pairs()
         if not conditioned_x:
             raise RuntimeError(
                 "there is nothing to condition the Gaussian process on: the dataset is empty.  "
@@ -710,7 +766,14 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         incumbent = float(np.max(np.array(self._y_list, dtype=float)))
 
         # --- Build acquisition function ---------------------------------------
-        af = self._build_acquisition(model, incumbent)
+        # Under repeated measurements the acquisition scores the latent function: at a measured
+        # term the observation's deviation never falls below the noise (see _latent).
+        scored = (
+            _latent(model)
+            if self.repeated_measurements and self.surrogate_model is None
+            else model
+        )
+        af = self._build_acquisition(scored, incumbent)
 
         # --- Optimize acquisition function ------------------------------------
         acq_opt: AcquisitionMaximizer = (
@@ -738,7 +801,8 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         # Two mechanisms carry the rejection of duplicates.  The acquisition scores known points
         # below every genuine candidate, and a candidate that gets through anyway is replaced by a
         # fresh draw.  ``_replace_duplicate`` draws it, and says why the deviation is deliberate.
-        fallback_used = candidate in self._x_set
+        # Under repeated measurements a measured term is measured again: nothing is replaced.
+        fallback_used = not self.repeated_measurements and candidate in self._x_set
         if fallback_used:
             candidate = self._replace_duplicate()
 
@@ -817,7 +881,7 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         # pass runs the two are equal, since nothing observes in between, so this changes no
         # decision.  It changes what an acquisition still means once the pass is over, which is
         # exactly what the diagnostics keep one for.
-        known_points = set(self._x_set)
+        known_points = set() if self.repeated_measurements else set(self._x_set)
 
         setting = self.acquisition_function
         if callable(setting) and not isinstance(setting, str):
@@ -966,7 +1030,7 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
             RuntimeError: If the dataset is empty.
             ValueError: If it gives one term two different values (see :meth:`_distinct_pairs`).
         """
-        terms, values = self._distinct_pairs()
+        terms, values = self._conditioning_pairs()
         if not terms:
             msg = (
                 "there is nothing to condition a surrogate on: the dataset is empty.  A "
@@ -1031,7 +1095,7 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
                 "fit needs a training half as well as a prediction half."
             )
             raise ValueError(msg)
-        if len(set(chosen)) != len(chosen):
+        if not self.repeated_measurements and len(set(chosen)) != len(chosen):
             msg = (
                 "the terms to condition on repeat.  The loop conditions on the distinct pairs "
                 "of the dataset, and a repeated term carries no second piece of information, only "
@@ -1180,6 +1244,7 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
                     if set_here
                 ]
             )
+        self._require_noise_model(gp_params)
         super().initialize(
             objective=objective, x0=x0, y0=y0, initial_size=initial_size, design=design
         )
@@ -1259,6 +1324,44 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         """
         self._check_pass_configuration(acquisition_fitness_mode)
 
+    def _require_noise_model(self, gp_params: dict[str, Any] | None) -> None:
+        """Refuse repeated measurements under a Gaussian process whose kernel models no noise.
+
+        Two values of one term meet a diagonal of the jitter alone: the posterior passes almost
+        exactly through their mean, and every residual it is read by is enormous.  The kernel read
+        is the one the fit will use, a run's ``gp_params`` naming it or the attribute.
+
+        Args:
+            gp_params (dict[str, Any] | None): A run's arguments of the fit, or None for the
+                attribute alone.
+
+        Raises:
+            ValueError: If the mode is on, the surrogate is the Gaussian process, and its kernel
+                has no ``WhiteKernel``.
+        """
+        if not self.repeated_measurements or self.surrogate_model is not None:
+            return
+        kernel = (gp_params or {}).get("kernel", self.kernel)
+        if not _white_noise(kernel):
+            msg = (
+                f"repeated_measurements conditions the Gaussian process on every row, and the "
+                f"kernel {kernel!r} models no noise to tell two values of one term apart: add a "
+                f"WhiteKernel to it (kernel + WhiteKernel(noise_level=...)), or measure each term "
+                f"once"
+            )
+            raise ValueError(msg)
+
+    def _conditioning_pairs(self) -> tuple[list[Any], list[float]]:
+        """What the surrogate conditions on: every row under repeated measurements, else the
+        distinct pairs (see :meth:`_distinct_pairs`).
+
+        Returns:
+            tuple[list[Any], list[float]]: The terms and their values.
+        """
+        if self.repeated_measurements:
+            return list(self._x_list), [float(value) for value in self._y_list]
+        return self._distinct_pairs()
+
     def _gaussian_process_settings(self) -> list[str]:
         """The settings of the Gaussian process that stand at other values than this class's defaults.
 
@@ -1329,6 +1432,7 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
             raise RuntimeError(_NO_OPTIMIZER)
         if self.optimizer is not None and self.maximizer is not None:
             raise ValueError(_BOTH_MAXIMIZERS)
+        self._require_noise_model(self._gp_params)
         if self.surrogate_model is not None:
             _refuse_gaussian_process_settings(self._gaussian_process_settings())
             # Every pass keeps a copy of the posterior its fit answers, and the diagnostics fit a
