@@ -191,11 +191,23 @@ The state runs `UNINITIALIZED`, then `DESIGN` while a design phase awaits values
 then `SUGGESTED` and `OBSERVED` in alternation, and `FINALIZED` at the end. Every method refuses a
 state it does not belong in with a `RuntimeError` naming that state, and `reset()` returns the loop
 to `UNINITIALIZED`. `get_state_snapshot()` reports the state, the observed terms and values, the
-pass count, the last suggestion handed out (observed or not; `finalize()` clears it), the design and
-how many of its terms still await a value.
+pass count, the last suggestion handed out (observed or not; `finalize()` clears it), the
+suggestions still outstanding, the design and how many of its terms still await a value.
+
+A caller who evaluates side by side holds several suggestions at once: `max_outstanding=k` on
+`BayesianOptimization` or `RandomSearch` admits up to k outstanding suggestions, and `observe()`
+takes their values back in any order. The design goes out k terms at a time, and the passes begin
+once every design term has its value. A Bayesian pass made while others are pending conditions its
+surrogate on each pending pick at the mean its own posterior expected there -- the kriging
+believer -- and never proposes a pending term; the assumed values touch that surrogate only, never
+the dataset, the trace or the answer. A pass is labelled by the passes suggested before it. The
+run layer's `run_search(..., batch_size=k, evaluate_many=...)` runs a search in such rounds and
+writes each evaluation as it completes. At k = 1, the default, the loop alternates as above.
 
 `finalize()` returns `best_tree`, `best_y`, `x`, `y`, `gp_model`, `iterations`, `trace`,
-`dropped_suggestion` and `design_remaining`, the design terms no value reached. The model it reports is the one the last `suggest()` fitted, so it has not
+`dropped_suggestion`, `dropped_suggestions` -- every suggestion no value reached, in the order they
+were made; `dropped_suggestion` is the last of them -- and `design_remaining`, the design terms no
+value reached. The model it reports is the one the last `suggest()` fitted, so it has not
 seen the pair the run ended on. A diagnostic that wants a surrogate over the whole dataset calls
 `surrogate_over_dataset()` instead.
 

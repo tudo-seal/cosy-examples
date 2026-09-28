@@ -1632,8 +1632,9 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         dict from :meth:`finalize`.  ``best_tree`` is the term the algorithm returns.  The rest,
         the dataset, the fitted surrogate, the pass count and the trace, is what a caller needs to
         report on the run and has no counterpart in the algorithm either.  Its
-        ``dropped_suggestion`` is always ``None`` here, because this loop observes every term it
-        suggests and an evaluation that fails raises out of this call instead of finalizing.
+        ``dropped_suggestion`` is always ``None`` here, and ``dropped_suggestions`` empty, because
+        this loop observes every term it suggests and an evaluation that fails raises out of this
+        call instead of finalizing.
 
         Raises
         ------

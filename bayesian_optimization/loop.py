@@ -256,7 +256,8 @@ class AskTellLoop(Generic[NT, T, G]):
     ``suggest`` returns the next term to evaluate, a design term first and then a pass of the
     strategy; ``observe`` takes the value back; ``finalize`` closes the run into its result.  The
     states run ``UNINITIALIZED``, ``DESIGN`` while a design phase awaits values, ``INITIALIZED``,
-    then ``SUGGESTED`` and ``OBSERVED`` in alternation, and ``FINALIZED``; ``reset`` returns to the
+    then ``SUGGESTED`` and ``OBSERVED`` -- in alternation where one suggestion is outstanding at a
+    time, see ``max_outstanding`` -- and ``FINALIZED``; ``reset`` returns to the
     first.  A pass is whatever :meth:`_propose` returns, and a subclass supplies it.
 
     Parameters
@@ -707,7 +708,7 @@ class AskTellLoop(Generic[NT, T, G]):
         return self._query()
 
     def observe(self, candidate: Any, y: float) -> None:
-        """Record the objective value for the last suggested candidate.
+        """Record the objective value of an outstanding suggestion, the last one's at capacity one.
 
         A term of the design phase goes into the dataset without counting as a pass and without a
         record of the strategy's; after the design's last value the state is INITIALIZED.  A pass
@@ -717,7 +718,8 @@ class AskTellLoop(Generic[NT, T, G]):
         Parameters
         ----------
         candidate:
-            Must match the candidate from the last ``suggest()`` call.
+            Must match an outstanding suggestion's candidate, structurally: the last
+            ``suggest()``'s where one suggestion is outstanding at a time.
         y:
             The objective value, exactly as measured.
 
@@ -726,7 +728,7 @@ class AskTellLoop(Generic[NT, T, G]):
         RuntimeError
             If called outside the SUGGESTED state.
         ValueError
-            If ``candidate`` does not match the last suggestion, if ``y`` is not finite, or if the
+            If ``candidate`` matches no outstanding suggestion, if ``y`` is not finite, or if the
             strategy refuses the pass before its value enters the dataset
             (``BayesianOptimization``: no diagnostics a trace row can be read from).
         """
@@ -856,7 +858,7 @@ class AskTellLoop(Generic[NT, T, G]):
         -------
         dict with keys:
             ``best_tree``, ``best_y``, ``x``, ``y``, ``gp_model``, ``iterations``, ``trace``,
-            ``dropped_suggestion``, ``design_remaining``.
+            ``dropped_suggestion``, ``dropped_suggestions``, ``design_remaining``.
 
             ``gp_model`` is the model the strategy reports, ``None`` for one without a model such as
             ``RandomSearch``.  For ``BayesianOptimization`` it is the surrogate the **last**
@@ -879,9 +881,10 @@ class AskTellLoop(Generic[NT, T, G]):
             ``iterations`` counts the passes :meth:`observe` closed.  A suggestion that never got
             a value is not one of them, and it is not a row of ``trace`` either.
 
-            ``dropped_suggestion`` is the candidate of a suggestion that no value ever reached.
-            It is ``None`` where no suggestion was open, and also where an open one already had
-            its value in the dataset.  Finalizing with a suggestion open is allowed, and it is how
+            ``dropped_suggestions`` lists the candidates of every suggestion no value ever
+            reached, in the order they were made, and is always there; ``dropped_suggestion`` is
+            the last of them, or ``None``.  A suggestion is not among them where none was open,
+            nor where an open one already had its value in the dataset.  Finalizing with a suggestion open is allowed, and it is how
             an aborted run closes: a failing evaluation raises between
             :meth:`suggest` and :meth:`observe`, and this call is what puts such a run into
             ``FINALIZED`` and names in one answer what it collected and which candidate it gave
