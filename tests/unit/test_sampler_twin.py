@@ -2,9 +2,8 @@
 
 A paired comparison runs its random arm on the stream the loop's design was drawn from, past the
 design, as the paired arm always did. The arm is another strategy object and needs a sampler of its
-own; building a second one would count the program again, which on the seven-position whistle
-query of the accompanying project took 18 minutes. A twin shares the first one's counting table
-and draws from its own random source.
+own; building a second one would count the program again, which on a large program takes
+minutes. A twin shares the first one's counting table and draws from its own random source.
 """
 
 from __future__ import annotations
