@@ -530,11 +530,12 @@ class AskTellLoop(Generic[NT, T, G]):
                 self._sampler = SizeUniformSampler(DEFAULT_SIZE_BOUND, random.Random(self.seed))
                 # Said where it is built, which is once per run: reset() drops the sampler.
                 self._logger.warning(
-                    "no sampler was given, so the loop draws its design and its replacements "
-                    "from SizeUniformSampler(%d, Random(%r)): terms of up to %d symbols, counted "
-                    "over the derivation tree cosy's default construction builds. That suits "
-                    "small spaces only; pass sampler= (the run layer's build_search pairs a "
-                    "program with the sampler that fits it).",
+                    "no sampler was given, so every term the loop draws itself -- a design it "
+                    "draws, a replacement for a duplicate, a random search's passes -- comes from "
+                    "SizeUniformSampler(%d, Random(%r)): terms of up to %d symbols, counted over "
+                    "the derivation tree cosy's default construction builds. That suits small "
+                    "spaces only; pass sampler= (the run layer's build_search pairs a program with "
+                    "the sampler that fits it).",
                     DEFAULT_SIZE_BOUND, self.seed, DEFAULT_SIZE_BOUND,
                 )
         if self._initializer is None and self._sampler is not None:

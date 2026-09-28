@@ -333,8 +333,9 @@ constructor kernel's Gram matrix is read only where the Gaussian process is the 
 
 ## Acquisition functions
 
-Three acquisition scores are available, named as strings on the constructor. Each is maximized over
-the search space by the evolutionary search.
+Three acquisition scores are available, named as strings on the constructor, and a caller's own can
+take their place (below). Each is maximized over the search space by the evolutionary search, or by
+a maximizer given instead of it.
 
 | `acquisition_function` | Score | Parameter |
 |---|---|---|
@@ -345,6 +346,9 @@ the search space by the evolutionary search.
 A name outside those three is refused with a `ValueError` before the run spends an evaluation, in
 a message that names the three the loop knows. That list is read off the same table the check
 reads, so the message cannot name a set the check does not admit.
+
+Both parameters are fixed for the run rather than passed per `suggest()` call, so two passes of one
+run cannot maximize two different functions without anything recording which.
 
 An acquisition of the caller's own takes the place of a name: an `AcquisitionFactory`, a callable
 `(gp, *, incumbent, known_points)` called once per pass with the surrogate that pass fitted, the
@@ -363,9 +367,6 @@ sample_size)` is the best of one sample: drawn as cosy's sampled initialization 
 one stream of the sampler, scored through the same known-point floor, and the first of the best
 terms in stream order is the pick, which is what cosy's driver answers for a search stopped after
 its initial population. It is the baseline the evolutionary search is measured against.
-
-Both parameters are fixed for the run rather than passed per `suggest()` call, so two passes of one
-run cannot maximize two different functions without anything recording which.
 
 All three scores are defined where the posterior deviation is exactly zero, which the closed forms
 are not. Expected improvement returns the gain itself there where the mean beats the incumbent and

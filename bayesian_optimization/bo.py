@@ -625,9 +625,10 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
             is exhausted.
         ValueError
             If the dataset gives one term two different values, if the configured acquisition
-            is not one of the three this class knows, if ``acquisition_fitness_mode`` is not one
-            of the three modes, or if it asks for ``"single"`` and that acquisition has no lower
-            bound to floor the terms already evaluated against.
+            is neither one of the three this class knows nor a callable, if what a factory built
+            cannot serve the pass, if ``acquisition_fitness_mode`` is not one of the three modes,
+            or if it asks for ``"single"`` and that acquisition has no lower bound to floor the
+            terms already evaluated against.
         """
         return self._suggest(
             verbose,
@@ -806,7 +807,9 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
             AcquisitionFunction: The acquisition to maximize.
 
         Raises:
-            ValueError: If ``acquisition_function`` is not one of the three.
+            ValueError: If ``acquisition_function`` is neither one of the three nor a callable,
+                or if what a factory built scores with another surrogate or lacks the points.
+            TypeError: If a factory cannot be called as one, or builds no acquisition.
         """
         # A *copy* of the observed set.  Handing over the live one made the acquisition a view of
         # the loop rather than a record of this pass: the next observe() adds to it, and the same
@@ -1249,8 +1252,10 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
                 to :meth:`suggest`. (Default value = "batch")
 
         Raises:
-            RuntimeError: If no evolutionary algorithm was configured.
+            RuntimeError: If neither an evolutionary algorithm nor a maximizer was configured.
             ValueError: As :meth:`optimize` refuses a configuration before its design.
+            TypeError: If a callable cannot be called as an acquisition factory, or a caller's
+                surrogate cannot be copied.
         """
         self._check_pass_configuration(acquisition_fitness_mode)
 
@@ -1278,12 +1283,14 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
     ) -> None:
         """Refuse a configuration no pass of this run could use, before the design is drawn.
 
-        A pass conditions the surrogate, builds one of the three acquisitions and hands it to the
-        evolutionary algorithm, and what those steps read is fixed before the run starts.  Left to
-        the pass, a name that is not one of the three, a parameter outside the range its
-        acquisition admits, a missing evolutionary algorithm and a score that algorithm cannot be
-        given one candidate at a time all surface after the initial design has been drawn and
-        evaluated.  Those evaluations are what a run pays its budget for, and on the search this
+        A pass conditions the surrogate, builds its acquisition and hands it to the evolutionary
+        algorithm or the maximizer, and what those steps read is fixed before the run starts.  Left
+        to the pass, a name that is not one of the three, a callable that cannot be called as a
+        factory, a parameter outside the range its acquisition admits, a missing maximization, a
+        caller's surrogate beside settings of the Gaussian process or one that cannot be copied,
+        and a score the maximization cannot be given one candidate at a time all surface after the
+        initial design has been drawn and evaluated.  What a factory builds is the exception: it
+        needs a pass, and the pass checks it.  Those evaluations are what a run pays its budget for, and on the search this
         framework is built for one of them trains a network.  The budget itself is checked ahead
         of the design for that same reason.
 
@@ -1309,11 +1316,14 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
                 algorithm will be asked to score its population.
 
         Raises:
-            RuntimeError: If no evolutionary algorithm was configured.
-            ValueError: If the acquisition is not one of the three, if the parameter of the
-                acquisition this run would build lies outside its range, if the mode is not one
-                of the three modes, or if that acquisition cannot be scored the way
-                ``acquisition_fitness_mode`` asks.
+            RuntimeError: If neither an evolutionary algorithm nor a maximizer was configured.
+            ValueError: If both were; if the acquisition is neither one of the three nor a
+                callable; if the parameter of the acquisition this run would build lies outside
+                its range; if the mode is not one of the three modes, or that acquisition cannot
+                be scored the way ``acquisition_fitness_mode`` asks; or if a caller's surrogate
+                stands beside settings of the Gaussian process.
+            TypeError: If a callable cannot be called as an acquisition factory, or a caller's
+                surrogate cannot be copied.
         """
         if self.optimizer is None and self.maximizer is None:
             raise RuntimeError(_NO_OPTIMIZER)
@@ -1432,16 +1442,16 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         ------
         ValueError
             If ``budget`` is negative, or, where the run has passes to run, if the acquisition
-            those passes would maximize is not one of the three, carries a parameter outside its
-            range, or cannot be scored the way ``acquisition_fitness_mode`` asks, or if that mode
-            is not one of the three modes.  All of these are checked before the initial design is
+            those passes would maximize is neither one of the three nor a callable, carries a
+            parameter outside its range, or cannot be scored the way ``acquisition_fitness_mode``
+            asks, or if that mode is not one of the three modes.  All of these are checked before the initial design is
             drawn, so that a typo costs no evaluation of the objective.  Also for the dataset
             conditions of :meth:`initialize`.
         RuntimeError
             If this instance has already run.  One instance runs one loop, and a second run needs
             :meth:`reset` in between, which is also what restarts the default initializer's
-            stream.  Also where the run has passes to run and no evolutionary algorithm was
-            configured, checked ahead of the design as above.
+            stream.  Also where the run has passes to run and neither an evolutionary algorithm
+            nor a maximizer was configured, checked ahead of the design as above.
         """
         if budget < 0:
             msg = f"a budget is a count of evaluations and cannot be negative: {budget}"
