@@ -481,7 +481,8 @@ def run_paired(
     (:func:`~bayesian_optimization.runs.twin_sampler`) draws the stream past the design, and the
     loop's replacement for a duplicate, a stream opened where its sampler stands, then draws past
     everything the arm draws.  A resumed design is held against that head where its pool says it
-    was drawn.
+    was drawn; without passes nothing is drawn up front, and the first strategy holds a resumed
+    design as it would run alone.
     Whether one strategy beats another is a question about the passes only if they start from the
     same place, and sharing the evaluated design is also what makes the comparison cost one extra
     budget of passes per strategy rather than one extra design.
@@ -561,7 +562,8 @@ def run_paired(
     outcomes = {first: run_search(
         leader, evaluate, csv_path=csv_paths[first], n_design=n_design, design=leader_design,
         resume=resume, resumed_value=resumed_value, drawn_up_front=drawn,
-        hold_resumed_design=False, **common,
+        # held here where the pair drew up front; otherwise as the first strategy would alone
+        hold_resumed_design=drawn is None, **common,
     )}
     header, records = read_term_pool(RunArtifacts(csv_paths[first]).path("terms"))
     shared = ResumedDesign(

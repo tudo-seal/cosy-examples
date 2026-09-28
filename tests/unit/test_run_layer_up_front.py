@@ -247,3 +247,27 @@ def test_the_other_arms_take_the_design_over_as_data(tmp_path):
     assert [row["structure"] for row in _rows(tmp_path / "b.csv")[:3]] == [
         row["structure"] for row in _rows(tmp_path / "a.csv")[:3]
     ]
+
+
+def test_a_paired_resume_without_passes_holds_its_design_against_the_stream_as_one_run_would(
+    tmp_path,
+):
+    """Without passes the pair draws nothing up front, and its first arm holds a drawn resumed
+    design against the head of its stream, as it would run alone: a pool of another seed is
+    refused, one of its own seed resumes."""
+    pool = _measured(tmp_path, "first", _bo(1), n_design=3)
+
+    def pair(seed: int, name: str) -> Any:
+        loop = _bo(seed)
+        return run_paired(
+            {"bo": loop, "random": _twin_of(loop, seed)}, _metrics, schema=SCHEMA, n_passes=0,
+            resume=load_design_records(pool, {}), pretty_algebra=dict, echo=_quiet,
+            csv_paths={"bo": str(tmp_path / f"{name}.csv"),
+                       "random": str(tmp_path / f"{name}_random.csv")},
+        )
+
+    with pytest.raises(ValueError, match="different stream"):
+        pair(2, "other_seed")
+    assert not (tmp_path / "other_seed.csv").exists(), "refused before anything was opened"
+    outcomes = pair(1, "own_seed")
+    assert outcomes["bo"].summary["taken_over"] == 3
