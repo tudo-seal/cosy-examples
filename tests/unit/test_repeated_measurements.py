@@ -300,3 +300,19 @@ def test_the_held_out_split_by_rows_and_by_terms():
         ["a", "c", "a"], [1.0, 3.0, 5.0], ["b", "d"], [2.0, 4.0])
     # one held-out term, however many rows it has, makes no scatter
     assert held_out_split(_Mode(True), list("abcbb"), values) is None
+
+
+def test_a_pass_asks_for_the_noise_model_again(bo_factory, tree_corpus):
+    """The kernel and the option are attributes: a pass reads them, and refuses them as the run's
+    start would, before it conditions two values of one term on the jitter alone."""
+    changed = _loop(bo_factory, [tree_corpus[0]])
+    changed.initialize(x0=tree_corpus[:3], y0=[1.0, 2.0, 0.5])
+    changed.kernel = OrderedRootedSubtreeKernel(normalize=True)
+    with pytest.raises(ValueError, match="WhiteKernel"):
+        changed.suggest()
+
+    switched = bo_factory(candidates=[tree_corpus[0]])
+    switched.initialize(x0=tree_corpus[:3], y0=[1.0, 2.0, 0.5])
+    switched.repeated_measurements = True
+    with pytest.raises(ValueError, match="WhiteKernel"):
+        switched.suggest()

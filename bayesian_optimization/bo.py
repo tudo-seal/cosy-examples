@@ -737,6 +737,8 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
             raise RuntimeError(_NO_OPTIMIZER)
         if self.optimizer is not None and self.maximizer is not None:
             raise ValueError(_BOTH_MAXIMIZERS)
+        # The option and the kernel are attributes, read again where a pass reads them.
+        self._require_noise_model(self._gp_params)
 
         # The mode is read here rather than at the maximization that uses it, which runs only
         # after the surrogate has been fitted on the distinct pairs of the dataset.  A mode
