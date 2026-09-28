@@ -292,3 +292,57 @@ def test_finalize_reports_a_term_the_dataset_never_paired_with_a_value(
     assert any(
         str(outstanding.candidate) in message for message in _drop_warnings(caplog)
     ), "the term the dataset never valued was given up without a word"
+
+
+def test_finalize_keeps_a_design_value_an_interrupted_observe_already_recorded(
+    monkeypatch, bo_factory, tree_corpus, caplog
+):
+    """The design phase's own branch of observe(): a design term whose value the dataset already
+    holds is no more a dropped suggestion than a pass's is."""
+
+    class _InterruptedAfter(list):
+        def append(self, item):
+            super().append(item)
+            raise KeyboardInterrupt("stopped after the value was appended")
+
+    bo = bo_factory()
+    bo.initialize(design=tree_corpus[:3])
+    outstanding = bo.suggest()
+
+    monkeypatch.setattr(bo, "_y_list", _InterruptedAfter(bo.get_state_snapshot()["y_list"]))
+    with pytest.raises(KeyboardInterrupt):
+        bo.observe(outstanding.candidate, 42.0)
+
+    with caplog.at_level(logging.WARNING, logger=LOGGER_NAME):
+        result = bo.finalize()
+
+    assert result["dropped_suggestion"] is None
+    assert _drop_warnings(caplog) == []
+    assert result["design_remaining"] == list(tree_corpus[1:3])
+
+
+def test_finalize_reports_a_design_term_the_dataset_never_paired_with_a_value(
+    monkeypatch, bo_factory, tree_corpus, caplog
+):
+    """And a design term written without its value is dropped, as a pass is."""
+
+    class _RefusingList(list):
+        def append(self, item):
+            raise KeyboardInterrupt("stopped before the value was appended")
+
+    bo = bo_factory()
+    bo.initialize(design=tree_corpus[:3])
+    first = bo.suggest()
+    bo.observe(first.candidate, 1.0)  # a run with a value, which finalize() needs
+    outstanding = bo.suggest()
+
+    monkeypatch.setattr(bo, "_y_list", _RefusingList(bo.get_state_snapshot()["y_list"]))
+    with pytest.raises(KeyboardInterrupt):
+        bo.observe(outstanding.candidate, 42.0)
+
+    with caplog.at_level(logging.WARNING, logger=LOGGER_NAME):
+        result = bo.finalize()
+
+    assert result["dropped_suggestion"] == outstanding.candidate
+    assert result["design_remaining"] == list(tree_corpus[1:3])
+

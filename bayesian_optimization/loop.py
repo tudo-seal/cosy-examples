@@ -19,6 +19,7 @@ import math
 import random
 import time
 from collections.abc import Callable, Hashable, Sequence
+from dataclasses import dataclass
 from typing import Any, ClassVar, Generic, TypeVar
 
 import numpy as np
@@ -207,6 +208,22 @@ def _check_request_against_space(search_space: Any, request: Any) -> None:
     raise ValueError(msg)
 
 
+@dataclass
+class _Outstanding:
+    """A suggestion no completed :meth:`AskTellLoop.observe` has answered yet.
+
+    Attributes:
+        suggestion (Suggestion): What was handed out.
+        design (bool): Whether it is a term of the design phase rather than a pass.
+        row (int | None): The row of the dataset :meth:`AskTellLoop.observe` put its term in, once
+            it has; the suggestion has its value if and only if a value stands in that row.
+    """
+
+    suggestion: Suggestion
+    design: bool
+    row: int | None = None
+
+
 class AskTellLoop(Generic[NT, T, G]):
     """The ask/tell loop over a CoSy solution space, without a strategy of its own.
 
@@ -269,12 +286,14 @@ class AskTellLoop(Generic[NT, T, G]):
         self._initializer: Initializer[NT, T, G] | None = None
         self._generator_query: Any = None
         self._iteration: int = 0
-        # The design phase: the initial design in the order it is handed out, the position of the
-        # next term to hand out, and whether the suggestion outstanding is a design term rather
-        # than a pass.  Kept apart from the diagnostics, which the caller holds and could alter.
+        # The design phase: the initial design in the order it is handed out, and the position of
+        # the next term to hand out.
         self._design: tuple[Any, ...] = ()
         self._design_next: int = 0
-        self._design_outstanding: bool = False
+        # The suggestions no completed observe() has answered, by term: whether each is a design
+        # term or a pass, and the row its term went into once observe() wrote it.  Kept apart from
+        # the diagnostics, which the caller holds and could alter.
+        self._outstanding: dict[Any, _Outstanding] = {}
         # One record per closed pass, where the strategy keeps one; see :meth:`_record_pass`.
         self._trace: list[Any] = []
         self._logger: logging.Logger = get_logger("loop")
@@ -538,7 +557,7 @@ class AskTellLoop(Generic[NT, T, G]):
         """
         self._design = tuple(terms)
         self._design_next = 0
-        self._design_outstanding = False
+        self._outstanding = {}
         self._x_list = []
         self._y_list = []
         self._x_set = set()
@@ -585,7 +604,7 @@ class AskTellLoop(Generic[NT, T, G]):
             diagnostics=diagnostics,
         )
         self._design_next = index + 1
-        self._design_outstanding = True
+        self._outstanding[suggestion.candidate] = _Outstanding(suggestion, design=True)
         self._last_suggestion = suggestion
         self._bo_state = BOState.SUGGESTED
         if verbose:
@@ -690,14 +709,16 @@ class AskTellLoop(Generic[NT, T, G]):
         # but the observation set has to hold exactly what was suggested.
         recorded = self._last_suggestion.candidate
         value = _finite_or_raise(y, recorded)
-        if self._design_outstanding:
+        entry = self._outstanding[recorded]
+        if entry.design:
             # A design term goes into the dataset and nowhere else: it has no acquisition value
             # and no pick, so it is no row of the trace and no pass of the count.  The phase ends
             # with the value of its last term, and the passes begin.
+            entry.row = len(self._x_list)
             self._x_list.append(recorded)
             self._x_set.add(recorded)
             self._y_list.append(value)
-            self._design_outstanding = False
+            del self._outstanding[recorded]
             self._bo_state = (
                 BOState.DESIGN if self._design_next < len(self._design) else BOState.INITIALIZED
             )
@@ -707,12 +728,16 @@ class AskTellLoop(Generic[NT, T, G]):
         # row and no iteration count mention, and the state stays at SUGGESTED, so the very same
         # call is accepted again and appends them a second time.
         self._check_pass_suggestion(self._last_suggestion)
+        entry.row = len(self._x_list)
         self._x_list.append(recorded)
         self._x_set.add(recorded)
         self._y_list.append(value)
         self._record_pass(self._last_suggestion, value)
         self._iteration += 1
         self._bo_state = BOState.OBSERVED
+        # Answered only now: an observe() that raised after the dataset grew leaves the entry, as
+        # it leaves the state at SUGGESTED, and the row says the value is there.
+        del self._outstanding[recorded]
 
     @property
     def initial_repeats_rejected(self) -> int:
@@ -758,7 +783,7 @@ class AskTellLoop(Generic[NT, T, G]):
         self._trace = []
         self._design = ()
         self._design_next = 0
-        self._design_outstanding = False
+        self._outstanding = {}
 
     def best(self) -> tuple[Any, float]:
         """Return the best observation as ``(candidate, y)``.
@@ -839,21 +864,22 @@ class AskTellLoop(Generic[NT, T, G]):
 
         best_tree, best_y = self.best()
 
-        # A suggestion was dropped when the dataset holds no value for its term.  The state does
-        # not answer that question: observe() writes the term and its value before it moves the
-        # state, so a run interrupted in between sits in SUGGESTED with the value already
-        # recorded, and calling that term dropped would state the reverse of the truth.  The
-        # dataset answers it exactly, because the two lists are appended in step and read by
-        # position everywhere else, so a term has a value if and only if a y entry stands beside
-        # it.  Membership in the duplicate index is not the same test: the index is written
-        # between the two appends, so an interrupt there leaves it claiming a value the dataset
-        # does not hold.  A suggestion cannot turn up paired here by accident either, because
-        # suggest() replaces or refuses any candidate the observed set already holds.
+        # A suggestion was dropped when no value reached it: when observe() never wrote its term,
+        # or wrote the term and not the value.  The state does not answer that question: observe()
+        # writes the term and its value before it moves the state, so a run interrupted in between
+        # sits in SUGGESTED with the value already recorded, and calling that term dropped would
+        # state the reverse of the truth.  The row the term went into answers it exactly, because
+        # the two lists are appended in step and read by position everywhere else, so the
+        # suggestion has its value if and only if a y entry stands in that row.  Membership in the
+        # duplicate index is not the same test: the index is written between the two appends, so an
+        # interrupt there leaves it claiming a value the dataset does not hold.  Nor is the term's
+        # having some value: that is the same answer only while a suggested term is always new.
         valued_terms = self._x_list[: len(self._y_list)]
-        outstanding = self._last_suggestion
         dropped = None
-        if outstanding is not None and outstanding.candidate not in valued_terms:
-            dropped = outstanding.candidate
+        for entry in self._outstanding.values():
+            if entry.row is not None and entry.row < len(self._y_list):
+                continue
+            dropped = entry.suggestion.candidate
             self._logger.warning(
                 "the run is finalized with the suggestion %s still outstanding.  No value ever "
                 "reached it, so the dataset holds none for the term, and it is not among the %d "
@@ -865,7 +891,7 @@ class AskTellLoop(Generic[NT, T, G]):
                 self._iteration,
             )
         self._last_suggestion = None
-        self._design_outstanding = False
+        self._outstanding = {}
         # The design terms without a value: the outstanding one, if it is a design term, and every
         # one the phase never handed out.  Empty once the design is complete.
         valued = set(valued_terms)
@@ -944,7 +970,7 @@ class AskTellLoop(Generic[NT, T, G]):
             )
         suggestion = propose()
         self._last_suggestion = suggestion
-        self._design_outstanding = False
+        self._outstanding[suggestion.candidate] = _Outstanding(suggestion, design=False)
         self._bo_state = BOState.SUGGESTED
         log_suggestion(self._logger, suggestion)
         return suggestion
