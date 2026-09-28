@@ -35,7 +35,7 @@ for a quick run:
 pytest -m "not slow"
 ```
 
-Six of the 1 164 tests carry `slow`, and the other 1 158 finish in about 140
+Six of the 1 184 tests carry `slow`, and the other 1 178 finish in about 140
 seconds in one process on the machine this was measured on.
 
 ## Measuring coverage
@@ -63,7 +63,7 @@ mypy bayesian_optimization tests
 Both come with the `dev` extra and both read their configuration from
 `pyproject.toml`. `mypy` reads the examples against torch's own types, so it
 needs the `cnn` extra as well, which the setup above installs; with it, `mypy`
-covers 136 files over those two paths and reports no error, only its 46 standing notes about unchecked bodies of untyped
+covers 136 files over those two paths and reports no error, only its 50 standing notes about unchecked bodies of untyped
 functions, so a new error is one this change introduced.
 
 `.github/workflows/checks.yml` runs these two and the fast half of the suite on
@@ -75,12 +75,12 @@ The slow tests are the end-to-end runs of the loop and are left to a local
 ## Three layers, held to two standards
 
 `bayesian_optimization/` outside `runs/` and `examples/` is a reusable core:
-21 modules, 7166 lines, and 41 exported names. A future caller has to be able
+21 modules, 7193 lines, and 41 exported names. A future caller has to be able
 to use that API without prior knowledge and without unwritten invariants, so a
 change there carries its reason in the code rather than in a commit message.
 
 `bayesian_optimization/runs/` is the run layer, held to the same standard: 13
-modules, 3321 lines, and 52 exported names. It is what a run over any space
+modules, 3392 lines, and 52 exported names. It is what a run over any space
 needs around the loop: the driver for every strategy and the paired
 comparison, the metric schema and the recorder, the files of a run, the claim
 of its names and its provenance, the term pool and resume, the search program

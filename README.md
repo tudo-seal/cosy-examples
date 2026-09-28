@@ -43,8 +43,8 @@ The two checks need the `dev` extra, which carries `mypy` and `ruff`, and `mypy`
 against torch's own types, so it needs `cnn` as well. The tests need `test`, and
 `pip install -e ".[dev,cnn,examples]"` covers all of it.
 
-The suite holds 1 164 tests in 67 test modules. Six carry the `slow` marker, and the remaining
-1 158 finish in about 140 seconds in one process on the machine this was measured on. `mypy` reports
+The suite holds 1 184 tests in 67 test modules. Six carry the `slow` marker, and the remaining
+1 178 finish in about 140 seconds in one process on the machine this was measured on. `mypy` reports
 nothing over the 136 files those two paths cover. `pyproject.toml` declares `slow`,
 `integration` and `property`, and it puts the repository root on `sys.path`, so
 `bayesian_optimization` is taken from the checkout rather than from an installed copy.
@@ -141,7 +141,7 @@ is to be minimized is negated on the way in and the reported optimum on the way 
 | `utils.py` | the conversions from a term to a labeled graph the graph kernels read |
 | `runs/` | the run layer: one driver for every strategy and the paired comparison, the metric schema and the recorder, the files of a run, the claim of its names and its provenance, the term pool and resume, the search program and its samplers, the acquisition-optimizer builder, the watchdog |
 
-That is 21 modules of core, 7166 lines, and the run layer's 13 modules, 3321 lines, which import
+That is 21 modules of core, 7193 lines, and the run layer's 13 modules, 3392 lines, which import
 no training framework and hold what a run over any space needs around the loop.
 `bayesian_optimization/examples/` holds 24 more modules and 11 816 lines, and every one of them is
 an application: an example may not work around a defect in the core or the run layer, it has to be
