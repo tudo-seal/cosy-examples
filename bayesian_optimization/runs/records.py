@@ -281,7 +281,8 @@ class EvaluationRecorder:
             that is still being written truncates nothing. (Default value = "w")
     """
 
-    def __init__(self, path, pretty_algebra, schema, provenance=None, *, mode="w"):
+    def __init__(self, path, pretty_algebra, schema, provenance=None, *, mode="w",
+                 design_origin=None):
         if mode not in ("w", "x"):
             msg = f"mode is 'w' or 'x', not {mode!r}"
             raise ValueError(msg)
@@ -298,7 +299,8 @@ class EvaluationRecorder:
         self._writer.writerow(schema.header)
         self._file.flush()
         try:
-            self._terms = TermPoolWriter(terms_path, provenance=provenance, mode=mode)
+            self._terms = TermPoolWriter(terms_path, provenance=provenance, mode=mode,
+                                         design_origin=design_origin)
         except BaseException:
             # The CSV is already open here, and a caller that never got an instance back cannot
             # close it, since there is no ``__exit__`` for an object whose ``__init__`` raised.

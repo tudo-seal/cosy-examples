@@ -144,7 +144,7 @@ class TermPoolWriter:
             provenance would let the caller believe that it had.
     """
 
-    def __init__(self, path, provenance=None, *, mode="w"):
+    def __init__(self, path, provenance=None, *, mode="w", design_origin=None):
         if mode not in ("w", "x", "a"):
             msg = f"mode selects how the file is opened and is 'w', 'x' or 'a', not {mode!r}"
             raise ValueError(msg)
@@ -160,15 +160,17 @@ class TermPoolWriter:
         self._file = open(path, mode + "b")  # noqa: SIM115
         if mode == "a":
             return
-        pickle.dump(
-            {
-                "format": FORMAT,
-                "version": VERSION,
-                "created": time.time(),
-                "provenance": dict(provenance or {}),
-            },
-            self._file,
-        )
+        header = {
+            "format": FORMAT,
+            "version": VERSION,
+            "created": time.time(),
+            "provenance": dict(provenance or {}),
+        }
+        if design_origin is not None:
+            # "drawn" from the run's stream, or "given" as terms: what a resumed run holds its
+            # design against, or not (runs.resume.ResumedDesign).
+            header["design_origin"] = design_origin
+        pickle.dump(header, self._file)
         self._file.flush()
 
     def write(self, phase, index, term, metrics, repeat=0, loop_value=None, taken_over=False):

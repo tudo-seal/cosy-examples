@@ -1,6 +1,21 @@
 """Continue an interrupted run from the initial design its term pool already holds."""
 
-from bayesian_optimization.runs.term_pool import read_term_pool
+from bayesian_optimization.runs.term_pool import TermRecord, read_term_pool
+
+
+class ResumedDesign(list[TermRecord]):
+    """The design records of an earlier run, and where that run's design came from.
+
+    A list of records, as it always was, carrying ``origin``: ``"drawn"`` for a design drawn from
+    the run's stream, which a resumed Bayesian optimization holds against the head of its own
+    stream and moves its sampler past; ``"given"`` for one handed over as terms, which no stream was
+    drawn for and which therefore resumes under any seed.  A pool written before the origin was
+    recorded counts as drawn, which is how every run then treated its resumed design.
+    """
+
+    def __init__(self, records=(), origin="drawn"):
+        super().__init__(records)
+        self.origin = origin
 
 
 def check_resumed_design(resume_design, drawn_prefix):
@@ -81,7 +96,8 @@ def load_design_records(path, expected, phase="pre_sample"):
         phase (str): Which phase's records to take. (Default value = "pre_sample")
 
     Returns:
-        list[TermRecord]: The records of that phase, in the order they were measured.
+        ResumedDesign: The records of that phase, in the order they were measured, with where the
+            pool's design came from.
 
     Raises:
         ValueError: If the pool carries no matching provenance, or none of the requested phase.
@@ -106,6 +122,6 @@ def load_design_records(path, expected, phase="pre_sample"):
         phases = sorted({record.phase for record in records})
         msg = f"{path} holds no {phase!r} records; it has {phases}"
         raise ValueError(msg)
-    return design
+    return ResumedDesign(design, header.get("design_origin", "drawn"))
 
 

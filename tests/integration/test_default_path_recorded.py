@@ -282,6 +282,13 @@ if __name__ == "__main__":
         ["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True,
         cwd=Path(__file__).parent,
     ).stdout.strip()
+    changed = subprocess.run(
+        ["git", "status", "--porcelain", "--", "bayesian_optimization"], capture_output=True,
+        text=True, check=True, cwd=Path(__file__).parents[2],
+    ).stdout.strip()
+    if changed:
+        # the tree recorded is the commit the recording is committed with, not its parent
+        commit += " with uncommitted changes to bayesian_optimization"
     RECORDING.write_text(
         json.dumps({"recorded_at": commit, "characterization": characterize()}, indent=1) + "\n"
     )

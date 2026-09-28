@@ -289,6 +289,35 @@ def draw_design(sampler, query, size, *, then=0, design=None):
 
 
 @dataclass(frozen=True)
+class DesignDraw:
+    """A design drawn up front from a loop's sampler, and what drawing it cost.
+
+    Attributes:
+        design (int): The size of the design.
+        then (int): The terms the other arms of a pair draw past it, drawn with it.
+        repeats_skipped (int): The repeats the stream delivered on the way, and which were skipped.
+        seconds (float): What the draw took, the construction of the counting tables included.
+        drawn (bool): Whether the design itself came from the stream; for a design given as terms
+            only the other arms' terms were drawn.
+    """
+
+    design: int
+    then: int
+    repeats_skipped: int
+    seconds: float
+    drawn: bool
+
+    def record(self) -> dict[str, Any]:
+        """What a run's summary records of the draw."""
+        return {
+            "design": self.design,
+            "then": self.then,
+            "repeats_skipped": self.repeats_skipped,
+            "seconds": self.seconds,
+        }
+
+
+@dataclass(frozen=True)
 class SearchProgram:
     """What a run searches, the symbol to query it at, and the sampler it draws its own terms from.
 

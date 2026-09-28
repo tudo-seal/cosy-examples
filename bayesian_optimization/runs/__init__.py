@@ -24,7 +24,12 @@ from .records import (
     SurrogateLogger,
     kernel_hyperparameters,
 )
-from .resume import check_resumed_design, load_design_records, load_initial_design
+from .resume import (
+    ResumedDesign,
+    check_resumed_design,
+    load_design_records,
+    load_initial_design,
+)
 from .run_diagnostics import write_run_diagnostics
 from .schema import LOOP_FIELDS, Column, MetricSchema, Objective
 from .search_program import (
@@ -33,6 +38,7 @@ from .search_program import (
     DETERMINIZATION_STATE_LIMIT,
     DETERMINIZATION_WARN_SECONDS,
     SPACE_CONSTRUCTION_WARN_SECONDS,
+    DesignDraw,
     DeterminizedSizeUniformSampler,
     SearchProgram,
     build_search,
@@ -63,11 +69,13 @@ __all__ = [
     "DESIGN_PHASE",
     "DETERMINIZATION_STATE_LIMIT",
     "DETERMINIZATION_WARN_SECONDS",
+    "DesignDraw",
     "EA_CSV_COLUMNS",
     "FORMAT",
     "LEGACY_FORMATS",
     "LOOP_FIELDS",
     "POOL_PHASE",
+    "ResumedDesign",
     "SPACE_CONSTRUCTION_WARN_SECONDS",
     "SURROGATE_CSV_COLUMNS",
     "VERSION",

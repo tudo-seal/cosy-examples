@@ -1,5 +1,5 @@
 {
- "recorded_at": "11fb0c145ce90f96b90dd03aac09f58599cc459e",
+ "recorded_at": "344d2ac2536c757160503e20643fa855412e90c7 with uncommitted changes to bayesian_optimization",
  "characterization": {
   "loop": {
    "ExpectedImprovement": {
@@ -877,7 +877,8 @@
       "header": {
        "format": "term_pool",
        "version": 1,
-       "provenance": {}
+       "provenance": {},
+       "design_origin": "drawn"
       },
       "records": [
        {
@@ -957,7 +958,12 @@
       "best_objective_value": 0.3333333333333333,
       "best_loop_value": 0.3333333333333333,
       "initial_repeats_rejected": 0,
-      "completed": true
+      "completed": true,
+      "design_drawn_up_front": {
+       "design": 3,
+       "then": 2,
+       "repeats_skipped": 0
+      }
      },
      "random": {
       "run_kind": "random_search",
@@ -971,7 +977,8 @@
       "best_loop_value": 0.3333333333333333,
       "initial_repeats_rejected": 0,
       "completed": true,
-      "terms_skipped": 3
+      "terms_skipped": 3,
+      "design_taken_over_from": "bo.csv"
      }
     },
     "files": {
@@ -1141,7 +1148,8 @@
       "header": {
        "format": "term_pool",
        "version": 1,
-       "provenance": {}
+       "provenance": {},
+       "design_origin": "drawn"
       },
       "records": [
        {
@@ -1272,7 +1280,8 @@
       "header": {
        "format": "term_pool",
        "version": 1,
-       "provenance": {}
+       "provenance": {},
+       "design_origin": "drawn"
       },
       "records": [
        {

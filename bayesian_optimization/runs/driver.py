@@ -37,7 +37,9 @@ from ..state import BOState
 from .artifacts import RunArtifacts
 from .budgets import StepBudgets, step_budget
 from .records import EAGenerationLogger, EvaluationRecorder, SurrogateLogger
+from .resume import ResumedDesign, check_resumed_design
 from .schema import MetricSchema, Objective
+from .search_program import DesignDraw, draw_design
 from .term_pool import TermRecord, read_term_pool
 
 #: The phase of a design term in a run's rows and records, as the CIFAR driver has always named it.
@@ -53,7 +55,10 @@ class RunOutcome:
         seconds (float): The run's wall clock, the design included.
         summary (dict[str, Any]): The provenance of what ran: ``run_kind``, ``design_source``
             (``drawn``, ``terms`` or ``resumed``), the evaluations made here and taken over, the
-            best value in the metric's own sign, and the strategy's repeat counts.
+            best value in the metric's own sign, and the strategy's repeat counts; where the design
+            was drawn up front from the strategy's sampler, ``design_drawn_up_front`` (its size,
+            the terms drawn past it, the repeats skipped, the seconds, which ``seconds`` holds);
+            for the other arms of a pair, ``design_taken_over_from``.
     """
 
     result: dict[str, Any]
@@ -156,6 +161,37 @@ def _require_uninitialized(strategy: AskTellLoop, name: str = "the strategy") ->
         raise RuntimeError(msg)
 
 
+def _draw_up_front(strategy, size, *, then, design, budgets, echo):
+    """Draw a design, or head the stream with a given one, and ``then`` terms past it, up front.
+
+    From the loop's own sampler, as the paired path always drew: the sampler is left where drawing
+    all of it left it, so the loop's replacement for a duplicate -- a stream opened where the
+    sampler stands -- draws past everything a paired arm draws on a twin.  Watched as that draw was,
+    since the first draw builds the counting tables, which takes minutes on a large program and
+    writes nothing, and announced through ``echo``.
+
+    Returns:
+        tuple[list, DesignDraw]: The design's terms, the head of the stream, and the draw's record.
+    """
+    if design is None:
+        label = f"drawing {size} design terms"
+    else:
+        label = f"heading the stream with the {size} design terms given"
+    if then:
+        label += f" and the other arms' {then}"
+    label += " up front"
+    echo(f"{label[0].upper()}{label[1:]}, from the loop's sampler")
+    with step_budget(label, budgets.acquisition_warn):
+        started = time.time()
+        head, repeats = draw_design(strategy.sampler, strategy.query, size, then=then, design=design)
+        seconds = time.time() - started
+    return head, DesignDraw(size, then, repeats, seconds, drawn=design is None)
+
+
+def _pairs(records):
+    return [(record.term, record.metrics) for record in records]
+
+
 def run_search(
     strategy: AskTellLoop,
     evaluate: Callable[[Any], Mapping[str, Any]],
@@ -173,6 +209,8 @@ def run_search(
     refuse_taken: bool = True,
     verbose: bool = False,
     echo: Callable[[str], None] | None = None,
+    drawn_up_front: DesignDraw | None = None,
+    hold_resumed_design: bool = True,
 ) -> RunOutcome:
     """Run a strategy, writing every evaluation as it is measured.
 
@@ -192,7 +230,11 @@ def run_search(
             values the loop values they kept, checked against the schema's objective, or
             ``resumed_value``'s reading of their metrics.  Which records belong to which
             configuration is the caller's check (see
-            :func:`~bayesian_optimization.runs.resume.load_design_records`). (Default value = None)
+            :func:`~bayesian_optimization.runs.resume.load_design_records`).  Under Bayesian
+            optimization a design its pool says was drawn (``ResumedDesign.origin``, ``"drawn"``
+            for a plain list) is held against the head of the loop's own stream, and the sampler
+            moved past it, as the run it resumes had drawn it; a design given as terms is not, and
+            resumes under any seed. (Default value = None)
         resumed_value (Callable | None): How a resumed record's metrics become the value this
             run's loop is handed.  Given, it reads every resumed record.  Omitted, each record
             hands the loop the value it kept, which must be the schema's objective's reading of
@@ -208,6 +250,12 @@ def run_search(
         echo (Callable[[str], None] | None): Where the per-evaluation lines go; ``None`` prints
             each line and flushes it, so that a killed run's log holds the lines before the kill.
             (Default value = None)
+        drawn_up_front (DesignDraw | None): The draw a caller made of this strategy's design up
+            front -- :func:`run_paired` makes it for its first strategy -- recorded as this run's:
+            its seconds in the run's, its repeats as the design's. (Default value = None)
+        hold_resumed_design (bool): Hold a drawn resumed design against the stream, as ``resume``
+            says; :func:`run_paired` turns it off where it held the design itself or where the
+            design is another strategy's. (Default value = True)
 
     Returns:
         RunOutcome: The result, the wall clock and the summary.
@@ -272,6 +320,28 @@ def run_search(
         strategy.check_configuration()
 
     bayesian = isinstance(strategy, BayesianOptimization)
+    # Where the design came from, recorded in the pool for a run that resumes it.
+    if resume is not None:
+        origin = getattr(resume, "origin", "drawn")
+    elif design is not None and not (drawn_up_front is not None and drawn_up_front.drawn):
+        origin = "given"
+    else:
+        origin = "drawn"
+    if (
+        resume is not None
+        and hold_resumed_design
+        and drawn_up_front is None
+        and origin == "drawn"
+        and bayesian
+        and getattr(strategy, "sampler", None) is not None
+    ):
+        # The loop's replacement for a duplicate draws from where its sampler stands, so a loop
+        # that takes a drawn design over has to stand where the run that drew it stood: past it.
+        # A random search continues its design's stream past the held terms on its own.
+        head, drawn_up_front = _draw_up_front(
+            strategy, len(records), then=0, design=None, budgets=budgets, echo=echo
+        )
+        check_resumed_design(_pairs(records), head)
     phase = strategy.PASS_PHASE
     objective = schema.objective
     evaluated_here = 0
@@ -281,7 +351,7 @@ def run_search(
     with contextlib.ExitStack() as stack:
         recorder = stack.enter_context(EvaluationRecorder(
             csv_path, pretty_algebra, schema, provenance=provenance,
-            mode="x" if refuse_taken else "w",
+            mode="x" if refuse_taken else "w", design_origin=origin,
         ))
         ea_logger = surrogate_logger = None
         if bayesian and n_passes > 0:
@@ -355,7 +425,11 @@ def run_search(
             strategy.observe(term, value)
 
     result = strategy.finalize()
-    seconds = time.time() - started
+    # A design drawn up front is the run's: its time in the run's, its repeats the design's, and
+    # a design so drawn a drawn one, though the loop was handed its terms.
+    seconds = time.time() - started + (drawn_up_front.seconds if drawn_up_front else 0.0)
+    if drawn_up_front is not None and drawn_up_front.drawn and resume is None:
+        source = "drawn"
     summary: dict[str, Any] = {
         "run_kind": _run_kind(strategy, n_passes),
         "strategy": type(strategy).__name__,
@@ -367,9 +441,13 @@ def run_search(
         "seconds": seconds,
         "best_objective_value": objective.as_reported(float(result["best_y"])),
         "best_loop_value": float(result["best_y"]),
-        "initial_repeats_rejected": strategy.initial_repeats_rejected,
+        "initial_repeats_rejected": (
+            drawn_up_front.repeats_skipped if drawn_up_front else strategy.initial_repeats_rejected
+        ),
         "completed": True,
     }
+    if drawn_up_front is not None:
+        summary["design_drawn_up_front"] = drawn_up_front.record()
     if isinstance(strategy, RandomSearch):
         summary["terms_skipped"] = strategy.terms_skipped
     return RunOutcome(result, seconds, summary)
@@ -397,7 +475,13 @@ def run_paired(
 
     The first strategy runs the design as :func:`run_search` would, drawn, given or resumed; every
     other one takes that design over from the first run's records, a resumed one under the same
-    ``resumed_value``, and then makes its own passes.
+    ``resumed_value``, and then makes its own passes.  Where the first strategy is Bayesian
+    optimization with a sampler of its own, its design and the other arms' terms are drawn up front
+    from that sampler, as the paired path always drew them: an arm on a twin of the sampler
+    (:func:`~bayesian_optimization.runs.twin_sampler`) draws the stream past the design, and the
+    loop's replacement for a duplicate, a stream opened where its sampler stands, then draws past
+    everything the arm draws.  A resumed design is held against that head where its pool says it
+    was drawn.
     Whether one strategy beats another is a question about the passes only if they start from the
     same place, and sharing the evaluated design is also what makes the comparison cost one extra
     budget of passes per strategy rather than one extra design.
@@ -451,18 +535,47 @@ def run_paired(
         "refuse_taken": refuse_taken,
     }
     first = names[0]
+    leader = strategies[first]
+    leader_design, drawn = design, None
+    if (
+        n_passes > 0
+        and isinstance(leader, BayesianOptimization)
+        and getattr(leader, "sampler", None) is not None
+    ):
+        # The design and the other arms' terms from the leader's own sampler, up front, so that
+        # its replacement for a duplicate draws past everything an arm on a twin draws.
+        up_front = {
+            "then": n_passes,
+            "budgets": budgets if budgets is not None else StepBudgets(),
+            "echo": echo if echo is not None else functools.partial(print, flush=True),
+        }
+        if resume is not None:
+            given = [r.term for r in resume] if getattr(resume, "origin", "drawn") == "given" else None
+            head, drawn = _draw_up_front(leader, len(resume), design=given, **up_front)
+            if given is None:
+                check_resumed_design(_pairs(resume), head)
+        elif design is not None:
+            _head, drawn = _draw_up_front(leader, len(design), design=list(design), **up_front)
+        elif n_design is not None:
+            leader_design, drawn = _draw_up_front(leader, n_design, design=None, **up_front)
     outcomes = {first: run_search(
-        strategies[first], evaluate, csv_path=csv_paths[first], n_design=n_design, design=design,
-        resume=resume, resumed_value=resumed_value, **common,
+        leader, evaluate, csv_path=csv_paths[first], n_design=n_design, design=leader_design,
+        resume=resume, resumed_value=resumed_value, drawn_up_front=drawn,
+        hold_resumed_design=False, **common,
     )}
-    _header, records = read_term_pool(RunArtifacts(csv_paths[first]).path("terms"))
-    shared = [record for record in records if record.phase == DESIGN_PHASE]
+    header, records = read_term_pool(RunArtifacts(csv_paths[first]).path("terms"))
+    shared = ResumedDesign(
+        [record for record in records if record.phase == DESIGN_PHASE],
+        header.get("design_origin", "drawn"),
+    )
     # A design the first run took over under a reading carries that reading's values, which the
     # objective may not read off the metrics; the other runs take it over under the same reading.
     reading = resumed_value if resume is not None else None
     for name in names[1:]:
+        # The design is the leader's, taken over as data: not held against this arm's stream.
         outcomes[name] = run_search(
             strategies[name], evaluate, csv_path=csv_paths[name], resume=shared,
-            resumed_value=reading, **common,
+            resumed_value=reading, hold_resumed_design=False, **common,
         )
+        outcomes[name].summary["design_taken_over_from"] = os.path.basename(csv_paths[first])
     return outcomes
