@@ -2,6 +2,7 @@
 
 import csv
 import json
+import statistics
 
 from bayesian_optimization.diagnostics import (
     read_calibration,
@@ -13,7 +14,7 @@ from bayesian_optimization.diagnostics import (
     trace_rows,
 )
 from bayesian_optimization.runs.artifacts import _sibling_path
-from bayesian_optimization.runs.records import reads_as_a_gaussian_process
+from bayesian_optimization.runs.records import held_out_split, reads_as_a_gaussian_process
 
 
 def write_run_diagnostics(csv_path, optimizer, result):
@@ -60,9 +61,18 @@ def write_run_diagnostics(csv_path, optimizer, result):
     # The constructor's kernel is the surrogate's only where the surrogate is the Gaussian process;
     # beside a caller's surrogate it conditioned nothing, and its matrix would describe no model.
     with_the_kernel = getattr(optimizer, "surrogate_model", None) is None
+    # Under repeated measurements over the distinct terms, each with the mean of its values: a
+    # term's rows would repeat one row of the matrix, which says nothing about the kernel.
+    gram_terms, gram_values = terms, values
+    if getattr(optimizer, "repeated_measurements", False):
+        observed: dict = {}
+        for term, value in zip(terms, values, strict=True):
+            observed.setdefault(term, []).append(value)
+        gram_terms = list(observed)
+        gram_values = [statistics.fmean(measured) for measured in observed.values()]
     gram = (
-        read_gram(optimizer.kernel(terms), objective=values)
-        if len(terms) >= 2 and with_the_kernel
+        read_gram(optimizer.kernel(gram_terms), objective=gram_values)
+        if len(gram_terms) >= 2 and with_the_kernel
         else None
     )
 
@@ -70,26 +80,18 @@ def write_run_diagnostics(csv_path, optimizer, result):
     # Condition on the terms of even index and predict the odd ones.  Splitting by parity keeps the
     # conditioning half spread over the whole run instead of over one region of it, which would
     # measure extrapolation, a different and harder question.
-    conditioned_terms, conditioned_values = terms[0::2], values[0::2]
-    held_out_terms, held_out_values = terms[1::2], values[1::2]
-    # The same three conditions ``SurrogateLogger`` states: two held-out terms to make a scatter, a
-    # conditioning half without repeats, and no term on both sides.  A surrogate that has seen what
-    # it predicts reproduces it, and the read would report a diagonal it did not earn.
-    readable = (
-        len(held_out_terms) >= 2
-        and conditioned_terms
-        and len(set(conditioned_terms)) == len(conditioned_terms)
-        and not set(conditioned_terms) & set(held_out_terms)
-    )
-    fit = (
-        read_fit(
+    # The split ``SurrogateLogger`` makes (``held_out_split``): two held-out terms to make a scatter,
+    # and no term the surrogate is conditioned on among those it predicts.  A surrogate that has seen
+    # what it predicts reproduces it, and the read would report a diagonal it did not earn.
+    split = held_out_split(optimizer, terms, values)
+    fit = None
+    if split is not None:
+        conditioned_terms, conditioned_values, held_out_terms, held_out_values = split
+        fit = read_fit(
             optimizer.surrogate_over(conditioned_terms, conditioned_values),
             held_out_terms,
             held_out_values,
         )
-        if readable
-        else None
-    )
 
     # --- 3. The uncertainty, over the whole dataset -------------------------------------------
     # Not ``result["gp_model"]``, which is the surrogate of the last ``suggest()`` and never saw the

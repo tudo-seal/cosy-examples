@@ -60,6 +60,47 @@ GAUSSIAN_PROCESS_READS = ("L_", "alpha_", "y_train_", "X_train_", "log_marginal_
                           "kernel_")
 
 
+def held_out_split(optimizer, terms, values):
+    """Split a run's data into the half a held-out fit conditions on and the half it predicts.
+
+    By the parity of the rows, which keeps the conditioning half spread over the whole run instead
+    of over one region of it.  Under repeated measurements by the parity of the distinct terms, in
+    the order they were first measured, every row of a term on its term's side: split by rows, a
+    term measured again lands on both sides, or twice on the conditioning one, and the surrogate
+    would have seen what it is asked to predict.
+
+    Args:
+        optimizer: The loop; its ``repeated_measurements``, where it has one, decides the split.
+        terms (Sequence): The dataset's terms, one per row.
+        values (Sequence[float]): Their values.
+
+    Returns:
+        tuple | None: The conditioning terms and values and the held-out terms and values, or None
+            where no fit read is about the split: fewer than two held-out terms, an empty
+            conditioning half, or, split by rows, a term twice on the conditioning side or on both.
+    """
+    terms, values = list(terms), list(values)
+    if getattr(optimizer, "repeated_measurements", False):
+        side = {term: index % 2 for index, term in enumerate(dict.fromkeys(terms))}
+        conditioned = [row for row, term in enumerate(terms) if side[term] == 0]
+        held_out = [row for row, term in enumerate(terms) if side[term] == 1]
+        if len({terms[row] for row in held_out}) < 2 or not conditioned:
+            return None
+        return (
+            [terms[row] for row in conditioned], [values[row] for row in conditioned],
+            [terms[row] for row in held_out], [values[row] for row in held_out],
+        )
+    conditioned_terms, held_out_terms = terms[0::2], terms[1::2]
+    if (
+        len(held_out_terms) < 2
+        or not conditioned_terms
+        or len(set(conditioned_terms)) != len(conditioned_terms)
+        or set(conditioned_terms) & set(held_out_terms)
+    ):
+        return None
+    return conditioned_terms, values[0::2], held_out_terms, values[1::2]
+
+
 def reads_as_a_gaussian_process(posterior):
     """Whether a posterior answers what the run layer reads off a fitted Gaussian process.
 
@@ -216,17 +257,12 @@ class SurrogateLogger:
         # die in its logger.
         snapshot = optimizer.get_state_snapshot()
         terms, values = snapshot["x_list"], snapshot["y_list"]
-        conditioned, held_out = terms[0::2], terms[1::2]
+        split = held_out_split(optimizer, terms, values)
         fit = None
-        readable = (
-            len(held_out) >= 2
-            and conditioned
-            and len(set(conditioned)) == len(conditioned)
-            and not set(conditioned) & set(held_out)
-        )
-        if readable:
+        if split is not None:
+            conditioned, conditioned_values, held_out, held_out_values = split
             fit = read_fit(
-                optimizer.surrogate_over(conditioned, values[0::2]), held_out, values[1::2]
+                optimizer.surrogate_over(conditioned, conditioned_values), held_out, held_out_values
             )
 
         self._writer.writerow([

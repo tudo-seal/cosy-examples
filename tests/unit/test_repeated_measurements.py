@@ -225,3 +225,78 @@ def test_a_tie_between_two_means_goes_to_the_term_measured_first(bo_factory, tre
     bo.observe(bo.suggest().candidate, 3.0)
 
     assert bo.best() == (tree_corpus[0], 2.0), "t0's mean of 1.0 and 3.0 ties t1's 2.0"
+
+
+# --- the reads over a run -------------------------------------------------------------------------
+
+
+def test_the_reads_split_by_term_and_the_kernel_is_read_over_the_distinct_terms(
+    tmp_path, monkeypatch
+):
+    """Split by rows, a term measured again lands on both sides of the held-out fit, or twice on
+    the conditioning side, and the read goes empty for the rest of the run; split by the distinct
+    terms, each term's rows on its own side, it reads.  The kernel matrix is read over the distinct
+    terms, where the rows would repeat one of them."""
+    import json
+
+    original = SampleMaximizer.maximize_with_population
+
+    def the_first_measured(self: Any, acquisition: Any, query: Any, **kwargs: Any) -> Any:
+        _pick, population, generations = original(self, acquisition, query, **kwargs)
+        return loop.design[0], population, generations
+
+    monkeypatch.setattr(SampleMaximizer, "maximize_with_population", the_first_measured)
+    loop = BayesianOptimization(
+        list_space(), LIST, sampler=SizeUniformSampler(6, random.Random(5)), seed=5,
+        maximizer=SampleMaximizer(SizeUniformSampler(6, random.Random(105)), 8),
+        kernel=_noisy(), repeated_measurements=True,
+    )
+    measured: list[Any] = []
+
+    def evaluate(term: Any) -> dict[str, float]:
+        measured.append(term)
+        return {"score": 1.0 / (1 + len(str(term))) + 0.01 * len(measured)}
+
+    path = tmp_path / "run.csv"
+    outcome = run_search(
+        loop, evaluate, schema=MetricSchema.for_metrics(Objective("score"), ["score"]),
+        csv_path=str(path), pretty_algebra=dict, n_design=4, n_passes=2, echo=lambda line: None,
+    )
+    assert len(set(measured)) == 4 and len(measured) == 6, "the first term measured three times"
+
+    with open(tmp_path / "run_surrogate.csv", newline="") as handle:
+        passes = list(csv.DictReader(handle))
+    assert [row["fit_size"] for row in passes] == ["2", "2"], "the second pass's read, by term"
+    write_run_diagnostics(str(path), loop, outcome.result)
+    diagnostics = json.loads((tmp_path / "run_diagnostics.json").read_text())
+    assert diagnostics["gram"]["size"] == 4
+    assert diagnostics["fit"]["size"] == 2
+    # read against each distinct term's mean, the first term's three values among them
+    from bayesian_optimization.diagnostics import read_gram
+
+    rows: dict[Any, list[float]] = {}
+    for term, value in zip(outcome.result["x"], outcome.result["y"], strict=True):
+        rows.setdefault(term, []).append(float(value))
+    means = [float(np.mean(values)) for values in rows.values()]
+    expected = read_gram(loop.kernel(list(rows)), objective=means)
+    assert diagnostics["gram"]["objective_alignment"] == pytest.approx(expected.objective_alignment)
+
+
+class _Mode:
+    def __init__(self, repeated: bool) -> None:
+        self.repeated_measurements = repeated
+
+
+def test_the_held_out_split_by_rows_and_by_terms():
+    from bayesian_optimization.runs.records import held_out_split
+
+    values = [1.0, 2.0, 3.0, 4.0, 5.0]
+    # by rows, as without repeated measurements
+    assert held_out_split(_Mode(False), list("abcde"), values) == (
+        ["a", "c", "e"], [1.0, 3.0, 5.0], ["b", "d"], [2.0, 4.0])
+    assert held_out_split(_Mode(False), list("abcda"), values) is None, "a twice where conditioned"
+    # by terms: every row of a term on its side
+    assert held_out_split(_Mode(True), list("abcda"), values) == (
+        ["a", "c", "a"], [1.0, 3.0, 5.0], ["b", "d"], [2.0, 4.0])
+    # one held-out term, however many rows it has, makes no scatter
+    assert held_out_split(_Mode(True), list("abcbb"), values) is None
