@@ -188,3 +188,55 @@ def test_a_random_search_drawing_with_replacement_never_proposes_a_pending_term(
     pending = [search.suggest().candidate for _ in range(4)]
     assert len(set(pending)) == 4
     assert search.terms_skipped > 0, "the stream did deliver a term again"
+
+
+def test_at_capacity_above_one_a_refused_suggestion_says_why(bo_factory, tree_corpus):
+    full = bo_factory(max_outstanding=2)
+    full.initialize(x0=tree_corpus[:3], y0=[1.0, 2.0, 0.5])
+    full.suggest(), full.suggest()
+    with pytest.raises(RuntimeError, match="max_outstanding=2"):
+        full.suggest()
+
+    designing = bo_factory(max_outstanding=3)
+    designing.initialize(design=tree_corpus[:2])
+    designing.suggest(), designing.suggest()
+    with pytest.raises(RuntimeError, match="design"):
+        designing.suggest()
+
+
+def test_every_dropped_suggestion_s_warning_says_where_the_result_names_it(
+    bo_factory, tree_corpus, caplog
+):
+    bo = bo_factory(max_outstanding=2)
+    bo.initialize(x0=tree_corpus[:3], y0=[1.0, 2.0, 0.5])
+    bo.suggest(), bo.suggest()
+    with caplog.at_level("WARNING"):
+        bo.finalize()
+    warnings = [record.getMessage() for record in caplog.records if "finalized" in record.getMessage()]
+    assert len(warnings) == 2
+    assert all("dropped_suggestions" in warning for warning in warnings)
+
+
+def test_a_pending_term_the_maximization_returns_is_said_to_be_pending(caplog, monkeypatch):
+    from bayesian_optimization.acquisition_optimizer import SampleMaximizer
+
+    original = SampleMaximizer.maximize_with_population
+    picks: list[Any] = []
+
+    def the_pending_pick(self: Any, acquisition: Any, query: Any, **kwargs: Any) -> Any:
+        pick, population, generations = original(self, acquisition, query, **kwargs)
+        return (picks[0] if picks else pick), population, generations
+
+    monkeypatch.setattr(SampleMaximizer, "maximize_with_population", the_pending_pick)
+    loop = BayesianOptimization(
+        list_space(), LIST, sampler=SizeUniformSampler(6, random.Random(4)), seed=4,
+        maximizer=SampleMaximizer(SizeUniformSampler(6, random.Random(104)), 8), max_outstanding=2,
+    )
+    loop.initialize(initial_size=3)
+    for _ in range(3):
+        loop.observe(loop.suggest().candidate, 0.5)
+    picks.append(loop.suggest().candidate)
+    with caplog.at_level("WARNING"):
+        loop.suggest()
+    assert any("pending" in record.getMessage() for record in caplog.records)
+    assert not any("already evaluated" in record.getMessage() for record in caplog.records)

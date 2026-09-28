@@ -829,7 +829,9 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         # Under repeated measurements a measured term is measured again; an outstanding one never.
         fallback_used = candidate in avoid
         if fallback_used:
-            candidate = self._replace_duplicate(avoid)
+            candidate = self._replace_duplicate(
+                avoid, "an already evaluated" if candidate in self._x_set else "a pending"
+            )
 
         if population is not None:
             self.last_acquisition_run = AcquisitionRun(
@@ -937,7 +939,7 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
             raise ValueError(_unknown_acquisition(self.acquisition_function))
         return af
 
-    def _replace_duplicate(self, avoid: set[Any]) -> Any:
+    def _replace_duplicate(self, avoid: set[Any], what: str = "an already evaluated") -> Any:
         """Draw a term the loop has not evaluated yet, in place of one it already has.
 
         The algorithm as stated lets an evaluation repeat and removes duplicates only when
@@ -959,6 +961,8 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         Args:
             avoid (set[Any]): The terms no pass may propose: the observed set, and the outstanding
                 suggestions.
+            what (str): What the returned term was, for the warning: "an already evaluated" or
+                "a pending". (Default value = "an already evaluated")
 
         Returns:
             Any: A term outside ``avoid``.
@@ -969,7 +973,7 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
                 raises on its own account when the bounded space is exhausted.
         """
         _LOG.warning(
-            "iteration %d: the acquisition optimizer returned an already evaluated "
+            f"iteration %d: the acquisition optimizer returned {what} "
             "candidate, so it is replaced with a random fallback sample.  The suggestion's "
             "acquisition_value then describes the replacement, not the optimizer's result.  A "
             "run in which this fires every iteration is random search, not BO.",
@@ -981,7 +985,7 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
                 "from without a search space."
             )
             msg = (
-                "the acquisition optimizer returned an already evaluated candidate and "
+                f"the acquisition optimizer returned {what} candidate and "
                 f"there is no search space to draw a replacement from.{given}"
             )
             raise RuntimeError(msg)

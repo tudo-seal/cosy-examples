@@ -244,3 +244,54 @@ def test_a_trace_incumbent_keeps_the_sign_the_loop_s_incumbent_has(bo_factory, t
     bo.observe(suggestion.candidate, -2.0)
     assert math.copysign(1.0, suggestion.diagnostics["incumbent"]) == 1.0
     assert math.copysign(1.0, bo.trace[-1].incumbent) == 1.0
+
+
+@pytest.mark.parametrize("answer", ["nothing", "three", "bare metrics"])
+def test_an_evaluation_of_rounds_that_answers_no_pairs_is_refused_in_its_own_words(
+    tmp_path, answer
+):
+    def evaluate_many(terms: list[Any]) -> Any:
+        if answer == "nothing":
+            return None
+        if answer == "three":
+            return [(term, _metrics(term), "extra") for term in terms]
+        return [_metrics(term) for term in terms]
+
+    with pytest.raises(RuntimeError, match=r"\(term, metrics\) pairs"):
+        _run(tmp_path / "run.csv", _bo(7), n_design=2, n_passes=0, batch_size=2,
+             evaluate_many=evaluate_many)
+
+
+def test_the_per_pass_log_counts_what_a_caller_s_surrogate_was_handed(tmp_path):
+    """For a surrogate without a Gaussian process's reads, the count of the pairs a pass
+    conditioned on is the loop's: every row under repeated measurements, and the pending passes
+    a round assumed."""
+    import numpy as np
+
+    from bayesian_optimization.runs import SurrogateLogger
+
+    class Flat:
+        """A caller's surrogate: the mean of what it was handed, everywhere, with a unit spread."""
+
+        def fit(self, terms: Any, values: Any) -> Any:
+            self.handed = len(terms)
+            return self
+
+        def predict(self, X: Any, return_std: bool = False) -> Any:
+            mean = np.full(len(X), 0.5)
+            return (mean, np.ones(len(X))) if return_std else mean
+
+    loop = BayesianOptimization(
+        list_space(), LIST, sampler=_sampler(8), seed=8, surrogate_model=Flat(),
+        maximizer=SampleMaximizer(_sampler(108), 8), max_outstanding=2,
+    )
+    loop.initialize(initial_size=3)
+    for _ in range(3):
+        loop.observe(loop.suggest().candidate, 0.5)
+    path = tmp_path / "surrogate.csv"
+    with SurrogateLogger(str(path)) as logger:
+        loop.suggest()
+        logger.log(0, loop)
+        loop.suggest()
+        logger.log(1, loop)
+    assert [row["n_train"] for row in _rows(path)] == ["3", "4"]

@@ -311,7 +311,17 @@ def _answers(round_terms, evaluate, evaluate_many):
             yield term, evaluate(term)
         return
     waiting = list(round_terms)
-    for term, metrics in evaluate_many(list(round_terms)):
+    answered = evaluate_many(list(round_terms))
+    try:
+        answers = iter(answered)
+    except TypeError:
+        msg = f"evaluate_many answers (term, metrics) pairs, and it returned {answered!r}"
+        raise RuntimeError(msg) from None
+    for answer in answers:
+        if not isinstance(answer, tuple) or len(answer) != 2:
+            msg = f"evaluate_many answers (term, metrics) pairs, not {answer!r}"
+            raise RuntimeError(msg)
+        term, metrics = answer
         position = next((index for index, asked in enumerate(waiting) if asked == term), None)
         if position is None:
             msg = (

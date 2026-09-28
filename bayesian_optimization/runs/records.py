@@ -260,6 +260,12 @@ class SurrogateLogger:
         # die in its logger.
         snapshot = optimizer.get_state_snapshot()
         terms, values = snapshot["x_list"], snapshot["y_list"]
+        # The loop's count of what the pass was handed, read just after its suggest: every row
+        # under repeated measurements, else the distinct terms, and the passes pending before it,
+        # at their assumed values, in a round.
+        conditioned_on = (
+            len(values) if getattr(optimizer, "repeated_measurements", False) else len(set(terms))
+        ) + max(len(snapshot.get("outstanding", [])) - 1, 0)
         split = held_out_split(optimizer, terms, values)
         fit = None
         if split is not None:
@@ -271,7 +277,7 @@ class SurrogateLogger:
         self._writer.writerow([
             bo_iteration,
             # the pairs this pass conditioned on: the Gaussian process's own count, or the loop's
-            len(surrogate.X_train_) if gaussian else len(set(terms)),
+            len(surrogate.X_train_) if gaussian else conditioned_on,
             surrogate.log_marginal_likelihood_value_ if gaussian else "",
             "" if calibration is None else calibration.root_mean_square,
             "" if calibration is None else calibration.standard_deviation,

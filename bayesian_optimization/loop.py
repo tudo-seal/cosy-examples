@@ -939,7 +939,7 @@ class AskTellLoop(Generic[NT, T, G]):
                 "passes this result counts.  An evaluation that fails leaves the "
                 "closed loop in exactly this state, and a caller who did measure the term hands "
                 "it to observe() before finalizing.  The result names it under "
-                "dropped_suggestion.",
+                "dropped_suggestions, and the last one dropped under dropped_suggestion too.",
                 dropped[-1],
                 self._iteration,
             )
@@ -1027,19 +1027,28 @@ class AskTellLoop(Generic[NT, T, G]):
             self._bo_state == BOState.SUGGESTED
             and any(entry.design for entry in self._outstanding.values())
         )
+        refused = f"suggest() is not allowed in state {self._bo_state.value}."
         if in_design:
             # The design goes out up to the capacity; the passes wait for its every value.
             if room and self._design_next < len(self._design):
                 return self._suggest_design_term(verbose)
-            raise RuntimeError(
-                f"suggest() is not allowed in state {self._bo_state.value}."
-            )
+            if capacity > 1 and self._bo_state == BOState.SUGGESTED:
+                refused += (
+                    " The design's values are pending: the passes begin once every design term"
+                    " has its value." if room else
+                    f" {len(self._outstanding)} suggestions are outstanding, as many as"
+                    f" max_outstanding={capacity} admits."
+                )
+            raise RuntimeError(refused)
         if self._bo_state not in (BOState.INITIALIZED, BOState.OBSERVED) and not (
             self._bo_state == BOState.SUGGESTED and room
         ):
-            raise RuntimeError(
-                f"suggest() is not allowed in state {self._bo_state.value}."
-            )
+            if capacity > 1 and self._bo_state == BOState.SUGGESTED:
+                refused += (
+                    f" {len(self._outstanding)} suggestions are outstanding, as many as"
+                    f" max_outstanding={capacity} admits."
+                )
+            raise RuntimeError(refused)
         suggestion = propose()
         self._last_suggestion = suggestion
         self._outstanding[suggestion.candidate] = _Outstanding(
