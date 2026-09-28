@@ -816,8 +816,9 @@ class AskTellLoop(Generic[NT, T, G]):
             the run appended since.  A run that ends on an observation reports a model that never
             saw the pair it ended on.  A run that ends on an outstanding suggestion reports the
             model of that pass, which saw every pair the dataset held, because that pass appended
-            none of its own.  Either way the fit is over the *distinct* pairs of what it was handed,
-            which is fewer than the dataset holds whenever a term repeats in it.  A diagnostic that
+            none of its own.  Either way the fit is over the *distinct* pairs of what it was handed
+            (``BayesianOptimization`` under repeated measurements conditions on every row), which
+            is fewer than the dataset holds whenever a term repeats in it.  A diagnostic that
             wants a surrogate over the whole dataset, as the fit scatter and the leave-one-out
             calibration of the acceptance checks do, asks :meth:`surrogate_over_dataset` for one
             rather than reading this.

@@ -58,7 +58,37 @@ and this loop adds none by default: `_JITTER` is `1e-6` and it is a numerical gu
 of near-duplicate rows, not a noise level. A stochastic quality measure, a training run for instance,
 needs a `WhiteKernel` in the kernel. That does not loosen the distinct pairs clause: `_distinct_pairs` still raises on a dataset that gives
 one term two different values, whatever the kernel says. The repetitions are averaged into the one
-value a term carries before the loop sees them, which is what the CNN driver's `--repeats` does.
+value a term carries before the loop sees them, which is what the CNN driver's `--repeats` does,
+or the loop measures a term again itself, under the option below.
+
+## Repeated measurements, an option
+
+`BayesianOptimization(repeated_measurements=True)` lifts the three mechanisms for a quality measure
+that varies between calls. A pass may propose a term the dataset holds, where the acquisition
+prefers it; every evaluation is a row of its own, and the surrogate conditions on every row; neither
+the known-point floor nor the replacement reads a measured term. Two values of one term then meet
+the diagonal, so the kernel has to model the noise: a Gaussian process without a `WhiteKernel` in
+its kernel is refused at construction, before a run and before its design.
+
+Four readings change with it, because the largest single observation is the one the noise inflated
+most and the observation's deviation at a measured term never falls below the noise:
+
+- the acquisition scores the latent function, a copy of the pass's posterior whose fitted kernel has
+  every `WhiteKernel`'s noise level at 0, so that scikit-learn's `predict` returns the observation's
+  variance less the noise, rescaled as the fit normalized the targets. An acquisition that read the
+  observation's deviation would measure the same term again and again;
+- the incumbent of the improvement scores is the largest posterior mean over the measured terms;
+- the answer, `best()` and `finalize()["best_y"]`, is the term with the largest mean of its
+  observations, and that mean, which no single evaluation returned; a tie goes to the term measured
+  first;
+- the held-out fit read splits by term, every row of a term on its term's side, and the kernel
+  matrix is read over the distinct terms with their means.
+
+A trace row still reads the observations: its incumbent is the largest value observed before it,
+its best the largest after, and the count of improving passes keeps its meaning; what the
+acquisition compared against is the pass's own `diagnostics["incumbent"]`. A design stays a set: a
+term is measured again only by a pass. A caller's surrogate models its noise, and answers its latent
+posterior, itself.
 
 ## Reading `Suggestion` and `last_acquisition_run`
 

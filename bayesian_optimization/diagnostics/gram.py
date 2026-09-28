@@ -33,7 +33,7 @@ class GramRead:
         condition_number (float): The condition number of the same symmetrized matrix.
             Near-duplicate rows drive it up.  That is the ill-conditioning the noise term on the
             diagonal guards against, and the reason the loop conditions its Gaussian process on
-            distinct pairs only.
+            distinct pairs only, unless repeated measurements put a noise term on the diagonal.
         diagonal_spread (float): ``max k(t,t) / min k(t,t)`` on the **raw** matrix.  The hazard
             specific to counting kernels: self-similarity grows with term size, so large terms
             dominate the scale.  One means no spread, and the subtree kernel on a chain of eleven

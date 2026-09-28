@@ -524,7 +524,8 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
     surrogate_model:
         A :class:`~bayesian_optimization.acquisition_function.Surrogate` of the caller's own in
         place of the Gaussian process: every pass conditions it on the distinct pairs of the
-        dataset and keeps a copy of the posterior its ``fit`` answers, and the diagnostics fit a
+        dataset -- every row, under repeated measurements -- and keeps a copy of the posterior its
+        ``fit`` answers, and the diagnostics fit a
         copy of it, so it has to be deep-copyable.  The settings that configure the Gaussian
         process -- ``kernel``, ``kernel_optimizer``, ``n_restarts_kernel_optimizer``,
         ``gp_normalize_y``, and a run's ``gp_params`` and ``alpha`` -- set to anything but their
@@ -638,7 +639,8 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         """Fit the GP and return the next suggested candidate.
 
         One pass of the loop's first two lines: the surrogate is fitted anew on the distinct pairs
-        of the dataset, including its kernel hyperparameters when model selection is on, and the
+        of the dataset, or on every row under repeated measurements, including its kernel
+        hyperparameters when model selection is on, and the
         evolutionary algorithm maximizes the current acquisition over the search space.  What it
         maximizes is the acquisition with the known-point floor beneath it, not the acquisition
         alone.  That floor is the first of the two mechanisms carrying the rejection of duplicates
@@ -742,13 +744,14 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         if verbose:
             enable_verbose_logging()
 
-        # --- Fit the GP on the distinct pairs of the dataset --------------------
+        # --- Fit the GP on the distinct pairs of the dataset, or on every row ----
         #
         # The dataset keeps every evaluation, and the conditioning sees each term once.  Under the
         # rejection path below the loop never proposes a term twice, so this fires only on a
         # dataset assembled from outside, and there it is what keeps the noise-free Gram matrix
         # invertible, since two identical rows are linearly dependent and only the jitter would
-        # stand between that and a failed factorization.
+        # stand between that and a failed factorization.  Under repeated measurements every row is
+        # conditioned on, and the WhiteKernel the mode requires is what keeps it invertible.
         conditioned_x, conditioned_y = self._conditioning_pairs()
         if not conditioned_x:
             raise RuntimeError(
@@ -1553,9 +1556,10 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         The algorithm, line by line: the initial dataset comes from the initializer, which either
         collects terms from a sampler's stream or draws each member biased away from the ones
         already drawn, then each of the ``budget`` passes conditions the Gaussian process on the
-        distinct pairs of the dataset, hands the current acquisition ``t -> alpha(t; D)`` to the
-        evolutionary algorithm as its fitness function, evaluates the individual it returns, and
-        appends the pair.  The answer is a term of maximal observed value.
+        distinct pairs of the dataset (every row, under repeated measurements), hands the current
+        acquisition ``t -> alpha(t; D)`` to the evolutionary algorithm as its fitness function,
+        evaluates the individual it returns, and appends the pair.  The answer is a term of maximal
+        observed value, or of maximal mean under repeated measurements.
 
         Everything the algorithm fixes before a run is a parameter of this object: the kernel, the
         acquisition, the evolutionary algorithm, the initializer.  What a run takes is here.

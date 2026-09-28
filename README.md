@@ -306,6 +306,15 @@ A `WhiteKernel` belongs in the sum when the quality measure is itself stochastic
 for instance, and not otherwise. It is a noise level and not a numerical guard, and the loop's own
 `_JITTER` of `1e-6` is the guard.
 
+Such a quality measure can also be measured again by the loop itself. `repeated_measurements=True`
+lets a pass propose a term the dataset holds, where the acquisition prefers it, and makes every
+evaluation a row the surrogate conditions on. It needs the `WhiteKernel`, and a kernel without one
+is refused before anything is evaluated. The acquisition then scores the latent function, the
+posterior with that noise taken out of its variance; the incumbent it compares against is the
+largest posterior mean over the measured terms; the run's answer is the term with the largest mean
+of its observations, a mean no single evaluation returned. A design stays a set: a term is measured
+again only by a pass. `docs/surrogate-limits.md` says what each of these replaces.
+
 Read the standardized leave-one-out residuals (`read_calibration`) before trusting a fitted
 kernel. A spread far above 1 is the overconfident surrogate the amplitude is meant to repair, and
 a prediction that barely varies across candidates is the collapse above.
@@ -319,7 +328,7 @@ a kernel with an empty one.
 
 A surrogate of the caller's own replaces the Gaussian process as `surrogate_model=`: a `Surrogate`,
 whose `fit(terms, values)` is handed, at every pass, the distinct pairs of the dataset in the order
-their terms first appeared, and answers a posterior, anything with `predict(X, return_std=...)`.
+their terms first appeared -- every row, under repeated measurements -- and answers a posterior, anything with `predict(X, return_std=...)`.
 Each pass keeps a copy of that posterior, so that a later fit cannot change what an earlier pass
 recorded, and a scikit-learn estimator, which refits itself, can be passed as it is. The
 diagnostics fit a copy of the surrogate on the pairs they choose, so that a surrogate with a state of
@@ -353,9 +362,10 @@ run cannot maximize two different functions without anything recording which.
 
 An acquisition of the caller's own takes the place of a name: an `AcquisitionFactory`, a callable
 `(gp, *, incumbent, known_points)` called once per pass with the surrogate that pass fitted, the
-incumbent and the points already observed, and answering a new `AcquisitionFunction` that scores
-with that surrogate and holds those points, so that its known-point floor keeps them below every
-novel candidate. Any callable is taken for a factory, and a class with that signature, such as
+incumbent and the points already observed -- none under repeated measurements, where a measured
+term may be measured again -- and answering a new `AcquisitionFunction` that scores with that
+surrogate and holds those points, so that its known-point floor keeps them below every novel
+candidate. Any callable is taken for a factory, and a class with that signature, such as
 `ExpectedImprovement`, is one. A callable that cannot be called that way is refused before the run
 spends an evaluation. What it builds is checked at every pass, since only a pass has a surrogate to
 build from: one that returns something else, holds fewer than the pass's points or scores with
