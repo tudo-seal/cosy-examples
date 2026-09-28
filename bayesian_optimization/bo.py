@@ -570,6 +570,7 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         gp_normalize_y: bool = True,
         surrogate_model: Surrogate | None = None,
         repeated_measurements: bool = False,
+        max_outstanding: int = 1,
     ) -> None:
         # The pair is refused where the caller writes it down, so a mistyped target costs no
         # evaluation of the objective.  ``optimize`` refuses a negative budget in the same way and
@@ -577,7 +578,8 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         # both attributes are public, and the pair is checked again in ``_query``, where it
         # becomes a query.
         super().__init__(
-            search_space, request, initializer=initializer, seed=seed, sampler=sampler
+            search_space, request, initializer=initializer, seed=seed, sampler=sampler,
+            max_outstanding=max_outstanding,
         )
         self.acquisition_function = acquisition_function
         self.ucb_beta = float(ucb_beta)
@@ -753,6 +755,12 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         # stand between that and a failed factorization.  Under repeated measurements every row is
         # conditioned on, and the WhiteKernel the mode requires is what keeps it invertible.
         conditioned_x, conditioned_y = self._conditioning_pairs()
+        # A pass made while others are outstanding conditions on them too, each at the value its
+        # own posterior expected at its pick (the kriging believer): the next pick then moves away
+        # from what is pending rather than onto it.  The assumed values touch this surrogate only,
+        # never the dataset, the incumbent, the trace or the answer.
+        pending = self._pending()
+        pending_terms = [entry.suggestion.candidate for entry in pending]
         if not conditioned_x:
             raise RuntimeError(
                 "there is nothing to condition the Gaussian process on: the dataset is empty.  "
@@ -760,7 +768,10 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
                 "from no observation at all."
             )
 
-        model = self._fit_surrogate(conditioned_x, conditioned_y)
+        model = self._fit_surrogate(
+            conditioned_x + pending_terms,
+            conditioned_y + [float(entry.assumed) for entry in pending],  # type: ignore[arg-type]
+        )
         self._model = model
 
         # The incumbent the three scores compare against is the best observation, and best means
@@ -782,7 +793,10 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
             if self.repeated_measurements and self.surrogate_model is None
             else model
         )
-        af = self._build_acquisition(scored, incumbent)
+        # The terms no pass may propose: the measured ones, where a term is measured once, and the
+        # outstanding ones, which are being measured.
+        avoid = (set() if self.repeated_measurements else set(self._x_set)) | set(pending_terms)
+        af = self._build_acquisition(scored, incumbent, avoid)
 
         # --- Optimize acquisition function ------------------------------------
         acq_opt: AcquisitionMaximizer = (
@@ -810,10 +824,10 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         # Two mechanisms carry the rejection of duplicates.  The acquisition scores known points
         # below every genuine candidate, and a candidate that gets through anyway is replaced by a
         # fresh draw.  ``_replace_duplicate`` draws it, and says why the deviation is deliberate.
-        # Under repeated measurements a measured term is measured again: nothing is replaced.
-        fallback_used = not self.repeated_measurements and candidate in self._x_set
+        # Under repeated measurements a measured term is measured again; an outstanding one never.
+        fallback_used = candidate in avoid
         if fallback_used:
-            candidate = self._replace_duplicate()
+            candidate = self._replace_duplicate(avoid)
 
         if population is not None:
             self.last_acquisition_run = AcquisitionRun(
@@ -833,7 +847,7 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         if not self._warned_about_exploitation:
             self._warned_about_exploitation = warn_if_exploitation_stalls(
                 _LOG,
-                iteration=self._iteration,
+                iteration=self._passes_suggested,
                 acquisition_value=acq_value,
                 # After a fallback the value describes a random replacement, and a replacement at
                 # the floor says nothing about what the maximization found.
@@ -845,7 +859,7 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         diagnostics: Diagnostics = {
             "timestamp": time.time(),
             "incumbent": incumbent,
-            "iteration": self._iteration,
+            "iteration": self._passes_suggested,
             "fallback_used": fallback_used,
             # Zero or one: ``_replace_duplicate`` draws once and one draw settles it.  The
             # column stays because the experiment logs carry it.
@@ -862,7 +876,7 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         )
 
     def _build_acquisition(
-        self, model: MarginalPosterior, incumbent: float
+        self, model: MarginalPosterior, incumbent: float, known: set[Any]
     ) -> AcquisitionFunction:
         """Build the acquisition of one pass, with the known-point floor beneath it.
 
@@ -875,6 +889,8 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
             model (MarginalPosterior): The surrogate this pass fitted.
             incumbent (float): The largest observed value, which the two improvement scores
                 measure a candidate against.
+            known (set[Any]): The terms no pass may propose, which the floor keeps below every
+                other.
 
         Returns:
             AcquisitionFunction: The acquisition to maximize.
@@ -890,7 +906,7 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         # pass runs the two are equal, since nothing observes in between, so this changes no
         # decision.  It changes what an acquisition still means once the pass is over, which is
         # exactly what the diagnostics keep one for.
-        known_points = set() if self.repeated_measurements else set(self._x_set)
+        known_points = set(known)
 
         setting = self.acquisition_function
         if callable(setting) and not isinstance(setting, str):
@@ -919,7 +935,7 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
             raise ValueError(_unknown_acquisition(self.acquisition_function))
         return af
 
-    def _replace_duplicate(self) -> Any:
+    def _replace_duplicate(self, avoid: set[Any]) -> Any:
         """Draw a term the loop has not evaluated yet, in place of one it already has.
 
         The algorithm as stated lets an evaluation repeat and removes duplicates only when
@@ -938,8 +954,12 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         used to stand in its place could not reach its second pass, and its error message
         described a state the code cannot be in.
 
+        Args:
+            avoid (set[Any]): The terms no pass may propose: the observed set, and the outstanding
+                suggestions.
+
         Returns:
-            Any: A term outside the observed set.
+            Any: A term outside ``avoid``.
 
         Raises:
             RuntimeError: If there is no search space to draw a replacement from, or if the
@@ -951,7 +971,7 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
             "candidate, so it is replaced with a random fallback sample.  The suggestion's "
             "acquisition_value then describes the replacement, not the optimizer's result.  A "
             "run in which this fires every iteration is random search, not BO.",
-            self._iteration,
+            self._passes_suggested,
         )
         if self._sampler is None:
             given = "" if self.sampler is None else (
@@ -963,8 +983,8 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
                 f"there is no search space to draw a replacement from.{given}"
             )
             raise RuntimeError(msg)
-        candidate = _sample_fallback_tree(self._sampler, self._query(), self._x_set)
-        if candidate in self._x_set:
+        candidate = _sample_fallback_tree(self._sampler, self._query(), avoid)
+        if candidate in avoid:
             raise RuntimeError(
                 f"the fallback sampler returned {candidate}, which has already been "
                 f"evaluated.  Drawing a novel inhabitant or raising is the whole of its "
@@ -1198,12 +1218,12 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
                 the values the row is then built from.
         """
         diagnostics, acquisition = _require_trace_diagnostics(suggestion)
-        # The trace reads the observations: the largest value observed before this row.  Without
-        # repeated measurements that is the incumbent the acquisition was built with; with them the
-        # acquisition compared against a posterior mean, which its diagnostics keep.
-        incumbent = (
-            max(self._y_list[:-1]) if self.repeated_measurements else diagnostics["incumbent"]
-        )
+        # The trace reads the observations: the largest value observed before this row.  With one
+        # suggestion at a time and each term measured once that is the incumbent the acquisition
+        # was built with; under repeated measurements the acquisition compared against a posterior
+        # mean, and in a batch the rows arrive in the order the values do, so the incumbent the
+        # pass started from can be older than the row before it.  Its diagnostics keep it.
+        incumbent = max(self._y_list[:-1])
         return TraceRecord(
             iteration=diagnostics["iteration"],
             acquisition=acquisition,
@@ -1365,6 +1385,18 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
                 f"once"
             )
             raise ValueError(msg)
+
+    def _assumed_value(self, suggestion: Suggestion) -> float | None:
+        """A pending pass is assumed at the mean its posterior expected at its pick.
+
+        Args:
+            suggestion (Suggestion): The pass.
+
+        Returns:
+            float | None: ``mean_at_pick``, or None where the diagnostics carry none.
+        """
+        mean = (suggestion.diagnostics or {}).get("mean_at_pick")
+        return None if mean is None else float(mean)
 
     def _largest_posterior_mean(self, model: MarginalPosterior) -> float:
         """The largest posterior mean over the measured terms, the incumbent under repeated

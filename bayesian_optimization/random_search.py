@@ -61,8 +61,11 @@ class RandomSearch(AskTellLoop[NT, T, G]):
         seed: int | None = None,
         sampler: Sampler | None = None,
         max_draws_per_term: int = _MAX_DRAWS_PER_TERM,
+        max_outstanding: int = 1,
     ) -> None:
-        super().__init__(search_space, request, seed=seed, sampler=sampler)
+        super().__init__(
+            search_space, request, seed=seed, sampler=sampler, max_outstanding=max_outstanding
+        )
         self.max_draws_per_term = max_draws_per_term
         self._stream: Iterator[Any] | None = None
         # The terms the open stream has delivered, which is what tells a repeat of the stream from
@@ -209,13 +212,16 @@ class RandomSearch(AskTellLoop[NT, T, G]):
             enable_verbose_logging()
         self._skips_pending = 0
         try:
-            term = self._next_new_term(self._x_set)
+            # neither a held term nor an outstanding one, which is being measured
+            term = self._next_new_term(
+                self._x_set | {entry.suggestion.candidate for entry in self._pending()}
+            )
         finally:
             self._terms_skipped += self._skips_pending
             self._skips_pending = 0
         diagnostics: Diagnostics = {
             "timestamp": time.time(),
-            "iteration": self._iteration,
+            "iteration": self._passes_suggested,
             "phase": "main",
         }
         return Suggestion(candidate=term, acquisition_value=None, diagnostics=diagnostics)

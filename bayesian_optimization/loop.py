@@ -208,6 +208,28 @@ def _check_request_against_space(search_space: Any, request: Any) -> None:
     raise ValueError(msg)
 
 
+def _require_capacity(value: Any) -> int:
+    """Refuse a capacity that is not a positive count.
+
+    Args:
+        value (Any): What ``max_outstanding`` holds.
+
+    Returns:
+        int: The capacity.
+
+    Raises:
+        ValueError: For anything but a positive int; a bool is refused, though Python counts it.
+    """
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        msg = (
+            f"max_outstanding is how many suggestions may be outstanding at once, a positive "
+            f"count, not {value!r}"
+        )
+        raise ValueError(msg)
+    capacity: int = value
+    return capacity
+
+
 @dataclass
 class _Outstanding:
     """A suggestion no completed :meth:`AskTellLoop.observe` has answered yet.
@@ -217,11 +239,14 @@ class _Outstanding:
         design (bool): Whether it is a term of the design phase rather than a pass.
         row (int | None): The row of the dataset :meth:`AskTellLoop.observe` put its term in, once
             it has; the suggestion has its value if and only if a value stands in that row.
+        assumed (float | None): The value a later pass assumes for this one while it is
+            outstanding, where the strategy assumes one (:meth:`AskTellLoop._assumed_value`).
     """
 
     suggestion: Suggestion
     design: bool
     row: int | None = None
+    assumed: float | None = None
 
 
 class AskTellLoop(Generic[NT, T, G]):
@@ -249,6 +274,13 @@ class AskTellLoop(Generic[NT, T, G]):
         The loop's own source of terms; ``None`` builds ``SizeUniformSampler(DEFAULT_SIZE_BOUND,
         Random(seed))`` counting from a materialized search tree, a placeholder for toy spaces,
         and says so in a warning once per run.
+    max_outstanding:
+        How many suggestions may be outstanding at once, so that as many evaluations can run side
+        by side.  The design goes out that many terms at a time, and the passes begin once every
+        design term has its value; a pass made while others are outstanding treats them as the
+        strategy says (``BayesianOptimization``: known points, at the value its posterior expected
+        at each), and never proposes an outstanding term.  :meth:`observe` takes the values back in
+        any order.  1, the default, is the loop that alternates ``suggest`` and ``observe``.
     """
 
     #: The phase a pass of this strategy is recorded under in a run's rows and term records.
@@ -262,6 +294,7 @@ class AskTellLoop(Generic[NT, T, G]):
         initializer: Initializer[NT, T, G] | None = None,
         seed: int | None = None,
         sampler: Sampler | None = None,
+        max_outstanding: int = 1,
     ) -> None:
         # The pair is refused where the caller writes it down, so a mistyped target costs no
         # evaluation of the objective.  This reads the arguments, so it is not the guarantee on
@@ -274,6 +307,7 @@ class AskTellLoop(Generic[NT, T, G]):
         self.initializer = initializer
         self.seed = seed
         self.sampler = sampler
+        self.max_outstanding = _require_capacity(max_outstanding)
 
         # --- Ask/Tell state ---------------------------------------------------
         self._bo_state: BOState = BOState.UNINITIALIZED
@@ -286,6 +320,9 @@ class AskTellLoop(Generic[NT, T, G]):
         self._initializer: Initializer[NT, T, G] | None = None
         self._generator_query: Any = None
         self._iteration: int = 0
+        # The passes suggested so far, closed or not: a pass's label is the count before it, which
+        # is the closed passes' count as long as every suggestion is observed before the next.
+        self._passes_suggested: int = 0
         # The design phase: the initial design in the order it is handed out, and the position of
         # the next term to hand out.
         self._design: tuple[Any, ...] = ()
@@ -700,17 +737,23 @@ class AskTellLoop(Generic[NT, T, G]):
             )
         if self._last_suggestion is None:
             raise RuntimeError("Internal error: _last_suggestion is None in SUGGESTED state.")
-        if candidate != self._last_suggestion.candidate:
+        # Matched by structural equality, as a single suggestion always was, in the order the
+        # outstanding ones were made: a caller may legitimately hand back a reconstructed tree.
+        entry = next(
+            (entry for term, entry in self._outstanding.items() if candidate == term), None
+        )
+        if entry is None:
             raise ValueError(
                 "Observed candidate does not match the last suggested candidate."
+                if self.max_outstanding == 1
+                else "Observed candidate matches none of the outstanding suggestions."
             )
 
         # Record the tree suggest() produced, not the caller's argument.  The check above is
         # structural on purpose, since a caller may legitimately hand back a reconstructed tree,
         # but the observation set has to hold exactly what was suggested.
-        recorded = self._last_suggestion.candidate
+        recorded = entry.suggestion.candidate
         value = _finite_or_raise(y, recorded)
-        entry = self._outstanding[recorded]
         if entry.design:
             # A design term goes into the dataset and nowhere else: it has no acquisition value
             # and no pick, so it is no row of the trace and no pass of the count.  The phase ends
@@ -721,21 +764,25 @@ class AskTellLoop(Generic[NT, T, G]):
             self._y_list.append(value)
             del self._outstanding[recorded]
             self._bo_state = (
-                BOState.DESIGN if self._design_next < len(self._design) else BOState.INITIALIZED
+                BOState.SUGGESTED if self._outstanding
+                else BOState.DESIGN if self._design_next < len(self._design)
+                else BOState.INITIALIZED
             )
             return
         # Checked before the dataset grows, because the row is written after it has.  A suggestion
         # no row can be read from would otherwise leave a term and a value behind that no trace
         # row and no iteration count mention, and the state stays at SUGGESTED, so the very same
         # call is accepted again and appends them a second time.
-        self._check_pass_suggestion(self._last_suggestion)
+        self._check_pass_suggestion(entry.suggestion)
         entry.row = len(self._x_list)
         self._x_list.append(recorded)
         self._x_set.add(recorded)
         self._y_list.append(value)
-        self._record_pass(self._last_suggestion, value)
+        self._record_pass(entry.suggestion, value)
         self._iteration += 1
-        self._bo_state = BOState.OBSERVED
+        self._bo_state = (
+            BOState.OBSERVED if len(self._outstanding) == 1 else BOState.SUGGESTED
+        )
         # Answered only now: an observe() that raised after the dataset grew leaves the entry, as
         # it leaves the state at SUGGESTED, and the row says the value is there.
         del self._outstanding[recorded]
@@ -779,6 +826,7 @@ class AskTellLoop(Generic[NT, T, G]):
         self._initial_repeats_rejected = 0
         self._last_suggestion = None
         self._iteration = 0
+        self._passes_suggested = 0
         self._sampler = None
         self._initializer = None
         self._trace = []
@@ -877,11 +925,11 @@ class AskTellLoop(Generic[NT, T, G]):
         # interrupt there leaves it claiming a value the dataset does not hold.  Nor is the term's
         # having some value: that is the same answer only while a suggested term is always new.
         valued_terms = self._x_list[: len(self._y_list)]
-        dropped = None
+        dropped: list[Any] = []
         for entry in self._outstanding.values():
             if entry.row is not None and entry.row < len(self._y_list):
                 continue
-            dropped = entry.suggestion.candidate
+            dropped.append(entry.suggestion.candidate)
             self._logger.warning(
                 "the run is finalized with the suggestion %s still outstanding.  No value ever "
                 "reached it, so the dataset holds none for the term, and it is not among the %d "
@@ -889,7 +937,7 @@ class AskTellLoop(Generic[NT, T, G]):
                 "closed loop in exactly this state, and a caller who did measure the term hands "
                 "it to observe() before finalizing.  The result names it under "
                 "dropped_suggestion.",
-                dropped,
+                dropped[-1],
                 self._iteration,
             )
         self._last_suggestion = None
@@ -908,7 +956,8 @@ class AskTellLoop(Generic[NT, T, G]):
             "gp_model": self._result_model(),
             "iterations": self._iteration,
             "trace": self.trace,
-            "dropped_suggestion": dropped,
+            "dropped_suggestion": dropped[-1] if dropped else None,
+            "dropped_suggestions": dropped,
             "design_remaining": design_remaining,
         }
 
@@ -924,6 +973,11 @@ class AskTellLoop(Generic[NT, T, G]):
                 None if self._last_suggestion is None
                 else self._last_suggestion.candidate
             ),
+            # The suggestions no value has reached yet, in the order they were made.
+            "outstanding": [
+                entry.suggestion.candidate for entry in self._outstanding.values()
+                if entry.row is None or entry.row >= len(self._y_list)
+            ],
             # The design phase: the design, and how many of its terms still await a value.
             "design": list(self._design),
             "design_remaining": sum(1 for term in self._design if term not in valued),
@@ -964,15 +1018,31 @@ class AskTellLoop(Generic[NT, T, G]):
         Raises:
             RuntimeError: Outside the states a suggestion belongs in.
         """
-        if self._bo_state == BOState.DESIGN:
-            return self._suggest_design_term(verbose)
-        if self._bo_state not in (BOState.INITIALIZED, BOState.OBSERVED):
+        capacity = _require_capacity(self.max_outstanding)
+        room = len(self._outstanding) < capacity
+        in_design = self._bo_state == BOState.DESIGN or (
+            self._bo_state == BOState.SUGGESTED
+            and any(entry.design for entry in self._outstanding.values())
+        )
+        if in_design:
+            # The design goes out up to the capacity; the passes wait for its every value.
+            if room and self._design_next < len(self._design):
+                return self._suggest_design_term(verbose)
+            raise RuntimeError(
+                f"suggest() is not allowed in state {self._bo_state.value}."
+            )
+        if self._bo_state not in (BOState.INITIALIZED, BOState.OBSERVED) and not (
+            self._bo_state == BOState.SUGGESTED and room
+        ):
             raise RuntimeError(
                 f"suggest() is not allowed in state {self._bo_state.value}."
             )
         suggestion = propose()
         self._last_suggestion = suggestion
-        self._outstanding[suggestion.candidate] = _Outstanding(suggestion, design=False)
+        self._outstanding[suggestion.candidate] = _Outstanding(
+            suggestion, design=False, assumed=self._assumed_value(suggestion)
+        )
+        self._passes_suggested += 1
         self._bo_state = BOState.SUGGESTED
         log_suggestion(self._logger, suggestion)
         return suggestion
@@ -993,6 +1063,31 @@ class AskTellLoop(Generic[NT, T, G]):
         raise NotImplementedError(
             f"{type(self).__name__} proposes no pass: a strategy supplies _propose()"
         )
+
+    def _assumed_value(self, suggestion: Suggestion) -> float | None:
+        """The value a later pass assumes for this one while it is outstanding; None by default.
+
+        Read once, when the suggestion is made, and kept with it: the loop reads its own record,
+        never the diagnostics the caller holds.
+
+        Args:
+            suggestion (Suggestion): A pass just proposed.
+
+        Returns:
+            float | None: The assumed value, or None where the strategy assumes none.
+        """
+        return None
+
+    def _pending(self) -> list[_Outstanding]:
+        """The outstanding passes no value has reached yet, in the order they were suggested.
+
+        Returns:
+            list[_Outstanding]: Their records.
+        """
+        return [
+            entry for entry in self._outstanding.values()
+            if not entry.design and (entry.row is None or entry.row >= len(self._y_list))
+        ]
 
     def _check_pass_suggestion(self, suggestion: Suggestion) -> None:
         """Refuse a pass before its value enters the dataset; nothing to refuse by default.
