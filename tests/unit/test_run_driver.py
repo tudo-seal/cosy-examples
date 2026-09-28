@@ -231,3 +231,36 @@ def test_a_paired_comparison_shares_one_design_evaluated_once(tmp_path):
         ["True"] * 3 + ["False"] * 2
     )
     assert all(row["taken_over"] == "False" for row in _rows(tmp_path / "bo.csv"))
+
+
+@pytest.mark.parametrize("paired", [False, True], ids=["drawn by the loop", "drawn up front"])
+def test_a_bayesian_design_is_on_disk_row_by_row_once_and_in_the_order_measured(tmp_path, paired):
+    """What the CIFAR driver's design phase promised, now the run layer's under Bayesian
+    optimization too: while a design term is evaluated, every term before it is on disk, once, in
+    the order it was measured -- whether the loop draws the design or a pair drew it up front -- so
+    a run interrupted during its design keeps every evaluation it paid for."""
+    path = tmp_path / "bo.csv"
+    seen_before_each, measured = [], []
+
+    def evaluate(term):
+        seen_before_each.append(len(_rows(path)) if path.exists() else 0)
+        measured.append(term)
+        return _metrics(term)
+
+    if paired:
+        run_paired(
+            {"bo": _bo(2), "random": _random(2)}, evaluate, schema=SCHEMA, n_design=4, n_passes=1,
+            csv_paths={"bo": str(path), "random": str(tmp_path / "random.csv")},
+            pretty_algebra=dict, echo=_quiet,
+        )
+    else:
+        _run(_bo(2), evaluate, path, n_design=4, n_passes=1)
+
+    assert seen_before_each[:4] == [0, 1, 2, 3]
+    rows = _rows(path)
+    assert [(row["phase"], row["index"]) for row in rows[:4]] == [
+        ("pre_sample", str(index)) for index in range(4)
+    ]
+    assert [row["phase"] for row in rows[4:]] == ["bo_step"]
+    _header, records = read_term_pool(tmp_path / "bo_terms.pickle")
+    assert [record.term for record in records[:4]] == measured[:4]

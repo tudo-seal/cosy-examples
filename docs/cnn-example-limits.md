@@ -100,8 +100,10 @@ nothing else, through the same code and into the same artifacts.
 
 That baseline is an independent sample at the same budget and not a paired one, which changes how
 the comparison is read. What is lost is the variance reduction a shared initial design would have
-bought. Pairing the two means running both from one process, which is what `--baseline` does. The
-recorded run took that route, and its 80 rows are 20 shared design terms plus 30 per arm.
+bought. Pairing the two means running both from one process, which is what `--baseline` does,
+writing the random arm beside the loop as `<run>_random.csv`. The recorded run took that route
+before the arm had files of its own, and its 80 rows are 20 shared design terms plus 30 per arm, in
+one CSV.
 
 ## Two run artifacts answer questions the CSV cannot
 

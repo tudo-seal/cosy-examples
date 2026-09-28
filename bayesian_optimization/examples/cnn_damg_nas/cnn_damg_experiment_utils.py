@@ -1,4 +1,4 @@
-"""What the two cnn_damg_nas experiments share: the CIFAR layout of a run, and its driver.
+"""What the two cnn_damg_nas experiments share: the CIFAR layout of a run, and its evaluation.
 
 The USPS and the CIFAR-10 script differ in their dataset, their search-space constants and their
 command line.  Everything between them, the acquisition optimizer, the ask/tell loop, the logging
@@ -7,7 +7,9 @@ kept here.  The parts that name no CIFAR metric and no CNN alphabet have since m
 layer, :mod:`bayesian_optimization.runs`, and are re-exported from here: the search program and
 its samplers, the watchdog, the acquisition-optimizer builder, the term pool, the recorder, the
 run's files and its neutral provenance, and a driver for any strategy.  What stays is this
-example's own: its column layout ``CIFAR_SCHEMA``, its evaluation, and ``run_ask_tell_search``.
+example's own: its column layout ``CIFAR_SCHEMA`` with the two objectives a run may maximize, and
+its evaluation, which the driver hands to :func:`~bayesian_optimization.runs.run_search` and
+:func:`~bayesian_optimization.runs.run_paired`.
 
 The reason is not tidiness.  While it stood twice, every correction had to be made twice, and
 statements had drifted from what the code did: both metadata blocks named a survivor selection the
@@ -41,19 +43,23 @@ Seven artifacts per run, and they answer different questions:
   read here.  The acceptance checks answer only whether it ended up usable.
 * ``<run>_diagnostics.json``, the acceptance checks over the finished run.
 
+A paired run writes its random arm beside these, under its own name: ``<run>_random.csv``, its term
+records and its configuration, the design rows taken over from the loop's.
+
 A random-search baseline is the same script with ``--n-pre-samples 30 --n-iterations 0``.  The
 initial dataset already comes from the size-uniform sampler, so a run with no passes evaluates
 thirty drawn terms and nothing else, through the same code and into the same artifacts.  The
-provenance names the run kind, read off ``n_iterations`` rather than off a flag beside it, so the
-two cannot disagree.
+provenance names the run kind, ``design_only``, read off the pass count rather than off a flag
+beside it, so the two cannot disagree.
 
 That baseline is an independent sample at the same budget, not a paired one, and the difference
 matters for how the comparison is read.  Two processes at the same seed do not draw the same terms,
 because the synthesized program comes out in a different rule order per process and the stream
 differs with it.  The distribution is unaffected, which is what makes the comparison sound.  What
 is lost is the variance reduction a common initial design would have bought.  Pairing the two means
-running both from one process, which is what the paired baseline of :func:`run_ask_tell_search`
-does.
+running both from one process, which is what ``--baseline`` does through
+:func:`~bayesian_optimization.runs.run_paired`: a random search on a twin of the loop's sampler,
+from the loop's design.
 
 Training is not deterministic, since the weights are drawn and the mini-batches are shuffled, and
 no seed is fixed unless the caller passes one.  The values recorded here are the reference to
@@ -64,6 +70,7 @@ expected.
 import _thread
 import contextlib
 import csv
+import dataclasses
 import json
 import os
 import random
@@ -134,7 +141,7 @@ from bayesian_optimization.runs.records import (
     SurrogateLogger,
     kernel_hyperparameters,
 )
-from bayesian_optimization.runs.resume import _check_resumed_design, load_initial_design
+from bayesian_optimization.runs.resume import load_initial_design
 from bayesian_optimization.runs.run_diagnostics import write_run_diagnostics
 from bayesian_optimization.runs.schema import Column, MetricSchema, Objective
 from bayesian_optimization.runs.search_program import (
@@ -289,6 +296,23 @@ def _empty_if_none(value):
     return "" if value is None else value
 
 
+def _live_line(metrics):
+    """The driver's line for one evaluation after its objective: accuracy, parameters, training time.
+
+    Args:
+        metrics (Mapping): What the evaluation answered.
+
+    Returns:
+        str: The three that are reported, in that order.
+    """
+    shown = []
+    for key, spelled in (("accuracy", "accuracy={:.4f}"), ("n_params", "params={}"),
+                         ("train_seconds", "train={:.1f}s")):
+        if metrics.get(key) is not None:
+            shown.append(spelled.format(metrics[key]))
+    return " ".join(shown)
+
+
 CIFAR_SCHEMA = MetricSchema(
     objective=Objective("accuracy"),
     columns=(
@@ -345,6 +369,7 @@ CIFAR_SCHEMA = MetricSchema(
         Column("accuracy_std", render=_empty_if_none),
         Column("diverged_runs", render=_joined),
     ),
+    live=_live_line,
 )
 #: The CSV's columns, the CIFAR schema's header: this driver's layout is one schema among others.
 CSV_COLUMNS = CIFAR_SCHEMA.header
@@ -631,42 +656,36 @@ def dataset_to_tensors(dataset, device, num_workers=0):
     return images.reshape(images.shape[0], -1).to(device), labels.to(device).long()
 
 
-def objective_direction(objective):
-    """Turn the ``--objective`` choice into the two things the run needs from it.
+#: The objectives a run may maximize, under the names ``--objective`` takes: the validation
+#: accuracy, and the validation loss, which is better when smaller and enters the loop negated.
+#: Both reach every row whichever of them the loop maximizes.
+OBJECTIVES = {
+    "accuracy": Objective("accuracy"),
+    "loss": Objective("objective_value", greater_is_better=False),
+}
 
-    The loop maximizes, always.  A loss therefore enters it negated and comes back out negated, and
-    every number read off the loop goes through the returned converter.  That the two scripts
-    disagreed on one line of this, one reporting the loop's value and the other the metric's, is why
-    it is one function now.
+
+def cifar_schema(objective):
+    """The CIFAR layout with the objective a run maximizes.
+
+    The loop maximizes, always, so a loss enters it negated and comes back out negated; the run
+    layer does both through the schema's objective, which is why the choice is a schema and not a
+    converter beside it.
 
     Args:
         objective (str): ``"accuracy"`` (maximized) or ``"loss"`` (minimized).
 
     Returns:
-        tuple[bool, Callable[[float], float]]: Whether greater is better, and the converter from
-            what the loop reports back into the metric's own scale and sign.
+        MetricSchema: :data:`CIFAR_SCHEMA`, maximizing that objective.
 
     Raises:
         ValueError: If the objective is neither of the two.  The direction of a search is not
             something to guess a default for.
     """
-    if objective not in ("accuracy", "loss"):
+    if objective not in OBJECTIVES:
         msg = f"objective must be 'accuracy' or 'loss', got {objective!r}"
         raise ValueError(msg)
-    greater_is_better = objective == "accuracy"
-
-    def as_reported(value):
-        """Turn a value the loop reports back into the metric's own scale and sign.
-
-        Args:
-            value (float): What the loop reported.
-
-        Returns:
-            float: The metric.
-        """
-        return float(value) if greater_is_better else -float(value)
-
-    return greater_is_better, as_reported
+    return dataclasses.replace(CIFAR_SCHEMA, objective=OBJECTIVES[objective])
 
 
 #: The structure lengths the two length-named targets ask for.  Written out rather than imported
@@ -732,13 +751,13 @@ def resolve_target_choice(target, structure_length, default_length):
     return label, length
 
 
-def make_objective(x, y, x_val, y_val, batch_size, greater_is_better,
-                   protocol=None, x_test=None, y_test=None, repeats=1, training_seeds=None):
-    """Build the objective function and the store its measurements land in.
+def make_evaluate(x, y, x_val, y_val, batch_size, protocol=None, x_test=None, y_test=None,
+                  repeats=1, training_seeds=None):
+    """Build the evaluation a run hands the run layer: a term in, every metric it measured out.
 
-    Every candidate's full metric set is kept, keyed by its term: the loop takes one value per
-    evaluation, while the run's CSV row and term pool need every metric that evaluation measured,
-    so the metrics are stored here and read back by the driver right after each call.
+    The run layer reads the value the loop maximizes off those metrics, through the run's objective
+    (:func:`cifar_schema`), and writes all of them into the row and the term record, so nothing
+    has to be kept beside the loop and read back after each call.
 
     Args:
         x (torch.Tensor): Training features.
@@ -749,368 +768,29 @@ def make_objective(x, y, x_val, y_val, batch_size, greater_is_better,
         protocol (TrainingProtocol | None): The training protocol, or None for the default.
         x_test (torch.Tensor | None): Held-out features, recorded but never optimized against.
         y_test (torch.Tensor | None): Their labels.
-        greater_is_better (bool): Whether the loop maximizes the metric directly.
-        repeats (int): How many trainings each candidate's value averages over, see
+        repeats (int): How many trainings each candidate's metrics average over, see
             :func:`evaluate_candidate`. (Default value = 1)
         training_seeds (Sequence[int] | None): One seed per repetition, or None for unseeded
             training. (Default value = None)
 
     Returns:
-        tuple[Callable, dict]: The objective, and the measurement store it writes into.
+        Callable[[Any], dict]: The evaluation, :func:`evaluate_candidate` on this data.
     """
-    metrics_by_tree = {}
 
-    def f_obj(tree):
-        """Train one candidate and return what the loop maximizes.
+    def evaluate(tree):
+        """Train one candidate and answer with its metrics.
 
         Args:
             tree: The candidate term.
 
         Returns:
-            float: The accuracy, or the negated loss, averaged over ``repeats`` trainings.
+            dict: The metrics, averaged over ``repeats`` trainings, and the single ones.
         """
-        metrics = evaluate_candidate(tree, x, y, x_val, y_val, batch_size,
-                                     protocol=protocol, x_test=x_test, y_test=y_test,
-                                     repeats=repeats, training_seeds=training_seeds)
-        metrics_by_tree[tree] = metrics
-        # Both metrics always reach the CSV.  Only which one the loop maximizes changes.
-        return metrics["accuracy"] if greater_is_better else -metrics["objective_value"]
+        return evaluate_candidate(tree, x, y, x_val, y_val, batch_size,
+                                  protocol=protocol, x_test=x_test, y_test=y_test,
+                                  repeats=repeats, training_seeds=training_seeds)
 
-    return f_obj, metrics_by_tree
-
-
-def _draw_prefix(optimizer, count):
-    """Take ``count`` pairwise distinct terms from one stream of the loop's own sampler.
-
-    One stream and not ``count`` draws.  Calling ``sample()`` twice would start two streams from an
-    advanced generator, and the second could repeat the first, which is exactly the property a
-    paired baseline is built on.
-
-    The distinctness is produced here, not inherited.  Every prefix of a size-uniform stream is a
-    sample without replacement, so on that sampler the terms are distinct by construction.  The
-    depth-bounded sampler says the opposite of itself: its stream is a sequence of independent
-    draws, and independent draws may repeat a term.  A configuration whose determinization is
-    unaffordable runs exactly that sampler, so the guarantee cannot be assumed for every run.
-
-    The repeats are therefore rejected and counted.  Zero is the size-uniform case, where the
-    guarantee holds.  A positive number is the repair where it does not, and it goes into the run's
-    provenance rather than into a comment.
-
-    Asked through ``optimizer.query`` rather than through a query of our own, so that the sampler's
-    counting construction is the one the loop will use.  A second query object would build it again.
-
-    Args:
-        optimizer (BayesianOptimization): The configured loop, before ``initialize()``.
-        count (int): How many terms to take.
-
-    Returns:
-        tuple[list, int]: The terms in stream order, and how many repeats were rejected.
-
-    Raises:
-        RuntimeError: If the loop has no search space to draw from, or if the stream cannot supply
-            ``count`` distinct terms.  A short design is not a design, and filling it up with
-            repeats would make the baseline evaluate the same network twice.
-    """
-    query = optimizer.query
-    if query is None or optimizer.sampler is None:
-        msg = (
-            "a paired baseline draws its terms from the loop's own sampler, and this loop has "
-            "no search space or no sampler to draw them from"
-        )
-        raise RuntimeError(msg)
-    return distinct_prefix(optimizer.sampler, query, count)
-
-
-def run_ask_tell_search(
-    *,
-    optimizer,
-    f_obj,
-    metrics_by_tree,
-    as_reported,
-    objective,
-    greater_is_better,
-    n_pre_samples,
-    n_iterations,
-    csv_path,
-    pretty_algebra,
-    provenance=None,
-    baseline=False,
-    verbose=True,
-    acquisition_hard_limit=ACQUISITION_HARD_LIMIT_SECONDS,
-    resume_design=None,
-    resumed_value=None,
-):
-    """Run the loop through the ask/tell interface, logging every evaluation as it happens.
-
-    Ask and tell rather than the closed ``optimize()``.  Every evaluated structure, pre-samples and
-    loop passes alike, is written and flushed as it is produced, so results survive an interruption
-    instead of existing only after a successful ``finalize()``.  That is the whole reason this is
-    not four lines.
-
-    Args:
-        optimizer (BayesianOptimization): The configured loop.
-        f_obj (Callable): The objective, as :func:`make_objective` returns it.
-        metrics_by_tree (dict): Its measurement store.
-        as_reported (Callable[[float], float]): The converter from :func:`objective_direction`.
-        objective (str): The metric's name, for the printed summary.
-        greater_is_better (bool): Whether the loop maximizes it directly.
-        n_pre_samples (int): The size of the initial design, drawn before anything is evaluated
-            and then evaluated term by term through the loop's design phase.
-        n_iterations (int): The budget of loop passes.
-        csv_path (str): Where the per-evaluation rows go.
-        pretty_algebra (Callable): The algebra that renders a term for the CSV.
-        provenance (dict): The run's provenance record, written into the header of
-            ``<run>_terms.pickle``, so that the term file identifies its own origin when it travels
-            without the JSON beside it, which is what happens when a pool is trained on one machine
-            and analyzed on another. (Default value = None)
-        baseline (bool): Also run a random search of the same budget from the same initial design.
-            Whether the loop beats drawing at random is a question about the passes only if both
-            start from the same place, so the two share their initial evaluations rather than each
-            drawing their own, which is also why this costs one extra training per pass and not one
-            per evaluation. (Default value = False)
-        verbose (bool): Passed to ``suggest``. (Default value = True)
-        acquisition_hard_limit (float): Seconds after which one acquisition maximization is given up
-            on.  It bounds a legitimate duration, so it belongs to the cell being searched rather
-            than to the code, and a large architecture at a large population can outlast the
-            default. (Default value = ACQUISITION_HARD_LIMIT_SECONDS)
-        resume_design (list | None): The measured design of an earlier run of this
-            configuration, as :func:`load_initial_design` returns it.  Its terms are checked
-            against the design this run draws and its values are taken over rather than measured
-            again, on both paths. (Default value = None)
-        resumed_value (Callable[[dict], float] | None): How a resumed record's metrics become
-            the value the loop maximizes -- what ``f_obj`` would have returned for that term.
-            ``None`` keeps the CIFAR example's convention, ``metrics["accuracy"]`` when greater
-            is better and ``-metrics["objective_value"]`` otherwise; a caller whose objective
-            maps a record differently names its own reading here, or its resumed design seeds
-            the surrogate with a quantity the run's rows do not report.
-
-    Returns:
-        tuple[dict, float, dict]: The loop's result, its wall-clock duration, and the summary to
-            merge into the provenance record.
-    """
-    print(f"Starting Bayesian Optimization: n_pre_samples={n_pre_samples}, "
-          f"n_iterations={n_iterations}")
-    print(f"Logging every evaluated structure to {csv_path}")
-
-    started = time.time()
-    # A pass configuration the loop could not use is refused before the design is drawn or paid,
-    # as ``optimize()`` refuses it for itself.  A run without passes maximizes nothing.
-    if n_iterations > 0:
-        optimizer.check_configuration()
-    # The paired baseline needs its terms before the loop starts, because the ones the loop
-    # initializes on have to be the same objects.  One stream of as many draws as the two runs
-    # together evaluate: on the size-uniform sampler every prefix of that stream is a sample without
-    # replacement, so its first entries are a valid initial design on their own, and the two runs
-    # share a starting point instead of each getting their own.
-    drawn = None
-    repeats_rejected = 0
-    if baseline:
-        with step_budget(
-            f"drawing {n_pre_samples + n_iterations} terms for the paired baseline",
-            ACQUISITION_WARN_SECONDS,
-        ):
-            drawn, repeats_rejected = _draw_prefix(
-                optimizer, n_pre_samples + n_iterations
-            )
-            if repeats_rejected:
-                print(
-                    f"the sampler repeated {repeats_rejected} term(s) while drawing "
-                    f"{n_pre_samples + n_iterations} for the paired design; they were rejected.  "
-                    f"On the size-uniform sampler this number is 0, since every prefix of its "
-                    f"stream is a sample without replacement",
-                    flush=True,
-                )
-
-    with (
-        EvaluationLogger(csv_path, pretty_algebra, provenance=provenance) as logger,
-        EAGenerationLogger(_sibling_path(csv_path, "_ea.csv")) as ea_logger,
-        SurrogateLogger(_sibling_path(csv_path, "_surrogate.csv")) as surrogate_logger,
-    ):
-        # The initial design is the loop's first phase on both paths: drawn before anything is
-        # evaluated, handed out one term at a time, and written as it is measured.  The paired path
-        # hands the loop the head of its own stream, the unpaired path lets the loop draw.  Either
-        # way a run interrupted during its design leaves every network it trained on disk, and a
-        # resumed design is taken over term by term instead of being measured again.
-        #
-        # This used to hold on the paired path only.  The unpaired path drew and evaluated its
-        # design inside ``initialize()``, so its rows were written after the design was complete
-        # and a resumed design had no point at which it could be checked and taken over: a run
-        # that wanted either had to pay a random-search arm of the same budget for it.
-        with step_budget(
-            f"initialization ({n_pre_samples} networks)",
-            n_pre_samples * PER_EVALUATION_WARN_SECONDS,
-        ):
-            if drawn is None:
-                optimizer.initialize(initial_size=n_pre_samples)
-            else:
-                optimizer.initialize(design=drawn[:n_pre_samples])
-            design = list(optimizer.design)
-            if resume_design is not None:
-                _check_resumed_design(resume_design, design)
-            for idx, expected in enumerate(design):
-                suggestion = optimizer.suggest(verbose=verbose)
-                tree = suggestion.candidate
-                if tree != expected:
-                    msg = (
-                        f"the loop handed out design term {idx} out of order: {tree} where the "
-                        f"design holds {expected}, so a value would be written against the "
-                        "wrong network"
-                    )
-                    raise RuntimeError(msg)
-                if resume_design is not None:
-                    # Measured already, in the run this one continues.  The value is taken
-                    # rather than measured again, which is the whole point, and it goes into
-                    # ``metrics_by_tree`` so that nothing downstream can tell the difference.
-                    metrics = resume_design[idx][1]
-                    metrics_by_tree[tree] = metrics
-                    if resumed_value is not None:
-                        value = float(resumed_value(metrics))
-                    else:
-                        value = (
-                            metrics["accuracy"] if greater_is_better
-                            else -metrics["objective_value"]
-                        )
-                    source = " (resumed)"
-                else:
-                    value = f_obj(tree)
-                    # No substitute for a missing measurement: the objective records the metrics
-                    # of every term it evaluates, and a value without them is worth stopping for
-                    # rather than filling in.
-                    if tree not in metrics_by_tree:
-                        msg = (
-                            f"pre-sample {idx} was evaluated, yet the objective recorded no "
-                            f"metrics for it: {tree}"
-                        )
-                        raise KeyError(msg)
-                    metrics = metrics_by_tree[tree]
-                    source = ""
-                # Written before the loop takes the value, so that a value the loop refuses, a
-                # non-finite one, is on disk together with the metrics that explain it.
-                logger.log("pre_sample", idx, tree, metrics,
-                           taken_over=resume_design is not None)
-                print(f"  pre_sample[{idx}]: objective={as_reported(value):.5f} "
-                      f"accuracy={metrics['accuracy']:.4f} "
-                      f"params={metrics['n_params']} "
-                      f"train={metrics['train_seconds']:.1f}s{source}", flush=True)
-                optimizer.observe(tree, value)
-
-        for step in range(n_iterations):
-            acquisition_started = time.time()
-            with step_budget(
-                f"BO step {step}: acquisition optimization",
-                ACQUISITION_WARN_SECONDS,
-                hard_limit_seconds=acquisition_hard_limit,
-            ):
-                # ``record_population``: the frontier read of the acceptance checks is a statement
-                # about one maximization, and it cannot be rebuilt afterwards.  A surrogate refitted
-                # on the whole dataset scores the same population differently, so members that lost
-                # to the pick at the time can beat it later.  It has to be the population as it was
-                # scored, and it is also what carries the per-generation records of the inner
-                # search.
-                suggestion = optimizer.suggest(verbose=verbose, record_population=True)
-            acquisition_seconds = time.time() - acquisition_started
-            # Written before the network trains: the inner search is finished at this point, and a
-            # run interrupted during the training then still holds the generation it produced.
-            ea_logger.log(step, optimizer.last_acquisition_run)
-            surrogate_logger.log(step, optimizer)
-            with step_budget(
-                f"BO step {step}: training the suggested network",
-                PER_EVALUATION_WARN_SECONDS,
-            ):
-                # Not named ``y``: ``f_obj`` closes over the label tensor of that name, and
-                # rebinding it here would clobber it for every later call.
-                objective_value = f_obj(suggestion.candidate)
-            optimizer.observe(suggestion.candidate, objective_value)
-            iteration = suggestion.diagnostics["iteration"] if suggestion.diagnostics else None
-            metrics = metrics_by_tree[suggestion.candidate]
-            logger.log("bo_step", iteration, suggestion.candidate, metrics, suggestion=suggestion,
-                       acquisition_seconds=acquisition_seconds)
-            # The fallback flag decides how this line reads: after a fallback the candidate is a
-            # random sample rather than the acquisition optimizer's choice.  Seeing it live is the
-            # difference between noticing a degraded run and reading it out of the CSV a day later.
-            fallback = (suggestion.diagnostics or {}).get("fallback_used", "?")
-            print(f"  bo_step[{iteration}]: objective={as_reported(objective_value):.5f} "
-                  f"accuracy={metrics['accuracy']:.4f} params={metrics['n_params']} "
-                  f"train={metrics['train_seconds']:.1f}s fallback={fallback}", flush=True)
-
-        result = optimizer.finalize()
-        bo_time = time.time() - started
-
-        # The baseline's own evaluations, after the loop's, so that an interruption here leaves
-        # the Bayesian run complete.  These terms come from the same stream as the shared prefix,
-        # so together with it they are the draws a random search of this budget makes.
-        baseline_rows = []
-        if drawn is not None:
-            for offset, tree in enumerate(drawn[n_pre_samples:]):
-                with step_budget(
-                    f"baseline sample {offset}: training the drawn network",
-                    PER_EVALUATION_WARN_SECONDS,
-                ):
-                    value = f_obj(tree)
-                metrics = metrics_by_tree[tree]
-                logger.log("random_sample", offset, tree, metrics)
-                baseline_rows.append(value)
-                print(f"  random_sample[{offset}]: objective={as_reported(value):.5f} "
-                      f"accuracy={metrics['accuracy']:.4f} params={metrics['n_params']} "
-                      f"train={metrics['train_seconds']:.1f}s", flush=True)
-
-    n_evaluations = n_pre_samples + n_iterations
-    # The same rule as at the pre-samples: a term the loop reports must be one it was given a
-    # value for, and a missing measurement is a fact rather than an empty dict.
-    if result["best_tree"] not in metrics_by_tree:
-        msg = f"the loop returned a best term that was never evaluated: {result['best_tree']}"
-        raise KeyError(msg)
-    best_metrics = metrics_by_tree[result["best_tree"]]
-    print(f"Bayesian Optimization took {bo_time:.2f}s ({n_evaluations} network evaluations, "
-          f"{bo_time / max(n_evaluations, 1):.2f}s per evaluation on average)")
-    print(f"Best {objective} ({'max' if greater_is_better else 'min'}): "
-          f"{as_reported(result['best_y']):.5f}")
-    if "accuracy" in best_metrics:
-        print(f"Best tree's validation accuracy: {best_metrics['accuracy'] * 100:.2f}%")
-    if "objective_value" in best_metrics:
-        print(f"Best tree's validation loss: {best_metrics['objective_value']:.5f}")
-    print(f"Best tree:\n{result['best_tree'].interpret(pretty_algebra())}")
-
-    summary = {
-        "bayesian_optimization_seconds": bo_time,
-        "n_evaluations": n_evaluations,
-        "mean_seconds_per_evaluation": bo_time / max(n_evaluations, 1),
-        "total_training_seconds": sum(m["train_seconds"] for m in metrics_by_tree.values()),
-        # In the metric's own scale and sign, like every other number read out of the loop.  The
-        # value the loop itself maximized stands beside it, named for what it is, because on a loss
-        # objective the two differ and a record that shows only one is ambiguous.
-        "best_objective_value": as_reported(result["best_y"]),
-        "best_maximized_value": float(result["best_y"]),
-        "best_accuracy": best_metrics.get("accuracy"),
-        # Read off the budget rather than taken as a flag.  A loop with no passes evaluates its
-        # initial dataset and stops, and that dataset is a size-uniform sample, so such a run is
-        # random search over the same space, at the same budget, through the same code.  A separate
-        # switch could disagree with the numbers, and this cannot.
-        "run_kind": (
-            "random_search_baseline" if n_iterations == 0
-            else "bayesian_optimization_with_paired_baseline" if baseline
-            else "bayesian_optimization"
-        ),
-        # How many repeats the sampler produced while the design was drawn, and how many the loop
-        # itself had to redraw.  Zero on the size-uniform sampler, where every prefix is a sample
-        # without replacement.  On the depth-bounded sampler the draws are independent and may
-        # repeat, so the number says how much work the rejection had to do.  It is in the record
-        # because a run whose initial design needed repair is a run whose sampler does not supply
-        # what its dataset needs.
-        "initial_repeats_rejected": (
-            repeats_rejected if drawn is not None else optimizer.initial_repeats_rejected
-        ),
-        "completed": True,
-    }
-    if drawn is not None:
-        # The two curves this run produces, at the same budget and from the same initial points.
-        # Both in the metric's own scale and sign, like every other number here.
-        shared = [optimizer.get_state_snapshot()["y_list"][index] for index in range(n_pre_samples)]
-        summary["baseline_best_objective_value"] = as_reported(max([*shared, *baseline_rows]))
-        summary["shared_initial_best_objective_value"] = as_reported(max(shared))
-        summary["baseline_evaluations"] = n_pre_samples + n_iterations
-        summary["shared_initial_evaluations"] = n_pre_samples
-    return result, bo_time, summary
+    return evaluate
 
 
 def write_run_metadata(csv_path, metadata):

@@ -442,8 +442,8 @@ need rather than by topic.
 | `cnn_damg_kernels.py` | the named kernels a run may ask for |
 | `cnn_damg_reference_architectures.py` | published networks as fully concrete literals |
 | `cnn_damg_term_pool.py` | a re-export of `runs/term_pool.py`, kept so that the pools stored under its name still load |
-| `cnn_damg_experiment_utils.py` | the CIFAR layout of a run (`CIFAR_SCHEMA`), the evaluation and the example's driver; the generic parts re-exported from `runs/` |
-| `cnn_damg_cifar_experiment.py` | the CIFAR-10 driver |
+| `cnn_damg_experiment_utils.py` | the CIFAR layout of a run (`CIFAR_SCHEMA`) with the two objectives a run may maximize, and the evaluation; the generic parts re-exported from `runs/` |
+| `cnn_damg_cifar_experiment.py` | the CIFAR-10 driver, on the run layer's `run_search` and `run_paired` |
 | `cnn_damg_verify_reference.py` | the reference training that anchors every comparison |
 
 The repository declares 22 combinators. How often each of them reaches a drawn term is decided by
@@ -480,7 +480,8 @@ dataset already comes from the sampler, so a run with no passes evaluates thirty
 nothing else, through the same code and into the same artifacts. Which kind of run it was is read
 off the pass count rather than off a flag beside it. `--baseline` is the other arrangement: it runs
 a random arm of the same budget from the same initial design, in the same process, which is what
-makes the comparison paired.
+makes the comparison paired. The arm writes files of its own beside the loop's, `<run>_random.csv`
+with its term file and its configuration, and its design rows there are the loop's, taken over.
 
 Every run writes seven artifacts, the CSV it is named after and six beside it: `<run>.csv` with
 one row per evaluation, `<run>_terms.pickle` with the terms themselves, `<run>_config.json` with the
@@ -530,7 +531,8 @@ holds them against each other. The ninth file is the script the run was started 
 | `bo_20260805_r3.sh` | the script that drove the run |
 
 The three phases of the CSV are 20 `pre_sample` rows, the initial design both arms share, 30
-`bo_step` rows, what the loop picked, and 30 `random_sample` rows, the paired random arm. The
+`bo_step` rows, what the loop picked, and 30 `random_sample` rows, the paired random arm, which a
+run today writes into a CSV of its own. The
 configuration is the summary of the file beside it: its counts and its maxima are counts and maxima
 over those rows, which is what makes a truncated or a swapped CSV contradict its neighbor instead
 of being read as the truth.

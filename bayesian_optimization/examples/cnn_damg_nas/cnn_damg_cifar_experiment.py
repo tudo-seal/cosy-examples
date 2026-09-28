@@ -1,9 +1,10 @@
 """A Bayesian-optimization search for CIFAR-10 architectures over a synthesized CNN space.
 
 This module is the driver.  It fixes the search space, picks the target, hands both to
-``BayesianOptimization`` and writes the record of the run.  Everything it does not fix itself comes
-from ``cnn_damg_experiment_utils``: the search program, the ask and tell loop, the evaluation of a
-candidate and the files a run leaves behind.
+``BayesianOptimization`` and writes the record of the run.  The evaluation of a candidate and the
+CIFAR layout of a row come from ``cnn_damg_experiment_utils``; the search program, the loop over the
+design and the passes, the paired random arm, the names a run takes and the files it leaves behind
+from the run layer, :mod:`bayesian_optimization.runs`.
 
 Two things are settings of this driver rather than of the space it searches.
 
@@ -26,6 +27,7 @@ Usage:
 
 import argparse
 import os
+import random
 import time
 import typing
 
@@ -33,7 +35,7 @@ import torch
 import torchvision
 from torchvision import transforms
 
-from bayesian_optimization import BayesianOptimization
+from bayesian_optimization import BayesianOptimization, RandomSearch
 from bayesian_optimization.examples.cnn_damg_nas.cnn_damg_experiment_utils import (
     ACQUISITION_HARD_LIMIT_SECONDS,
     DEFAULT_CROSSOVER_RATE,
@@ -42,15 +44,13 @@ from bayesian_optimization.examples.cnn_damg_nas.cnn_damg_experiment_utils impor
     DEFAULT_SIZE_BOUND,
     build_acquisition_optimizer,
     build_search,
+    cifar_schema,
     dataset_to_tensors,
     describe_repository,
     describe_sampler,
     describe_search,
-    load_initial_design,
-    make_objective,
-    objective_direction,
+    make_evaluate,
     resolve_target_choice,
-    run_ask_tell_search,
     split_train_validation,
     write_run_diagnostics,
     write_run_metadata,
@@ -74,6 +74,15 @@ from bayesian_optimization.examples.cnn_damg_nas.cnn_damg_targets import (
 from bayesian_optimization.examples.cnn_damg_nas.cnn_damg_term_algebras import pretty_term_algebra
 from bayesian_optimization.examples.cnn_damg_nas.recognizable_cnn_damg_repo import (
     RecognizableCNNrepository,
+)
+from bayesian_optimization.runs import (
+    RunArtifacts,
+    RunClaim,
+    StepBudgets,
+    load_design_records,
+    run_paired,
+    run_search,
+    twin_sampler,
 )
 
 # The search space. It starts from cnn_damg_reference_architectures.cifar10_tutorial_repo(), which
@@ -183,6 +192,11 @@ DEFAULT_KERNEL = "damg"
 
 DATA_DIR = "./data"
 
+#: The provenance fields a resumed design has to share with the run that takes it over: the ones
+#: that change what a measured number means.  Population size, budget and kernel may differ,
+#: because they change what the run does with the design and not what the design itself says.
+RESUME_KEYS = ("target_cell", "epochs_per_candidate", "batch_size", "training_repeats")
+
 # CIFAR-10 per-channel normalization statistics, the values the dataset is usually normalized with.
 CIFAR10_MEAN = (0.4914, 0.4822, 0.4465)
 CIFAR10_STD = (0.2470, 0.2435, 0.2616)
@@ -261,8 +275,9 @@ def run_experiment(n_pre_samples: int, n_iterations: int, population_size: int,
         size_bound (int): The bound D of the loop's size-uniform sampler, on the term size.
             (Default value = DEFAULT_SIZE_BOUND)
         baseline (bool): Also run a random search of the same budget from the same initial design,
-            into the same artifacts.  Costs n_iterations extra trainings, not n_pre_samples +
-            n_iterations: the initial design is evaluated once and shared. (Default value = False)
+            into files of its own beside the loop's, named by :func:`random_arm_csv_path`.  Costs
+            n_iterations extra trainings, not n_pre_samples + n_iterations: the initial design is
+            evaluated once and shared. (Default value = False)
         data_dir (str): Where torchvision keeps the CIFAR-10 archive. (Default value = DATA_DIR)
         download (bool): Whether a missing archive may be fetched. Off, so that a run fails at its
             start rather than fetching the dataset once it is under way. (Default value = False)
@@ -276,11 +291,20 @@ def run_experiment(n_pre_samples: int, n_iterations: int, population_size: int,
             up on. It bounds a legitimate duration, so a cell whose acquisition is genuinely
             expensive needs it raised rather than left at the default.
             (Default value = ACQUISITION_HARD_LIMIT_SECONDS)
+        resume_from (str | None): The term pool of an earlier run of this configuration whose
+            initial design is taken over instead of being trained again. (Default value = None)
 
     Returns:
-        tuple: The loop's result and its wall-clock duration.
+        tuple: The loop's result and its wall-clock duration, a design drawn up front included.
     """
-    greater_is_better, as_reported = objective_direction(objective)
+    # Refused before anything is loaded or built: a run is hours long, and a second start over a
+    # taken name would write over the rows of the first.
+    runs = [RunArtifacts(csv_path)]
+    if baseline:
+        runs.append(RunArtifacts(random_arm_csv_path(csv_path)))
+    for run in runs:
+        run.refuse_taken()
+    schema = cifar_schema(objective)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
     if device.type == "cuda":
@@ -362,8 +386,8 @@ def run_experiment(n_pre_samples: int, n_iterations: int, population_size: int,
         print(f"Averaging every objective value over {repeats} trainings, seeds {training_seeds}",
               flush=True)
 
-    f_obj, metrics_by_tree = make_objective(
-        x, y, x_val, y_val, batch_size, greater_is_better,
+    evaluate = make_evaluate(
+        x, y, x_val, y_val, batch_size,
         protocol=training_protocol, x_test=x_test, y_test=y_test,
         repeats=repeats, training_seeds=training_seeds)
 
@@ -425,7 +449,7 @@ def run_experiment(n_pre_samples: int, n_iterations: int, population_size: int,
             "evo_generations": evo_generations,
             "objective_metric": objective,          # "accuracy" (maximized) or "loss" (minimized)
             # The loop itself always maximizes, and a loss objective is negated on the way in.
-            "greater_is_better": greater_is_better,
+            "greater_is_better": schema.objective.greater_is_better,
             "acquisition_function": acquisition,
             # Only read when the acquisition is UCB, but recorded either way: a file that omits it
             # cannot say whether the run took the default or was never asked.
@@ -452,48 +476,89 @@ def run_experiment(n_pre_samples: int, n_iterations: int, population_size: int,
         "search_space_construction_seconds":
             program.provenance["search_space_construction_seconds"],
     }
-    # Written before training starts, so that an interrupted run still carries its provenance,
-    # and rewritten with the final timings once the run completes.
-    print(f"Run configuration written to {write_run_metadata(csv_path, metadata)}")
-
-    resume_design = None
+    records = None
     if resume_from is not None:
-        # The fields that change what a measured number means. Population size, budget and kernel
-        # may differ, because they change what the run does with the design and not what the design
-        # itself says.
-        resume_design = load_initial_design(resume_from, expected={
-            "target_cell": target_cell,
-            "epochs_per_candidate": epochs,
-            "batch_size": batch_size,
-            "training_repeats": repeats,
-        })
-        print(f"Resuming the initial design of {resume_from}: {len(resume_design)} evaluated "
+        # Held against this run's provenance on the fields of RESUME_KEYS, and refused on a
+        # mismatch with the field named, before anything of the run is written.
+        records = load_design_records(resume_from, {key: metadata[key] for key in RESUME_KEYS})
+        print(f"Resuming the initial design of {resume_from}: {len(records)} evaluated "
               f"terms taken over instead of retrained", flush=True)
 
-    result, bo_time, summary = run_ask_tell_search(
-        optimizer=optimizer,
-        f_obj=f_obj,
-        metrics_by_tree=metrics_by_tree,
-        as_reported=as_reported,
-        objective=objective,
-        greater_is_better=greater_is_better,
-        n_pre_samples=n_pre_samples,
-        n_iterations=n_iterations,
-        csv_path=csv_path,
-        pretty_algebra=pretty_term_algebra,
-        provenance=metadata,
-        baseline=baseline,
-        verbose=verbose,
-        acquisition_hard_limit=acquisition_hard_limit,
-        resume_design=resume_design,
-    )
+    common = {
+        "schema": schema,
+        "pretty_algebra": pretty_term_algebra,
+        "n_design": n_pre_samples,
+        "n_passes": n_iterations,
+        "resume": records,
+        # A record of a run before the run layer kept no loop value; its metrics are read under
+        # this run's objective, as they always were, and so are the ones that did keep one.
+        "resumed_value": schema.objective.loop_value,
+        "provenance": metadata,
+        "budgets": StepBudgets(acquisition_hard_limit=acquisition_hard_limit),
+        # refused above and claimed below; the configurations written there are this run's
+        "refuse_taken": False,
+        "verbose": verbose,
+    }
+    # The names are taken where the run first writes, and given back if it fails before its first
+    # evaluation begins -- a refusal of the run layer's, or a signal in the minutes a design drawn
+    # up front costs on a large space -- so that a corrected retry under the same names runs.
+    with RunClaim(runs) as claim:
+        # Written before training starts, so that an interrupted run still carries its
+        # provenance, and rewritten with the final timings once the run completes.
+        print(f"Run configuration written to {write_run_metadata(csv_path, metadata)}")
+        if baseline:
+            random_path = runs[1].path("csv")
+            # The random search draws the stream the design was drawn from, past the design: a
+            # twin of the loop's sampler, seeded as build_search seeded it.
+            random_arm: RandomSearch[typing.Any, typing.Any, typing.Any] = RandomSearch(
+                program.space, program.request,
+                sampler=twin_sampler(program.sampler, optimizer.query, random.Random(seed)),
+                seed=seed,
+            )
+            random_metadata = {
+                **metadata,
+                "paired_with": os.path.basename(csv_path),
+                "random_search_sampler": "a twin of bo_sampler: its counting, its seed",
+                # its design is the loop's rows, taken over; how they were drawn, and what that
+                # cost, is the loop's record
+                "design_taken_over_from": os.path.basename(csv_path),
+            }
+            write_run_metadata(random_path, random_metadata)
+            outcomes = run_paired(
+                {"bo": optimizer, "random": random_arm}, claim.evaluate(evaluate),
+                csv_paths={"bo": csv_path, "random": random_path}, **common,
+            )
+            metadata["paired_with"] = os.path.basename(random_path)
+            write_run_metadata(random_path, {**random_metadata, **outcomes["random"].summary})
+        else:
+            outcomes = {"bo": run_search(optimizer, claim.evaluate(evaluate),
+                                         csv_path=csv_path, **common)}
 
-    metadata.update(summary)
+    loop = outcomes["bo"]
+    metadata.update(loop.summary)
     write_run_metadata(csv_path, metadata)
+    print(f"The run took {loop.seconds:.2f}s: {loop.summary['evaluated_here']} evaluations "
+          f"made here, {loop.summary['taken_over']} taken over")
+    print(f"Best {objective} ({'max' if schema.objective.greater_is_better else 'min'}): "
+          f"{loop.summary['best_objective_value']:.5f}")
+    print(f"Best tree:\n{loop.result['best_tree'].interpret(pretty_term_algebra())}")
     # Last, and after the results are on disk: a read that raises then costs the diagnostics
     # rather than the run.
-    write_run_diagnostics(csv_path, optimizer, result)
-    return result, bo_time
+    write_run_diagnostics(csv_path, optimizer, loop.result)
+    return loop.result, loop.seconds
+
+
+def random_arm_csv_path(csv_path: str) -> str:
+    """The CSV of a paired run's random arm: ``run.csv`` becomes ``run_random.csv``.
+
+    Args:
+        csv_path (str): The loop's CSV.
+
+    Returns:
+        str: The random arm's, beside it; every other file of the arm is named after it.
+    """
+    base, extension = os.path.splitext(csv_path)
+    return f"{base}_random{extension or '.csv'}"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -548,7 +613,8 @@ def build_parser() -> argparse.ArgumentParser:
                              "convergence conditions ask for a rate above 0.")
     parser.add_argument("--baseline", action="store_true",
                         help="Also run a random search of the same budget from the SAME initial "
-                             "design, into the same artifacts (phase 'random_sample'). Costs "
+                             "design, into <run>_random.csv and the files beside it (phase "
+                             "'random_sample', the design rows taken over from the loop's). Costs "
                              "--n-iterations extra trainings, since the initial design is shared.")
     parser.add_argument("--sampling", choices=["size-uniform", "depth-bounded"],
                         default="size-uniform",
@@ -596,11 +662,11 @@ def build_parser() -> argparse.ArgumentParser:
                              "UpperConfidenceBound.")
     parser.add_argument("--resume-from", type=str, default=None,
                         help="Path to the <run>_terms.pickle of an interrupted run whose initial "
-                             "design is taken over instead of being trained again.  Cell, epochs "
-                             "and repeats have to agree, and the loaded terms have to be the ones "
-                             "this run draws, and both are checked rather than assumed.  With "
-                             "or without --baseline: the design is the loop's first phase on "
-                             "both paths.")
+                             "design is taken over instead of being trained again.  Cell, epochs, "
+                             "batch size and repeats have to agree, and the loaded terms have to "
+                             "be the ones this run draws, and both are checked rather than "
+                             "assumed.  With or without --baseline: the design is the loop's "
+                             "first phase on both paths.")
     parser.add_argument("--acquisition-hard-limit", type=float,
                         default=ACQUISITION_HARD_LIMIT_SECONDS,
                         help="Seconds after which ONE acquisition maximization is given up on.  It "
