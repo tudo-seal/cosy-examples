@@ -99,7 +99,11 @@ class RunClaim:
         return self
 
     def evaluate(self, measure: Callable[[Any], Any]) -> Callable[[Any], Any]:
-        """Wrap a run's evaluation so that its first call marks the end of the window."""
+        """Wrap a run's evaluation so that its first call marks the end of the window.
+
+        An evaluation of rounds, ``run_search``'s ``evaluate_many``, is wrapped the same way: its
+        first call, the first round asked, ends the window.
+        """
 
         def evaluate(term: Any) -> Any:
             if not self.evaluations_begun:

@@ -294,3 +294,32 @@ def test_a_name_taken_between_the_refusal_and_the_claim_stays_its_holder_s(tmp_p
         pass
     assert _names(tmp_path) == ["y_config.json"]
     assert (tmp_path / "y_config.json").read_text() == "another run's claim\n"
+
+
+def test_a_claim_wraps_an_evaluation_of_rounds_as_it_wraps_one_of_terms(tmp_path):
+    """Handed to run_search as ``evaluate_many``, the wrapped evaluation ends the window at the
+    first round it is asked: a training that gives out in it keeps the run's files."""
+    import random
+
+    from cosy.search import SizeUniformSampler
+
+    from bayesian_optimization import BayesianOptimization
+    from bayesian_optimization.acquisition_optimizer import SampleMaximizer
+    from tests.spaces import LIST, list_space
+
+    loop = BayesianOptimization(
+        list_space(), LIST, sampler=SizeUniformSampler(6, random.Random(2)), seed=2,
+        maximizer=SampleMaximizer(SizeUniformSampler(6, random.Random(102)), 8), max_outstanding=2,
+    )
+
+    def gives_out(terms: list[Any]) -> Any:
+        yield terms[0], _metrics(terms[0])
+        raise RuntimeError("the second training gave out")
+
+    csv_path = tmp_path / "x.csv"
+    with pytest.raises(RuntimeError, match="gave out"), RunClaim([RunArtifacts(str(csv_path))]) as claim:
+        write_run_metadata(str(csv_path), {"a": "configuration"})
+        run_search(loop, _metrics, schema=SCHEMA, csv_path=str(csv_path), pretty_algebra=dict,
+                   echo=lambda line: None, refuse_taken=False, n_design=2, n_passes=0,
+                   batch_size=2, evaluate_many=claim.evaluate(gives_out))
+    assert {"x.csv", "x_config.json", "x_terms.pickle"} <= set(_names(tmp_path))
