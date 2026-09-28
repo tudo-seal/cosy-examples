@@ -99,9 +99,10 @@ def write_run_diagnostics(csv_path, optimizer, result):
     # Only a Gaussian process has the factor and the weights the read takes apart, read off what
     # the posterior has, as the per-pass log reads them; for a posterior without them it is null.
     whole = optimizer.surrogate_over_dataset() if terms else None
+    # Leaving each observation out against the others takes two of them.
     calibration = (
         read_calibration(whole)
-        if whole is not None and reads_as_a_gaussian_process(whole)
+        if whole is not None and reads_as_a_gaussian_process(whole) and len(whole.X_train_) >= 2
         else None
     )
 

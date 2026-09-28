@@ -240,7 +240,10 @@ class SurrogateLogger:
         # its class.  One that has not leaves its cells empty rather than failing the run after its
         # design.
         gaussian = reads_as_a_gaussian_process(surrogate)
-        calibration = read_calibration(surrogate) if gaussian else None
+        # The leave-one-out read leaves each observation out against the others, so it needs two.
+        calibration = (
+            read_calibration(surrogate) if gaussian and len(surrogate.X_train_) >= 2 else None
+        )
 
         # The same split by parity that the diagnostics use, over the data this pass saw.  The
         # cells stay empty where the split is not one a fit read is about:

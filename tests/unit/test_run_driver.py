@@ -264,3 +264,17 @@ def test_a_bayesian_design_is_on_disk_row_by_row_once_and_in_the_order_measured(
     assert [row["phase"] for row in rows[4:]] == ["bo_step"]
     _header, records = read_term_pool(tmp_path / "bo_terms.pickle")
     assert [record.term for record in records[:4]] == measured[:4]
+
+
+def test_a_bayesian_run_on_one_observation_is_not_ended_by_its_reads(tmp_path):
+    """A leave-one-out read needs a second observation to leave out against; with one, its cells
+    stay empty, as every read's do whose input is not there, rather than the run being ended."""
+    from bayesian_optimization.runs import write_run_diagnostics
+
+    _run(_bo(1), _metrics, tmp_path / "run.csv", n_design=1, n_passes=1)
+    assert _rows(tmp_path / "run_surrogate.csv")[0]["calibration_root_mean_square"] == ""
+
+    loop = _bo(2)
+    outcome = _run(loop, _metrics, tmp_path / "one.csv", n_design=1, n_passes=0)
+    diagnostics = write_run_diagnostics(str(tmp_path / "one.csv"), loop, outcome.result)
+    assert diagnostics["calibration"] is None
