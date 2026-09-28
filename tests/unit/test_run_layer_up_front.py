@@ -315,3 +315,34 @@ def test_a_design_an_initializer_of_the_caller_s_draws_is_the_one_a_pair_runs_an
     assert "design_drawn_up_front" not in paired["bo"].summary
     _measured(tmp_path, "again", _initialized(1),
               resume=load_design_records(str(tmp_path / "a_terms.pickle"), {}), n_passes=1)
+
+
+@pytest.mark.parametrize("case", ["sizes differ", "no reading", "both ways", "no design"])
+def test_a_pair_refuses_its_first_run_s_arguments_before_it_draws(tmp_path, monkeypatch, case):
+    """What the first run would refuse, a pair refuses before its draw up front, which on a large
+    program costs the counting tables."""
+    import bayesian_optimization.runs.driver as driver
+
+    pool = _measured(tmp_path, "first", _bo(1), n_design=3)
+    records = load_design_records(pool, {})
+    kept_none = [
+        type(record)(record.phase, record.index, record.term, record.metrics) for record in records
+    ]
+    arguments = {
+        "sizes differ": {"n_design": 4, "resume": records},
+        "no reading": {"resume": kept_none},
+        "both ways": {"design": [record.term for record in records], "resume": records},
+        "no design": {"n_design": 0},
+    }[case]
+    draws: list[Any] = []
+    draw = driver.draw_design
+    monkeypatch.setattr(driver, "draw_design",
+                        lambda *args, **kwargs: draws.append(1) or draw(*args, **kwargs))
+    loop = _bo(1)
+    with pytest.raises(ValueError):
+        run_paired(
+            {"bo": loop, "random": _twin_of(loop, 1)}, _metrics, schema=SCHEMA, n_passes=1,
+            csv_paths={"bo": str(tmp_path / "p.csv"), "random": str(tmp_path / "r.csv")},
+            pretty_algebra=dict, echo=_quiet, **arguments,
+        )
+    assert draws == [], "drawn before the refusal"

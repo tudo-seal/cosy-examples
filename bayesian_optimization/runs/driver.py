@@ -188,6 +188,61 @@ def _draw_up_front(strategy, size, *, then, design, budgets, echo):
     return head, DesignDraw(size, then, repeats, seconds, drawn=design is None)
 
 
+def _design_of(strategy, *, n_design, n_passes, design, resume, resumed_value, objective):
+    """The design a run starts from, refused where the run cannot start from it.
+
+    Refused before anything is drawn, opened or paid, by :func:`run_search` for its own run and by
+    :func:`run_paired` for its first run before it draws up front.
+
+    Returns:
+        tuple: The resumed records, their values (None unless resumed), the design's terms (None
+            where the strategy draws them), the design's source and its size.
+
+    Raises:
+        ValueError, TypeError, RuntimeError: As :func:`run_search` says.
+    """
+    if design is not None and resume is not None:
+        raise ValueError("a design is given either as terms or as resumed records, not both")
+    if n_passes < 0:
+        raise ValueError(f"a budget of passes is a count, not {n_passes}")
+    values: list[float] | None = None
+    records: list[TermRecord] = []
+    terms: list[Any] | None = None
+    if resume is not None:
+        records = list(resume)
+        values = _resumed_values(records, resumed_value, objective)
+        terms = [record.term for record in records]
+        source = "resumed"
+    elif design is not None:
+        terms = list(design)
+        source = "terms"
+    else:
+        if n_design is None:
+            raise ValueError("n_design is required when the strategy draws the design")
+        source = "drawn"
+    if terms is not None and n_design is not None and n_design != len(terms):
+        msg = f"n_design is {n_design}, and the design handed over has {len(terms)} terms"
+        raise ValueError(msg)
+    size = len(terms) if terms is not None else n_design
+    assert size is not None
+    if size < 0:
+        raise ValueError(f"a design holds a non-negative number of terms, not {size}")
+    if size + n_passes == 0:
+        raise ValueError("a run of no design and no passes evaluates nothing and has no result")
+    if isinstance(strategy, BayesianOptimization) and size == 0 and n_passes > 0:
+        raise ValueError(
+            "Bayesian optimization conditions its first pass on the design, and a design of no "
+            "terms leaves nothing to condition"
+        )
+    if terms is not None:
+        _require_hashable(terms, "the design")
+        if len(set(terms)) != len(terms):
+            raise ValueError("the design repeats a term: a repeated design term is an evaluation "
+                             "spent on a value the dataset already holds")
+    _require_uninitialized(strategy)
+    return records, values, terms, source, size
+
+
 def _draws_from_its_stream(strategy: AskTellLoop) -> bool:
     """Whether a Bayesian loop's design is the head of its own sampler's stream.
 
@@ -298,45 +353,10 @@ def run_search(
     budgets = budgets if budgets is not None else StepBudgets()
     echo = echo if echo is not None else functools.partial(print, flush=True)
     # --- Everything that can be refused is refused before anything is drawn, opened or paid.
-    if design is not None and resume is not None:
-        raise ValueError("a design is given either as terms or as resumed records, not both")
-    if n_passes < 0:
-        raise ValueError(f"a budget of passes is a count, not {n_passes}")
-    values: list[float] | None = None
-    records: list[TermRecord] = []
-    terms: list[Any] | None = None
-    if resume is not None:
-        records = list(resume)
-        values = _resumed_values(records, resumed_value, schema.objective)
-        terms = [record.term for record in records]
-        source = "resumed"
-    elif design is not None:
-        terms = list(design)
-        source = "terms"
-    else:
-        if n_design is None:
-            raise ValueError("n_design is required when the strategy draws the design")
-        source = "drawn"
-    if terms is not None and n_design is not None and n_design != len(terms):
-        msg = f"n_design is {n_design}, and the design handed over has {len(terms)} terms"
-        raise ValueError(msg)
-    size = len(terms) if terms is not None else n_design
-    assert size is not None
-    if size < 0:
-        raise ValueError(f"a design holds a non-negative number of terms, not {size}")
-    if size + n_passes == 0:
-        raise ValueError("a run of no design and no passes evaluates nothing and has no result")
-    if isinstance(strategy, BayesianOptimization) and size == 0 and n_passes > 0:
-        raise ValueError(
-            "Bayesian optimization conditions its first pass on the design, and a design of no "
-            "terms leaves nothing to condition"
-        )
-    if terms is not None:
-        _require_hashable(terms, "the design")
-        if len(set(terms)) != len(terms):
-            raise ValueError("the design repeats a term: a repeated design term is an evaluation "
-                             "spent on a value the dataset already holds")
-    _require_uninitialized(strategy)
+    records, values, terms, source, size = _design_of(
+        strategy, n_design=n_design, n_passes=n_passes, design=design, resume=resume,
+        resumed_value=resumed_value, objective=schema.objective,
+    )
     artifacts = RunArtifacts(csv_path)
     if refuse_taken:
         artifacts.refuse_taken()
@@ -563,6 +583,12 @@ def run_paired(
     }
     first = names[0]
     leader = strategies[first]
+    # The first run refuses its design before the draw up front, which on a large program costs
+    # the counting tables, not after it.
+    _design_of(
+        leader, n_design=n_design, n_passes=n_passes, design=design, resume=resume,
+        resumed_value=resumed_value, objective=schema.objective,
+    )
     leader_design, drawn = design, None
     if n_passes > 0 and _draws_from_its_stream(leader):
         # The design and the other arms' terms from the leader's own sampler, up front, so that
