@@ -134,7 +134,7 @@ def test_a_design_resumed_from_a_pool_is_taken_over_and_not_evaluated(tmp_path):
 
 
 def test_a_row_says_whether_this_run_measured_it_or_took_it_over(tmp_path):
-    """U12's other half: a resumed row is on disk like a measured one, and must say which it is."""
+    """A resumed row is on disk like a measured one, and must say which it is."""
     _run(_random(5), _metrics, tmp_path / "first.csv", n_design=3, n_passes=1)
     assert [row["taken_over"] for row in _rows(tmp_path / "first.csv")] == ["False"] * 4
     _header, records = read_term_pool(tmp_path / "first_terms.pickle")
