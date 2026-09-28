@@ -705,8 +705,10 @@ def run_paired(
         hold_resumed_design=drawn is None, **common,
     )}
     header, records = read_term_pool(RunArtifacts(csv_paths[first]).path("terms"))
+    # in the order the design was drawn in, whatever order its rows completed in
     shared = ResumedDesign(
-        [record for record in records if record.phase == DESIGN_PHASE],
+        sorted((record for record in records if record.phase == DESIGN_PHASE),
+               key=lambda record: record.index),
         header.get("design_origin", "drawn"),
     )
     # A design the first run took over under a reading carries that reading's values, which the

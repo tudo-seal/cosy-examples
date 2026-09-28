@@ -149,3 +149,26 @@ def test_a_pair_refuses_a_round_one_of_its_arms_cannot_hold(tmp_path):
             pretty_algebra=dict, echo=_quiet, batch_size=2,
         )
     assert list(tmp_path.iterdir()) == []
+
+
+def test_a_design_measured_out_of_order_resumes_in_its_order(tmp_path):
+    """The pool keeps the design's rows in the order they completed; a resume takes the design
+    over in the order it was drawn, by the rows' design index, and holds it against its stream."""
+    from bayesian_optimization.runs import load_design_records
+
+    _run(tmp_path / "first.csv", _bo(3), n_design=4, n_passes=0, batch_size=2,
+         evaluate_many=_backwards([]))
+    records = load_design_records(str(tmp_path / "first_terms.pickle"), {})
+    assert [record.index for record in records] == [0, 1, 2, 3]
+
+    resumed = _run(tmp_path / "again.csv", _bo(3), resume=records, n_passes=1)
+    assert resumed.summary["taken_over"] == 4
+    loop = _bo(3)
+    paired = run_paired(
+        {"bo": loop, "random": RandomSearch(list_space(), LIST, sampler=twin_sampler(
+            loop.sampler, loop.query, random.Random(3)), seed=3)},
+        _metrics, schema=SCHEMA, n_passes=1, resume=records,
+        csv_paths={"bo": str(tmp_path / "p.csv"), "random": str(tmp_path / "r.csv")},
+        pretty_algebra=dict, echo=_quiet,
+    )
+    assert paired["random"].summary["taken_over"] == 4

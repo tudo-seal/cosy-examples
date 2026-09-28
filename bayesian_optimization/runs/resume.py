@@ -93,8 +93,9 @@ def load_design_records(path, expected, phase="pre_sample"):
         phase (str): Which phase's records to take. (Default value = "pre_sample")
 
     Returns:
-        ResumedDesign: The records of that phase, in the order they were measured, with where the
-            pool's design came from.
+        ResumedDesign: The records of that phase in the order of their index, the order the design
+            was drawn in, whatever order a run in rounds measured them in; with where the pool's
+            design came from.
 
     Raises:
         ValueError: If the pool carries no matching provenance, or none of the requested phase.
@@ -114,7 +115,10 @@ def load_design_records(path, expected, phase="pre_sample"):
         )
         raise ValueError(msg)
 
-    design = [record for record in records if record.phase == phase]
+    # By index: a run in rounds writes a design's rows as they complete, and a resume holds the
+    # design against its stream term by term.
+    design = sorted((record for record in records if record.phase == phase),
+                    key=lambda record: record.index)
     if not design:
         phases = sorted({record.phase for record in records})
         msg = f"{path} holds no {phase!r} records; it has {phases}"
