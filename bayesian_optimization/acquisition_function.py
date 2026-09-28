@@ -27,8 +27,8 @@ class Surrogate(Protocol):
     """What conditions a posterior on a pass's data, in place of the Gaussian process.
 
     At every pass ``fit`` is handed the distinct pairs of the dataset, in the order their terms
-    first appeared -- every row, under repeated measurements -- and answers a
-    :class:`MarginalPosterior`.  The loop keeps a copy of every
+    first appeared -- every row, under repeated measurements, and, in a round, each pending pass at
+    its assumed value -- and answers a :class:`MarginalPosterior`.  The loop keeps a copy of every
     posterior it answers, so ``fit`` may refit the surrogate and answer the surrogate itself, as a
     scikit-learn estimator does.  The diagnostics hand a copy of the surrogate the pairs they
     choose -- a half of them for a held-out fit, all of them for a calibration -- so that a state it

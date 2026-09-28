@@ -30,7 +30,9 @@ EA_CSV_COLUMNS = [
 
 SURROGATE_CSV_COLUMNS = [
     "bo_iteration",
-    "n_train",                        # how many pairs the pass conditioned on
+    # how many pairs the pass conditioned on, in a round the pending passes at their assumed values
+    # among them
+    "n_train",
     "log_marginal_likelihood",
     # The leave-one-out calibration, per pass rather than once at the end.  Read the two spreads
     # together: the spread about zero and the spread about their own mean differ by the bias, which
@@ -217,6 +219,11 @@ class SurrogateLogger:
 
     The held-out fit costs one extra Gaussian-process fit per pass, which is seconds at these
     dataset sizes against a pass that trains a neural network.
+
+    In a round a pass's surrogate holds the passes pending before it at their assumed values, and
+    the reads of that surrogate count them: its ``n_train``, and its calibration, whose residual at
+    an assumed value is the one the model was built to reproduce.  The held-out fit and the reads
+    over the finished run condition on observations only.
     """
 
     def __init__(self, path):

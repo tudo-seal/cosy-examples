@@ -78,7 +78,7 @@ class RandomSearch(AskTellLoop[NT, T, G]):
 
     @property
     def terms_skipped(self) -> int:
-        """How many terms of the stream the passes skipped because the dataset already held them.
+        """How many terms of the stream the passes skipped because the dataset held them or they were pending.
 
         Zero under the size-uniform sampler after a drawn design.  After a design handed over, it
         counts the design terms the stream delivers again; under a sampler that draws with

@@ -759,8 +759,10 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         conditioned_x, conditioned_y = self._conditioning_pairs()
         # A pass made while others are outstanding conditions on them too, each at the value its
         # own posterior expected at its pick (the kriging believer): the next pick then moves away
-        # from what is pending rather than onto it.  The assumed values touch this surrogate only,
-        # never the dataset, the incumbent, the trace or the answer.
+        # from what is pending rather than onto it.  The assumed values touch this pass's surrogate
+        # and what it answers -- its incumbent under repeated measurements, the mean and deviation
+        # at the pick its trace row records -- and nothing observed: not the dataset, a trace row's
+        # observations, the answer or the whole-dataset surrogate.
         pending = self._pending()
         pending_terms = [entry.suggestion.candidate for entry in pending]
         if not conditioned_x:
@@ -1014,8 +1016,9 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         between fits, and a run makes the same passes with its diagnostics and without them.
 
         Args:
-            terms (Sequence[Any]): The terms to condition on, pairwise distinct.
-            values (Sequence[float]): Their observed values.
+            terms (Sequence[Any]): The terms to condition on, pairwise distinct, or every row
+                under repeated measurements, a round's pending passes among them.
+            values (Sequence[float]): Their values, observed or, for a pending pass, assumed.
             diagnostic (bool): A fit for a diagnostic, not for a pass. (Default value = False)
 
         Returns:
@@ -1063,7 +1066,8 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
 
         Raises:
             RuntimeError: If the dataset is empty.
-            ValueError: If it gives one term two different values (see :meth:`_distinct_pairs`).
+            ValueError: If it gives one term two different values without repeated measurements
+                (see :meth:`_distinct_pairs`).
         """
         terms, values = self._conditioning_pairs()
         if not terms:
@@ -1105,7 +1109,8 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         the odd ones, a split that keeps the training set spread over the space.
 
         Args:
-            terms (Sequence[Any]): The terms to condition on, pairwise distinct.
+            terms (Sequence[Any]): The terms to condition on, pairwise distinct, or rows that may
+                repeat a term under repeated measurements.
             values (Sequence[float]): Their observed values, in the same order.
 
         Returns:
@@ -1113,8 +1118,9 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
 
         Raises:
             ValueError: If the two sequences differ in length, if there is nothing to condition
-                on, or if a term appears twice, which is the same rule the loop conditions under,
-                and a repeated term with two values is the case :meth:`_distinct_pairs` refuses.
+                on, or, without repeated measurements, if a term appears twice, which is the same
+                rule the loop conditions under, and a repeated term with two values is the case
+                :meth:`_distinct_pairs` refuses.
         """
         chosen = list(terms)
         observed = [float(value) for value in values]

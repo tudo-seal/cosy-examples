@@ -22,10 +22,12 @@ class TraceRecord:
             what :attr:`fallback_used` is beside it for.
         mean (float): ``m_D`` at the pick, from the surrogate of that pass.
         deviation (float): ``s_D`` at the pick.
-        incumbent (float): The largest value observed *before* the pass.  Without repeated
-            measurements it is the ``y*`` the acquisition was built with; with them the acquisition
-            compared against the largest posterior mean over the measured terms, which the pass's
-            diagnostics carry as ``incumbent``.
+        incumbent (float): The largest value observed *before* the row.  With one suggestion
+            outstanding at a time and each term measured once it is the ``y*`` the acquisition was
+            built with.  In a round the rows arrive in the order the values do, so the pass may
+            have been built with an older one; under repeated measurements the acquisition compared
+            against the largest posterior mean over the measured terms.  Either way the pass's
+            diagnostics carry what it compared against as ``incumbent``.
         observed (float): The value the objective returned at the pick.
         best (float): The largest value observed after the pass.
         fallback_used (bool): Whether the maximization returned an already evaluated term and the
@@ -73,6 +75,10 @@ def trace_rows(records: Sequence[TraceRecord]) -> list[tuple[object, ...]]:
 @dataclass(frozen=True)
 class TraceRead:
     """What a whole run says about itself, read off its best-value curve and its per-pass traces.
+
+    The rows are read in the order they were written, which is the order the values arrived: one
+    suggestion at a time, the order of the picks; in rounds, the order the evaluations completed,
+    so ``acquisition_first``, ``acquisition_last`` and ``improvements`` go by completion there.
 
     Attributes:
         passes (int): How many passes the trace covers.

@@ -199,8 +199,9 @@ A caller who evaluates side by side holds several suggestions at once: `max_outs
 takes their values back in any order. The design goes out k terms at a time, and the passes begin
 once every design term has its value. A Bayesian pass made while others are pending conditions its
 surrogate on each pending pick at the mean its own posterior expected there -- the kriging
-believer -- and never proposes a pending term; the assumed values touch that surrogate only, never
-the dataset, the trace or the answer. A pass is labelled by the passes suggested before it. The
+believer -- and never proposes a pending term; the assumed values touch that pass's surrogate and
+what it answers (its incumbent under repeated measurements, the mean and deviation at the pick its
+trace row records), never the dataset, a trace row's observations or the answer. A pass is labelled by the passes suggested before it. The
 run layer's `run_search(..., batch_size=k, evaluate_many=...)` runs a search in such rounds and
 writes each evaluation as it completes. At k = 1, the default, the loop alternates as above.
 
@@ -340,7 +341,8 @@ a kernel with an empty one.
 
 A surrogate of the caller's own replaces the Gaussian process as `surrogate_model=`: a `Surrogate`,
 whose `fit(terms, values)` is handed, at every pass, the distinct pairs of the dataset in the order
-their terms first appeared -- every row, under repeated measurements -- and answers a posterior, anything with `predict(X, return_std=...)`.
+their terms first appeared -- every row, under repeated measurements, and, in a round, each pending
+pass at its assumed value -- and answers a posterior, anything with `predict(X, return_std=...)`.
 Each pass keeps a copy of that posterior, so that a later fit cannot change what an earlier pass
 recorded, and a scikit-learn estimator, which refits itself, can be passed as it is. The
 diagnostics fit a copy of the surrogate on the pairs they choose, so that a surrogate with a state of
@@ -374,7 +376,8 @@ run cannot maximize two different functions without anything recording which.
 
 An acquisition of the caller's own takes the place of a name: an `AcquisitionFactory`, a callable
 `(gp, *, incumbent, known_points)` called once per pass with the surrogate that pass fitted, the
-incumbent and the points already observed -- none under repeated measurements, where a measured
+incumbent and the points already observed or pending -- only the pending ones under repeated
+measurements, where a measured
 term may be measured again -- and answering a new `AcquisitionFunction` that scores with that
 surrogate and holds those points, so that its known-point floor keeps them below every novel
 candidate. Any callable is taken for a factory, and a class with that signature, such as

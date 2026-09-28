@@ -5,7 +5,8 @@ evaluations can run side by side.  The design is handed out k terms at a time, a
 only once every design term has its value.  A pass made while others are pending conditions its
 surrogate on the real pairs and, for each pending pass, on the value the posterior expected at that
 pick (the kriging believer): the pending terms are known points, and the loop never proposes one
-twice.  Nothing of those assumed values enters the dataset, the trace or the answer.  At k = 1 the
+twice.  Those assumed values reach that pass's surrogate and what it answers, never the dataset, a
+trace row's observations or the answer.  At k = 1 the
 loop is the one it always was.
 """
 
