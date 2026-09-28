@@ -4,6 +4,7 @@ Nothing here depends on one search space.  The check that a repository's abstrac
 alphabet of the program it synthesizes is the caller's, see :func:`build_search`.
 """
 
+import copy
 import random
 import time
 from dataclasses import dataclass
@@ -165,6 +166,64 @@ class DeterminizedSizeUniformSampler:
     def forget(self):
         """Drop the cached counting construction."""
         self._inner.forget()
+
+    def twin(self, rng):
+        """A sampler of the same program that draws its stream from ``rng`` and shares the table.
+
+        The counting table depends on the program and the bound alone, and it is the expensive
+        part: minutes on a large program.  A second sampler of the same program, a paired
+        comparison's other arm, takes it over instead of counting again.  It is built here first
+        where it has not been, since a table copied unbuilt would be built by each sampler.  The
+        inner sampler is always queried with this sampler's own query, so the two share the
+        cached table whatever query their loops hand them.
+
+        Args:
+            rng (random.Random): The twin's source of randomness.
+
+        Returns:
+            DeterminizedSizeUniformSampler: The twin.
+        """
+        self._inner.at_least(self._query, 1)
+        twin = copy.copy(self)
+        twin._inner = copy.copy(self._inner)
+        twin._inner.rng = rng
+        return twin
+
+
+def twin_sampler(sampler, query, rng):
+    """A sampler that draws the stream ``sampler`` draws, from ``rng``, sharing its table.
+
+    What a paired comparison's second arm needs: the stream the first arm's design was drawn from,
+    past the design, without counting the program again.  Given a random source seeded as the
+    first sampler's was, the twin draws the same terms in the same order.
+
+    A sampler that counts, cosy's ``SizeUniformSampler``, caches its table per query object: the
+    table is built here for ``query`` before it is shared, and a twin drawing for another query
+    object counts again.  :class:`DeterminizedSizeUniformSampler` queries its own program and
+    shares its table whatever query it is handed.  A sampler that does not count has nothing to
+    share and is copied with the new random source.
+
+    Args:
+        sampler: The sampler to twin.
+        query: The query it draws for.
+        rng (random.Random): The twin's source of randomness.
+
+    Returns:
+        A sampler of the same kind.
+
+    Raises:
+        TypeError: If the sampler names no random source a twin could draw from.
+    """
+    if isinstance(sampler, DeterminizedSizeUniformSampler):
+        return sampler.twin(rng)
+    if not hasattr(sampler, "rng"):
+        msg = f"{type(sampler).__name__} names no rng, so there is no stream to draw a twin of"
+        raise TypeError(msg)
+    if isinstance(sampler, SizeUniformSampler):
+        sampler.at_least(query, 1)
+    twin = copy.copy(sampler)
+    twin.rng = rng
+    return twin
 
 
 @dataclass(frozen=True)

@@ -38,6 +38,7 @@ from .search_program import (
     build_search,
     describe_sampler,
     describe_search,
+    twin_sampler,
 )
 from .term_pool import (
     FORMAT,
@@ -97,6 +98,7 @@ __all__ = [
     "run_paired",
     "run_search",
     "step_budget",
+    "twin_sampler",
     "write_run_diagnostics",
     "write_run_metadata",
 ]
