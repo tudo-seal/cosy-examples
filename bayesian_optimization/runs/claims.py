@@ -6,7 +6,7 @@ import contextlib
 import os
 import signal
 import threading
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from typing import Any
 
 from .artifacts import RunArtifacts, metadata_path_for
@@ -46,10 +46,15 @@ class RunClaim:
     Until the first evaluation begins, a failure gives every file of the runs back, so that a
     corrected retry under the same names runs: the run layer's own refusals come after the driver
     wrote its configurations.  The termination signals a setup killed there receives -- SIGTERM,
-    and SIGHUP, which ``tmux kill-session`` sends -- are caught in that window only, where the
-    main thread can catch them and the process does not ignore them; the files go back and the
-    process is terminated by the same signal.  From the first evaluation on nothing is removed: a
-    training that gives out keeps its files as evidence, and its names.
+    and SIGHUP, which ``tmux kill-session`` sends -- are caught in that window only, from before
+    the names are taken, where the main thread can catch them and they would terminate the process:
+    a signal the process ignores stays ignored, and one the caller handles stays the caller's.  The
+    files go back with the signals held, so that a second one cannot cut the give-back short, and
+    the process is then terminated by the signal.  From the first evaluation on nothing is removed:
+    a training that gives out keeps its files as evidence, and its names.  The handlers are the
+    caller's again from the first evaluation, or, where it runs in another thread, from the end of
+    the claim; a signal in between still terminates the run, its files kept.  A claim does not
+    nest: an inner one's first evaluation does not end an outer one's window.
 
     What goes back: every file named after the runs, except one that is another run's CSV with
     that run's configuration beside it; a directory only if it is empty, since what a run keeps in
@@ -75,8 +80,22 @@ class RunClaim:
     def __enter__(self) -> RunClaim:
         for run in self.runs:
             run.refuse_taken()
-        _claim_names([run.path("csv") for run in self.runs])
+        # Caught before the names are taken, so that a signal between the two leaves nothing.
         self._caught = _catch_terminations()
+        taken: list[str] = []
+        try:
+            _claim_names([run.path("csv") for run in self.runs], taken)
+        except BaseException as failure:
+            # Only the configurations this claim created go back: one another run holds, which
+            # refused this claim, is that run's.
+            with _signals_held():
+                for config in taken:
+                    with contextlib.suppress(FileNotFoundError):
+                        os.remove(config)
+                _restore(self._caught)
+            if isinstance(failure, _Terminated):
+                os.kill(os.getpid(), failure.signum)
+            raise
         return self
 
     def evaluate(self, measure: Callable[[Any], Any]) -> Callable[[Any], Any]:
@@ -85,45 +104,47 @@ class RunClaim:
         def evaluate(term: Any) -> Any:
             if not self.evaluations_begun:
                 self.evaluations_begun = True
-                # from the first evaluation on, a signal terminates the run as it always did
-                _restore(self._caught)
+                # From the first evaluation on, a signal terminates the run as it always did; only
+                # the main thread can put a handler back, so another one leaves it to the end.
+                if threading.current_thread() is threading.main_thread():
+                    _restore(self._caught)
             return measure(term)
 
         return evaluate
 
     def __exit__(self, exc_type: Any, exc: BaseException | None, tb: Any) -> None:
-        try:
-            if exc is not None and not self.evaluations_begun:
-                _give_back(self.runs)
-        finally:
-            _restore(self._caught)
+        # A second signal waits until the files are back and the handlers the caller's, and then
+        # terminates as it would have.
+        with _signals_held():
+            try:
+                if exc is not None and not self.evaluations_begun:
+                    _give_back(self.runs)
+            finally:
+                _restore(self._caught)
         if isinstance(exc, _Terminated):
             # terminated by the signal after all, as without the handler
             os.kill(os.getpid(), exc.signum)
 
 
-def _claim_names(csv_paths: Sequence[str]) -> None:
+def _claim_names(csv_paths: Sequence[str], taken: list[str]) -> None:
     """Create each run's configuration exclusively, a placeholder until the driver writes it.
+
+    Args:
+        csv_paths (Sequence[str]): The runs' CSVs.
+        taken (list[str]): Filled with every configuration this call creates, as it creates it,
+            for :meth:`RunClaim.__enter__` to give back on a failure.
 
     Raises:
         FileExistsError: If another run holds one of them.
-        OSError: If a placeholder cannot be written.  Either way, those this call took are given
-            back.
+        OSError: If a placeholder cannot be written.
     """
-    claimed: list[str] = []
-    try:
-        for path in csv_paths:
-            config = metadata_path_for(path)
-            with open(config, "x") as handle:
-                # taken once created, before the placeholder is written: a write that fails
-                # leaves the file, and it is given back with the others
-                claimed.append(config)
-                handle.write(_PLACEHOLDER)
-    except BaseException:
-        for config in claimed:
-            with contextlib.suppress(FileNotFoundError):
-                os.remove(config)
-        raise
+    for path in csv_paths:
+        config = metadata_path_for(path)
+        with open(config, "x") as handle:
+            # taken once created, before the placeholder is written: a write that fails leaves
+            # the file, and it is given back with the others
+            taken.append(config)
+            handle.write(_PLACEHOLDER)
 
 
 def _give_back(runs: Sequence[RunArtifacts]) -> None:
@@ -141,15 +162,36 @@ def _give_back(runs: Sequence[RunArtifacts]) -> None:
 
 
 def _catch_terminations() -> dict[int, Any]:
-    """Turn a termination signal into :class:`_Terminated`; returns the handlers it replaced."""
+    """Turn a termination signal into :class:`_Terminated` where it would terminate the process.
+
+    Only where Python can install a handler, the main thread, and only over the default action: a
+    signal the process ignores stays ignored, and one the caller handles stays the caller's.
+
+    Returns:
+        dict[int, Any]: The handlers it replaced.
+    """
     if threading.current_thread() is not threading.main_thread():
         return {}
     replaced: dict[int, Any] = {}
     for signum in _TERMINATIONS:
-        previous = signal.getsignal(signum)
-        if previous is signal.SIG_DFL or callable(previous):
+        if signal.getsignal(signum) is signal.SIG_DFL:
             replaced[signum] = signal.signal(signum, _terminate)
     return replaced
+
+
+@contextlib.contextmanager
+def _signals_held() -> Iterator[None]:
+    """Hold the termination signals back, where the platform and the thread can; they arrive after."""
+    if not hasattr(signal, "pthread_sigmask") or (
+        threading.current_thread() is not threading.main_thread()
+    ):
+        yield
+        return
+    previous = signal.pthread_sigmask(signal.SIG_BLOCK, _TERMINATIONS)
+    try:
+        yield
+    finally:
+        signal.pthread_sigmask(signal.SIG_SETMASK, previous)
 
 
 def _restore(replaced: dict[int, Any]) -> None:

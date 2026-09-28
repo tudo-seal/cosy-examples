@@ -199,3 +199,98 @@ def test_a_run_terminated_before_its_first_evaluation_gives_everything_back(tmp_
         child.kill()
     assert child.returncode == -signum, err[-2000:]
     assert _names(csv_path.parent) == []
+
+
+def test_a_handler_the_caller_installed_stays_in_the_window(tmp_path):
+    """The claim catches a signal only where it would terminate the process; a caller who handles
+    it keeps handling it, as it would without the claim."""
+
+    def mine(signum: int, frame: Any) -> None:
+        """The caller's own."""
+
+    previous = signal.signal(signal.SIGTERM, mine)
+    try:
+        with RunClaim([RunArtifacts(str(tmp_path / "x.csv"))]):
+            assert signal.getsignal(signal.SIGTERM) is mine
+    finally:
+        signal.signal(signal.SIGTERM, previous)
+
+
+def test_the_termination_signals_wait_while_the_files_go_back(tmp_path, monkeypatch):
+    """A second signal would cut the give-back short; it is held back until the files are gone and
+    the handlers are the caller's again, and then it terminates as it would have."""
+    held: list[set[int]] = []
+    give_back = claims_module._give_back
+
+    def giving_back(runs: Any) -> None:
+        held.append(set(signal.pthread_sigmask(signal.SIG_BLOCK, [])))
+        give_back(runs)
+
+    monkeypatch.setattr(claims_module, "_give_back", giving_back)
+    with pytest.raises(RuntimeError), RunClaim([RunArtifacts(str(tmp_path / "x.csv"))]):
+        raise RuntimeError("fails before it measures")
+
+    assert {signal.SIGTERM, signal.SIGHUP} <= held[0]
+    assert not {signal.SIGTERM, signal.SIGHUP} & set(signal.pthread_sigmask(signal.SIG_BLOCK, []))
+
+
+def test_a_first_evaluation_in_another_thread_leaves_the_handlers_to_the_end(tmp_path):
+    import threading
+
+    before = signal.getsignal(signal.SIGTERM)
+    answers: list[Any] = []
+    with RunClaim([RunArtifacts(str(tmp_path / "x.csv"))]) as claim:
+        measure = claim.evaluate(lambda term: {"score": 1.0})
+        worker = threading.Thread(target=lambda: answers.append(measure("a term")))
+        worker.start()
+        worker.join()
+        assert answers == [{"score": 1.0}]
+        assert claim.evaluations_begun
+    assert signal.getsignal(signal.SIGTERM) == before
+
+
+_SIGNALLED_WHILE_CLAIMING = """
+import os, signal, sys, time
+signal.signal(signal.SIGTERM, signal.SIG_DFL)
+from bayesian_optimization.runs import RunArtifacts, RunClaim
+from bayesian_optimization.runs import claims
+real = claims._claim_names
+
+def claiming(*args):
+    real(*args)
+    os.kill(os.getpid(), signal.SIGTERM)  # the names taken, and the signal right after
+    time.sleep(30)
+
+claims._claim_names = claiming
+with RunClaim([RunArtifacts(sys.argv[1]), RunArtifacts(sys.argv[2])]):
+    time.sleep(30)
+"""
+
+
+def test_a_signal_while_the_names_are_taken_gives_them_back(tmp_path):
+    root = Path(__file__).resolve().parents[2]
+    child = subprocess.run(
+        [sys.executable, "-c", _SIGNALLED_WHILE_CLAIMING, str(tmp_path / "x.csv"),
+         str(tmp_path / "y.csv")],
+        cwd=root, capture_output=True, text=True, timeout=120,
+    )
+    assert child.returncode == -signal.SIGTERM, child.stderr[-2000:]
+    assert _names(tmp_path) == []
+
+
+def test_a_name_taken_between_the_refusal_and_the_claim_stays_its_holder_s(tmp_path, monkeypatch):
+    """Another start takes a name after this claim's refusal and before its exclusive create; the
+    create refuses, and only what this claim created goes back, never the other run's."""
+    claim_names = claims_module._claim_names
+
+    def racing(paths: Any, taken: list[str]) -> None:
+        (tmp_path / "y_config.json").write_text("another run's claim\n")
+        claim_names(paths, taken)
+
+    monkeypatch.setattr(claims_module, "_claim_names", racing)
+    with pytest.raises(FileExistsError, match="y_config.json"), RunClaim(
+        [RunArtifacts(str(tmp_path / "x.csv")), RunArtifacts(str(tmp_path / "y.csv"))]
+    ):
+        pass
+    assert _names(tmp_path) == ["y_config.json"]
+    assert (tmp_path / "y_config.json").read_text() == "another run's claim\n"
