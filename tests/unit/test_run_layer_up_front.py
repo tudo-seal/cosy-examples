@@ -346,3 +346,32 @@ def test_a_pair_refuses_its_first_run_s_arguments_before_it_draws(tmp_path, monk
             pretty_algebra=dict, echo=_quiet, **arguments,
         )
     assert draws == [], "drawn before the refusal"
+
+
+def test_the_repeats_a_run_records_are_its_own_design_s(tmp_path):
+    """``initial_repeats_rejected`` counts what the run skipped drawing its own design.  A pair that
+    draws a fresh design up front counts its draw's repeats, the other arms' terms among them, as
+    the paired path always counted them; a design given as terms, or resumed, was not drawn by the
+    run, and the draw that heads the stream with it or holds it counts nothing of the run's."""
+    head = [record.term for record in read_term_pool(_measured(tmp_path, "head", _bo(4), n_design=3))[1]]
+    (tmp_path / "given").mkdir()
+    given = _pair(tmp_path / "given", design=head)
+    assert given["bo"].summary["design_drawn_up_front"]["repeats_skipped"] == 3, "the stream's head"
+    assert given["bo"].summary["initial_repeats_rejected"] == 0
+
+
+def test_a_resumed_run_records_no_repeats_of_the_head_it_held_its_design_against(tmp_path):
+    from cosy.search import DepthBoundedRandomSampler
+
+    def deep(seed: int) -> BayesianOptimization:
+        return BayesianOptimization(
+            list_space(), LIST, sampler=DepthBoundedRandomSampler(6, random.Random(seed)),
+            seed=seed, maximizer=SampleMaximizer(_sampler(seed + 100), 8),
+        )
+
+    pool = _measured(tmp_path, "deep", deep(0), n_design=3)
+    resumed = run_search(deep(0), _metrics, schema=SCHEMA, csv_path=str(tmp_path / "again.csv"),
+                         pretty_algebra=dict, resume=load_design_records(pool, {}), n_passes=1,
+                         echo=_quiet)
+    assert resumed.summary["design_drawn_up_front"]["repeats_skipped"] == 1, "the held head's"
+    assert resumed.summary["initial_repeats_rejected"] == 0

@@ -468,8 +468,10 @@ def run_search(
             strategy.observe(term, value)
 
     result = strategy.finalize()
-    # A design drawn up front is the run's: its time in the run's, its repeats the design's, and
-    # a design so drawn a drawn one, though the loop was handed its terms.
+    # A draw up front is the run's: its time in the run's.  Where it drew the run's design it is
+    # the design's source and its repeats are the run's, the other arms' terms among them, as the
+    # paired path always counted them; a design given or resumed was not the run's to draw, and the
+    # draw that headed the stream with it or held it counts nothing of the run's.
     seconds = time.time() - started + (drawn_up_front.seconds if drawn_up_front else 0.0)
     if drawn_up_front is not None and drawn_up_front.drawn and resume is None:
         source = "drawn"
@@ -485,7 +487,9 @@ def run_search(
         "best_objective_value": objective.as_reported(float(result["best_y"])),
         "best_loop_value": float(result["best_y"]),
         "initial_repeats_rejected": (
-            drawn_up_front.repeats_skipped if drawn_up_front else strategy.initial_repeats_rejected
+            drawn_up_front.repeats_skipped
+            if drawn_up_front is not None and drawn_up_front.drawn and resume is None
+            else strategy.initial_repeats_rejected
         ),
         "completed": True,
     }
