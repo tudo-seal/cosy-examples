@@ -23,6 +23,20 @@ class MarginalPosterior(Protocol):
         ...
 
 
+class Surrogate(Protocol):
+    """What conditions a posterior on a pass's data, in place of the Gaussian process.
+
+    ``fit`` is handed the distinct pairs of the dataset, in the order their terms first appeared,
+    and answers a :class:`MarginalPosterior`, a new one for every fit: a recorded acquisition holds
+    the posterior its pass maximized against, and a fit that changed an earlier one in place would
+    change what every earlier record says.
+    """
+
+    def fit(self, terms: Sequence[Any], values: Sequence[float]) -> MarginalPosterior:
+        """Condition on ``terms`` and their ``values`` and answer the posterior."""
+        ...
+
+
 def require_term(item: Any) -> Tree[Any]:
     """Return a candidate as a term, or say that it is not one.
 

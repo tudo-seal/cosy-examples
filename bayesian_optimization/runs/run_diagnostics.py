@@ -3,6 +3,8 @@
 import csv
 import json
 
+from sklearn.gaussian_process import GaussianProcessRegressor
+
 from bayesian_optimization.diagnostics import (
     read_calibration,
     read_fit,
@@ -56,7 +58,14 @@ def write_run_diagnostics(csv_path, optimizer, result):
     # ``optimizer.kernel`` and not the fitted one.  A kernel matrix betrays a broken kernel before
     # any Gaussian process is conditioned, and that reading is about the kernel as it was
     # constructed, before a fit chose its scales.
-    gram = read_gram(optimizer.kernel(terms), objective=values) if len(terms) >= 2 else None
+    # The constructor's kernel is the surrogate's only where the surrogate is the Gaussian process;
+    # beside a caller's surrogate it conditioned nothing, and its matrix would describe no model.
+    with_the_kernel = getattr(optimizer, "surrogate_model", None) is None
+    gram = (
+        read_gram(optimizer.kernel(terms), objective=values)
+        if len(terms) >= 2 and with_the_kernel
+        else None
+    )
 
     # --- 2. The mean, on terms the surrogate has not seen -------------------------------------
     # Condition on the terms of even index and predict the odd ones.  Splitting by parity keeps the
@@ -86,7 +95,12 @@ def write_run_diagnostics(csv_path, optimizer, result):
     # --- 3. The uncertainty, over the whole dataset -------------------------------------------
     # Not ``result["gp_model"]``, which is the surrogate of the last ``suggest()`` and never saw the
     # evaluation the run ended on.  A calibration is a statement about the data that was collected.
-    calibration = read_calibration(optimizer.surrogate_over_dataset()) if terms else None
+    # Only a Gaussian process has the factor and the weights the read takes apart; a caller's
+    # surrogate has none, and the read is null.
+    whole = optimizer.surrogate_over_dataset() if terms and with_the_kernel else None
+    calibration = (
+        read_calibration(whole) if isinstance(whole, GaussianProcessRegressor) else None
+    )
 
     # --- 4. The inner evolutionary run --------------------------------------------------------
     run = optimizer.last_acquisition_run

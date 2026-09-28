@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import logging
 import math
 import random
@@ -22,7 +23,9 @@ from .acquisition_function import (
     AcquisitionFactory,
     AcquisitionFunction,
     ExpectedImprovement,
+    MarginalPosterior,
     ProbabilityOfImprovement,
+    Surrogate,
     UpperConfidenceBound,
     require_beta,
     require_margin,
@@ -442,6 +445,14 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         uniformly far above its mean, and the posterior spends its first evaluations discovering
         the offset.  Centering inside the fit is the standard remedy and leaves the model intact,
         because it is undone before any value leaves the regressor.
+    surrogate_model:
+        A :class:`~bayesian_optimization.acquisition_function.Surrogate` of the caller's own in
+        place of the Gaussian process: every pass conditions it on the distinct pairs of the
+        dataset, and the acquisition, the diagnostics' fits and the result read the posterior its
+        ``fit`` answers, a new one for every fit.  The settings that configure the Gaussian process
+        -- ``kernel``, ``kernel_optimizer``, ``n_restarts_kernel_optimizer``, ``gp_normalize_y``,
+        and a run's ``gp_params`` and ``alpha`` -- reach nothing beside it and are refused.  A run
+        layer leaves the reads only a Gaussian process answers empty.
     """
 
     #: A pass of Bayesian optimization, as the CIFAR driver has always named it in its rows.
@@ -467,6 +478,7 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         seed: int | None = None,
         sampler: Sampler | None = None,
         gp_normalize_y: bool = True,
+        surrogate_model: Surrogate | None = None,
     ) -> None:
         # The pair is refused where the caller writes it down, so a mistyped target costs no
         # evaluation of the objective.  ``optimize`` refuses a negative budget in the same way and
@@ -493,10 +505,30 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         self.optimizer = optimizer
         self.maximizer = maximizer
 
+        if surrogate_model is not None:
+            # A parameter that reaches nothing is a parameter that lies: beside a caller's
+            # surrogate the Gaussian process is never built, so its settings are refused where
+            # they are written down, against the defaults of this signature.
+            defaults = inspect.signature(BayesianOptimization.__init__).parameters
+            given = {
+                "kernel": kernel,
+                "kernel_optimizer": kernel_optimizer,
+                "n_restarts_kernel_optimizer": n_restarts_kernel_optimizer,
+                "gp_normalize_y": gp_normalize_y,
+            }
+            configured = [name for name, value in given.items() if value != defaults[name].default]
+            if configured:
+                msg = (
+                    f"{', '.join(configured)} configure the Gaussian process, which "
+                    "surrogate_model replaces: beside it they would reach nothing"
+                )
+                raise ValueError(msg)
+        self.surrogate_model = surrogate_model
+
         self._gp_normalize_y: bool = gp_normalize_y
 
         # --- The surrogate's state; the loop's own is AskTellLoop's -----------
-        self._model: GaussianProcessRegressor | None = None
+        self._model: MarginalPosterior | None = None
         self._alpha: float = _JITTER
         self._gp_params: dict[str, Any] | None = None
         self._warned_about_model_selection: bool = False
@@ -736,7 +768,7 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         )
 
     def _build_acquisition(
-        self, model: GaussianProcessRegressor, incumbent: float
+        self, model: MarginalPosterior, incumbent: float
     ) -> AcquisitionFunction:
         """Build the acquisition of one pass, with the known-point floor beneath it.
 
@@ -746,7 +778,7 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         for this one.
 
         Args:
-            model (GaussianProcessRegressor): The surrogate this pass fitted.
+            model (MarginalPosterior): The surrogate this pass fitted.
             incumbent (float): The largest observed value, which the two improvement scores
                 measure a candidate against.
 
@@ -848,19 +880,33 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
 
     def _fit_surrogate(
         self, terms: Sequence[Any], values: Sequence[float]
-    ) -> GaussianProcessRegressor:
-        """Condition a Gaussian process on ``(terms, values)`` with this run's configuration.
+    ) -> MarginalPosterior:
+        """Condition the surrogate on ``(terms, values)`` with this run's configuration.
 
         The one place a surrogate is built, so that the one a diagnostic reads is the one a pass
-        maximized against: same kernel, same diagonal term, same model selection, same seed.
+        maximized against: same kernel, same diagonal term, same model selection, same seed; or
+        the caller's ``surrogate_model``, handed the same pairs.
 
         Args:
             terms (Sequence[Any]): The terms to condition on, pairwise distinct.
             values (Sequence[float]): Their observed values.
 
         Returns:
-            GaussianProcessRegressor: The fitted surrogate.
+            MarginalPosterior: The fitted surrogate.
+
+        Raises:
+            ValueError: If the caller's surrogate answers the posterior the last pass fitted.
         """
+        if self.surrogate_model is not None:
+            fitted = self.surrogate_model.fit(list(terms), [float(value) for value in values])
+            if self._model is not None and fitted is self._model:
+                msg = (
+                    "the surrogate's fit answered the posterior it answered before; every fit "
+                    "has to answer a new posterior, since a recorded acquisition holds the one "
+                    "its pass maximized against"
+                )
+                raise ValueError(msg)
+            return fitted
         gp_kwargs: dict[str, Any] = dict(self._gp_params) if self._gp_params else {}
         gp_kwargs.setdefault("kernel", self.kernel)
         gp_kwargs.setdefault("alpha", self._alpha)
@@ -877,9 +923,10 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
             np.asarray(terms, dtype=object),
             np.asarray(values, dtype=float),
         )
-        return model
+        posterior: MarginalPosterior = model
+        return posterior
 
-    def surrogate_over_dataset(self) -> GaussianProcessRegressor:
+    def surrogate_over_dataset(self) -> MarginalPosterior:
         """Return a surrogate conditioned on the **whole** dataset, the final pair included.
 
         The model :meth:`finalize` reports is the one of the last :meth:`suggest`, and nothing is
@@ -893,7 +940,7 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         hyperparameters as any other pass would.
 
         Returns:
-            GaussianProcessRegressor: The fitted surrogate.
+            MarginalPosterior: The fitted surrogate.
 
         Raises:
             RuntimeError: If the dataset is empty.
@@ -909,7 +956,7 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         return self._fit_surrogate(terms, values)
 
     @property
-    def surrogate(self) -> GaussianProcessRegressor | None:
+    def surrogate(self) -> MarginalPosterior | None:
         """The surrogate of the last :meth:`suggest`, or ``None`` before the first one.
 
         The model that pass actually maximized its acquisition against, kernel hyperparameters
@@ -919,13 +966,13 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         how it ended up.
 
         Returns:
-            GaussianProcessRegressor | None: The model, or None if no pass has fitted one.
+            MarginalPosterior | None: The model, or None if no pass has fitted one.
         """
         return self._model
 
     def surrogate_over(
         self, terms: Sequence[Any], values: Sequence[float]
-    ) -> GaussianProcessRegressor:
+    ) -> MarginalPosterior:
         """Return a surrogate conditioned on a chosen subset, with this run's configuration.
 
         The held-out fit read of the acceptance checks needs exactly this: a surrogate that has
@@ -943,7 +990,7 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
             values (Sequence[float]): Their observed values, in the same order.
 
         Returns:
-            GaussianProcessRegressor: The fitted surrogate.
+            MarginalPosterior: The fitted surrogate.
 
         Raises:
             ValueError: If the two sequences differ in length, if there is nothing to condition
@@ -1104,6 +1151,16 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         alpha:
             The numerical diagonal added to the Gram matrix.  See :data:`_JITTER`.
         """
+        if self.surrogate_model is not None and (gp_params or alpha != _JITTER):
+            given = [
+                name for name, set_here in (("gp_params", bool(gp_params)), ("alpha", alpha != _JITTER))
+                if set_here
+            ]
+            msg = (
+                f"{', '.join(given)} configure the Gaussian process, which surrogate_model "
+                "replaces: beside it they would reach nothing"
+            )
+            raise ValueError(msg)
         super().initialize(
             objective=objective, x0=x0, y0=y0, initial_size=initial_size, design=design
         )
@@ -1151,11 +1208,11 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         """
         self._trace.append(self._trace_record(suggestion, observed))
 
-    def _result_model(self) -> GaussianProcessRegressor | None:
+    def _result_model(self) -> MarginalPosterior | None:
         """The surrogate of the last pass, reported under ``gp_model``.
 
         Returns:
-            GaussianProcessRegressor | None: The model, or None before the first pass.
+            MarginalPosterior | None: The model, or None before the first pass.
         """
         return self._model
 

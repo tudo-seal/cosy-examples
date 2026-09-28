@@ -6,6 +6,7 @@ import os
 import time
 
 import numpy as np
+from sklearn.gaussian_process import GaussianProcessRegressor
 
 from bayesian_optimization.diagnostics import read_calibration, read_fit
 
@@ -174,7 +175,11 @@ class SurrogateLogger:
         surrogate = optimizer.surrogate
         if surrogate is None:
             return
-        calibration = read_calibration(surrogate)
+        # The reads only a Gaussian process answers -- its calibration, its training set, its
+        # marginal likelihood, its fitted kernel.  A caller's surrogate has none of them, and its
+        # cells stay empty rather than failing the run after its design.
+        gaussian = isinstance(surrogate, GaussianProcessRegressor)
+        calibration = read_calibration(surrogate) if gaussian else None
 
         # The same split by parity that the diagnostics use, over the data this pass saw.  The
         # cells stay empty where the split is not one a fit read is about:
@@ -206,18 +211,18 @@ class SurrogateLogger:
 
         self._writer.writerow([
             bo_iteration,
-            len(surrogate.X_train_),
-            surrogate.log_marginal_likelihood_value_,
-            calibration.root_mean_square,
-            calibration.standard_deviation,
-            calibration.maximum_absolute,
-            calibration.outside_two,
+            len(surrogate.X_train_) if gaussian else "",
+            surrogate.log_marginal_likelihood_value_ if gaussian else "",
+            "" if calibration is None else calibration.root_mean_square,
+            "" if calibration is None else calibration.standard_deviation,
+            "" if calibration is None else calibration.maximum_absolute,
+            "" if calibration is None else calibration.outside_two,
             "" if fit is None else fit.size,
             "" if fit is None or fit.rank_correlation is None else fit.rank_correlation,
             "" if fit is None else fit.prediction_spread,
             "" if fit is None else fit.objective_spread,
             "" if fit is None else fit.residual_root_mean_square,
-            json.dumps(kernel_hyperparameters(surrogate), sort_keys=True),
+            json.dumps(kernel_hyperparameters(surrogate), sort_keys=True) if gaussian else "",
         ])
         self._file.flush()
 

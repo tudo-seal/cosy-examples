@@ -7,6 +7,7 @@ from .acquisition_function import (
     ExpectedImprovement,
     MarginalPosterior,
     ProbabilityOfImprovement,
+    Surrogate,
     UpperConfidenceBound,
 )
 from .acquisition_optimizer import AcquisitionMaximizer, AcquisitionOptimizer, SampleMaximizer
@@ -72,6 +73,7 @@ __all__ = [
     "StructuredKernelBase",
     "SubsetTreeKernel",
     "Suggestion",
+    "Surrogate",
     "TraceRead",
     "TraceRecord",
     "UpperConfidenceBound",

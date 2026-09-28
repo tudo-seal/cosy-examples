@@ -316,6 +316,16 @@ fit them now has to pass `kernel_optimizer="fmin_l_bfgs_b"` as well. That case i
 kernel with a non-empty `theta` and no optimizer is reported once per run, as is an optimizer over
 a kernel with an empty one.
 
+A surrogate of the caller's own replaces the Gaussian process as `surrogate_model=`: a `Surrogate`,
+whose `fit(terms, values)` is handed the distinct pairs of the dataset in the order their terms
+first appeared and answers a posterior, anything with `predict(X, return_std=...)`, a new one for
+every fit. The acquisition, the diagnostics' held-out fit and `finalize()["gp_model"]` read that
+posterior. The settings of the Gaussian process -- `kernel`, `kernel_optimizer`,
+`n_restarts_kernel_optimizer`, `gp_normalize_y`, and a run's `gp_params` and `alpha` -- would reach
+nothing beside it and are refused. The run layer leaves the reads only a Gaussian process answers,
+its calibration, marginal likelihood, fitted kernel and the constructor kernel's Gram matrix, empty
+or `null`, rather than failing the run after its design.
+
 ## Acquisition functions
 
 Three acquisition scores are available, named as strings on the constructor. Each is maximized over
