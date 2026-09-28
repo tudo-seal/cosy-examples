@@ -204,3 +204,50 @@ def test_a_run_through_the_run_layer_logs_the_sample_as_its_one_generation(tmp_p
     assert len(rows) == 3, "one generation per pass"
     _header, records = read_term_pool(tmp_path / "run_terms.pickle")
     assert len(records) == 7
+
+
+class NotANumber(AcquisitionFunction):
+    """A score of nan everywhere, which only a caller's own acquisition can produce."""
+
+    lower_bound = None
+
+    def score(self, mean: Any, deviation: Any) -> Any:
+        return mean * float("nan")
+
+
+def _fitted(space: Any) -> BayesianOptimization:
+    bo = _loop(space, optimizer=_make_ea(space, 1))
+    _design(bo)
+    bo.suggest()
+    return bo
+
+
+def test_the_sample_maximizer_refuses_a_score_that_is_not_a_number():
+    """As cosy's driver refuses one: the first term of the sample would otherwise win every
+    comparison it loses."""
+    space = _space()
+    bo = _fitted(space)
+    af = NotANumber(bo.surrogate, known_points=set())
+    with pytest.raises(ValueError, match="not a number"):
+        SampleMaximizer(_sampler(3), 10).maximize(af, bo.query)
+
+
+def test_a_mode_the_acquisition_cannot_be_scored_in_is_refused_before_the_sample_is_drawn():
+    space = _space()
+    bo = _fitted(space)
+    known = set(bo.get_state_snapshot()["x_list"])
+    af = UpperConfidenceBound(bo.surrogate, beta=2.0, known_points=known)
+    sampler = _sampler(3)
+    state = sampler.rng.getstate()
+    with pytest.raises(ValueError, match="UpperConfidenceBound"):
+        SampleMaximizer(sampler, 10).maximize(af, bo.query, mode="single")
+    assert sampler.rng.getstate() == state, "nothing drawn for a refused maximization"
+
+
+def test_an_evolutionary_search_set_beside_a_maximizer_later_is_refused_before_the_design():
+    space = _space()
+    bo = _loop(space, maximizer=SampleMaximizer(_sampler(3), 10))
+    bo.optimizer = _make_ea(space, 1)
+    with pytest.raises(ValueError, match="not both"):
+        bo.check_configuration()
+

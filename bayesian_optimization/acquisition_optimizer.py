@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping
 from typing import Any, Literal, Protocol
 
@@ -433,16 +434,27 @@ class SampleMaximizer:
         Raises:
             InitializationError: If fewer than ``sample_size`` inhabitants lie within the bound of
                 the sampler, or its stream ends before the sample is full.
-            ValueError: As the evolutionary search's objective refuses a mode.
+            ValueError: As the evolutionary search's objective refuses a mode, before anything is
+                drawn; and for a score that is not a number, as cosy's driver refuses one.
         """
         resolved = resolve_fitness_mode(mode)
-        sample: list[Any] = SampledInitialization(self.sampler).initialize(query, self.sample_size)
+        # Built first: it refuses a mode the acquisition cannot be scored in, before anything is
+        # drawn.
         objective = AcquisitionOptimizer._objective(acquisition_fn, resolved)
+        sample: list[Any] = SampledInitialization(self.sampler).initialize(query, self.sample_size)
         if resolved == "batch":
             scored = objective(sample)
             values = [float(scored[term]) for term in sample]
         else:
             values = [float(objective(term)) for term in sample]
+        for term, value in zip(sample, values, strict=True):
+            if math.isnan(value):
+                msg = (
+                    f"the acquisition scored {term} as nan, not a number: every comparison with it "
+                    "is false, so a maximization over it picks whatever it compares first, and "
+                    "cosy's driver refuses it as this does"
+                )
+                raise ValueError(msg)
         best = 0
         for index in range(1, len(sample)):
             if values[index] > values[best]:

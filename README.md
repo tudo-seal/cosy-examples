@@ -345,9 +345,12 @@ An acquisition of the caller's own takes the place of a name: an `AcquisitionFac
 `(gp, *, incumbent, known_points)` called once per pass with the surrogate that pass fitted, the
 incumbent and the points already observed, and answering a new `AcquisitionFunction` that scores
 with that surrogate and holds those points, so that its known-point floor keeps them below every
-novel candidate. It is tried once before the design, on a stand-in posterior, and one that returns
-something else, drops the points or scores with another model is refused before the run spends an
-evaluation. Its `lower_bound` decides the fitness modes it admits, as it does for the three.
+novel candidate. Any callable is taken for a factory, and a class with that signature, such as
+`ExpectedImprovement`, is one. A callable that cannot be called that way is refused before the run
+spends an evaluation. What it builds is checked at every pass, since only a pass has a surrogate to
+build from: one that returns something else, holds fewer than the pass's points or scores with
+another model is refused there, before the pass's pick is evaluated, and its `lower_bound` decides
+the fitness modes that pass admits, as it does for the three.
 
 What maximizes the acquisition is the evolutionary search passed as `optimizer=`, or any
 `AcquisitionMaximizer` passed as `maximizer=` instead, never both. `SampleMaximizer(sampler,
