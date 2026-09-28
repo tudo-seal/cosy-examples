@@ -178,6 +178,28 @@ def test_run_paired_hands_no_reading_on_for_a_design_its_first_arm_evaluated(tmp
     assert list(outcomes["random"].result["y"][:3]) == design
 
 
+def test_run_paired_leaves_the_refusal_to_a_caller_that_wrote_its_own_files_first(tmp_path):
+    """A driver that refuses a taken name itself and then writes each run's configuration before
+    anything trains, so that an interrupted run keeps its provenance, would be refused by its own
+    files; run_search takes refuse_taken=False for it, and so does run_paired."""
+    for name in ("bo", "random"):
+        (tmp_path / f"{name}_config.json").write_text("{}")
+
+    outcomes = run_paired(
+        {"bo": _bo(6), "random": _random(6)}, _metrics, schema=SCHEMA, n_design=2, n_passes=1,
+        csv_paths={"bo": str(tmp_path / "bo.csv"), "random": str(tmp_path / "random.csv")},
+        pretty_algebra=dict, echo=_quiet, refuse_taken=False,
+    )
+
+    assert [len(outcome.result["y"]) for outcome in outcomes.values()] == [3, 3]
+    with pytest.raises(FileExistsError, match="bo_config.json"):
+        run_paired(
+            {"bo": _bo(6), "random": _random(6)}, _metrics, schema=SCHEMA, n_design=2,
+            n_passes=1, csv_paths={"bo": str(tmp_path / "b2.csv"), "random": str(tmp_path / "bo.csv")},
+            pretty_algebra=dict, echo=_quiet,
+        )
+
+
 def test_run_paired_resumes_every_arm_under_the_caller_s_reading(tmp_path):
     terms = _head(seed=4, count=3)
     records = [TermRecord("pre_sample", i, term, {"score": 0.1 * (i + 1), "accuracy": 0.9 - i / 10})

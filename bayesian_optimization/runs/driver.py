@@ -388,6 +388,7 @@ def run_paired(
     resumed_value: Callable[[Mapping[str, Any]], float] | None = None,
     provenance: Mapping[str, Any] | None = None,
     budgets: StepBudgets | None = None,
+    refuse_taken: bool = True,
     verbose: bool = False,
     echo: Callable[[str], None] | None = None,
 ) -> dict[str, RunOutcome]:
@@ -404,6 +405,9 @@ def run_paired(
         strategies (Mapping[str, AskTellLoop]): The strategies by name; the first draws the design.
         csv_paths (Mapping[str, str]): One run CSV per name.
         n_passes (int): Every strategy's budget of passes.
+        refuse_taken (bool): Refuse every run whose files exist, before the first run starts; a
+            caller that refused them itself and wrote each run's configuration first passes
+            False. (Default value = True)
         (The other arguments as for :func:`run_search`.)
 
     Returns:
@@ -431,13 +435,15 @@ def run_paired(
             claimed[path] = name
     for name in names:
         _require_uninitialized(strategies[name], f"the strategy {name!r}")
-        RunArtifacts(csv_paths[name]).refuse_taken()
+        if refuse_taken:
+            RunArtifacts(csv_paths[name]).refuse_taken()
     if n_passes > 0:
         for name in names:
             strategies[name].check_configuration()
     common: dict[str, Any] = {
         "schema": schema, "pretty_algebra": pretty_algebra, "n_passes": n_passes,
         "provenance": provenance, "budgets": budgets, "verbose": verbose, "echo": echo,
+        "refuse_taken": refuse_taken,
     }
     first = names[0]
     outcomes = {first: run_search(
