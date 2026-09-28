@@ -9,7 +9,7 @@ from .acquisition_function import (
     ProbabilityOfImprovement,
     UpperConfidenceBound,
 )
-from .acquisition_optimizer import AcquisitionOptimizer
+from .acquisition_optimizer import AcquisitionMaximizer, AcquisitionOptimizer, SampleMaximizer
 from .bo import BayesianOptimization
 from .diagnostics import (
     AcquisitionRun,
@@ -48,6 +48,7 @@ from .state import BOState, Diagnostics, Suggestion
 __all__ = [
     "AcquisitionFactory",
     "AcquisitionFunction",
+    "AcquisitionMaximizer",
     "AcquisitionOptimizer",
     "AcquisitionRun",
     "AskTellLoop",
@@ -67,6 +68,7 @@ __all__ = [
     "PiStrategy",
     "ProbabilityOfImprovement",
     "RandomSearch",
+    "SampleMaximizer",
     "StructuredKernelBase",
     "SubsetTreeKernel",
     "Suggestion",

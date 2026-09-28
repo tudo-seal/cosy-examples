@@ -339,6 +339,13 @@ novel candidate. It is tried once before the design, on a stand-in posterior, an
 something else, drops the points or scores with another model is refused before the run spends an
 evaluation. Its `lower_bound` decides the fitness modes it admits, as it does for the three.
 
+What maximizes the acquisition is the evolutionary search passed as `optimizer=`, or any
+`AcquisitionMaximizer` passed as `maximizer=` instead, never both. `SampleMaximizer(sampler,
+sample_size)` is the best of one sample: drawn as cosy's sampled initialization draws a population,
+one stream of the sampler, scored through the same known-point floor, and the first of the best
+terms in stream order is the pick, which is what cosy's driver answers for a search stopped after
+its initial population. It is the baseline the evolutionary search is measured against.
+
 Both parameters are fixed for the run rather than passed per `suggest()` call, so two passes of one
 run cannot maximize two different functions without anything recording which.
 

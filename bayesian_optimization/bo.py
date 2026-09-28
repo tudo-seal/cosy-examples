@@ -28,6 +28,7 @@ from .acquisition_function import (
     require_margin,
 )
 from .acquisition_optimizer import (
+    AcquisitionMaximizer,
     AcquisitionOptimizer,
     resolve_fitness_mode,
     unbounded_below_message,
@@ -87,7 +88,10 @@ _ACQUISITIONS: dict[str, type[AcquisitionFunction]] = {
 # An evolutionary algorithm is what a pass hands its acquisition to, so a run without one cannot
 # make a pass.  Said once so that the check a run passes before it spends anything and the pass
 # itself refuse its absence in the same words.
-_NO_OPTIMIZER = "An optimizer is required.  Pass a EvolutionarySearch to the constructor."
+_NO_OPTIMIZER = (
+    "An optimizer is required.  Pass a EvolutionarySearch to the constructor, or an acquisition "
+    "maximizer as maximizer=."
+)
 
 
 def _unknown_acquisition(name: Any) -> str:
@@ -370,6 +374,11 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         while its population size, rates and component choices are fixed before the run and are
         therefore its own parameters.  They used to be passed through this class, which had the
         split between arguments and parameters the wrong way round.
+    maximizer:
+        What maximizes the acquisition instead of the evolutionary search: an
+        :class:`~bayesian_optimization.acquisition_optimizer.AcquisitionMaximizer`, such as
+        :class:`~bayesian_optimization.acquisition_optimizer.SampleMaximizer`, the best of one
+        sample.  Given instead of ``optimizer``, never beside it, since a pass has one maximization.
     initializer:
         Where the initial dataset comes from.  ``None`` selects sampled initialization with the
         size-uniform sampler, the model-agnostic default: it stratifies along the one canonical
@@ -453,6 +462,7 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         kernel_optimizer: str | None = None,
         n_restarts_kernel_optimizer: int = 20,
         optimizer: EvolutionarySearch[NT, T, G] | None = None,
+        maximizer: AcquisitionMaximizer | None = None,
         initializer: Initializer[NT, T, G] | None = None,
         seed: int | None = None,
         sampler: Sampler | None = None,
@@ -474,7 +484,14 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         )
         self.kernel_optimizer = kernel_optimizer
         self.n_restarts_kernel_optimizer = n_restarts_kernel_optimizer
+        if optimizer is not None and maximizer is not None:
+            msg = (
+                "a pass maximizes its acquisition either with the evolutionary search "
+                "(optimizer=) or with a maximizer (maximizer=), not both"
+            )
+            raise ValueError(msg)
         self.optimizer = optimizer
+        self.maximizer = maximizer
 
         self._gp_normalize_y: bool = gp_normalize_y
 
@@ -605,7 +622,7 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         Returns:
             Suggestion: The pass.
         """
-        if self.optimizer is None:
+        if self.optimizer is None and self.maximizer is None:
             raise RuntimeError(_NO_OPTIMIZER)
 
         # The mode is read here rather than at the maximization that uses it, which runs only
@@ -644,7 +661,9 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         af = self._build_acquisition(model, incumbent)
 
         # --- Optimize acquisition function ------------------------------------
-        acq_opt = AcquisitionOptimizer(self.optimizer)
+        acq_opt: AcquisitionMaximizer = (
+            self.maximizer if self.maximizer is not None else AcquisitionOptimizer(self.optimizer)
+        )
         population: list[Any] | None = None
         generations: list[Any] = []
         if record_population:
@@ -1204,7 +1223,7 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
                 of the three modes, or if that acquisition cannot be scored the way
                 ``acquisition_fitness_mode`` asks.
         """
-        if self.optimizer is None:
+        if self.optimizer is None and self.maximizer is None:
             raise RuntimeError(_NO_OPTIMIZER)
 
         # Only a string can name one of the three.  Looking a name up in the table before saying

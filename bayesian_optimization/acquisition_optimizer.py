@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any, Literal
+from typing import Any, Literal, Protocol
+
+from cosy.evolutionary_algorithms import SampledInitialization
+from cosy.search import Sampler
 
 from .acquisition_function import AcquisitionFunction, require_term
 from .diagnostics.frontier import GenerationRecord
@@ -179,6 +182,35 @@ def resolve_fitness_mode(mode: Any) -> Literal["single", "batch"]:
     raise ValueError(msg)
 
 
+class AcquisitionMaximizer(Protocol):
+    """What maximizes a pass's acquisition over the search space.
+
+    ``maximize`` answers the pick; ``maximize_with_population`` answers the pick, the population it
+    came from, and one :class:`~bayesian_optimization.diagnostics.frontier.GenerationRecord` per
+    generation, which is what a run's frontier read and its search log are read from.  The
+    evolutionary search is one, through :class:`AcquisitionOptimizer`; :class:`SampleMaximizer`,
+    the best of one sample, is the baseline it is measured against.  A maximizer scores through
+    the acquisition's known-point floor, as both of these do, or a pass may pick a point it has
+    and its replacement becomes a random draw.
+    """
+
+    def maximize(
+        self,
+        acquisition_fn: AcquisitionFunction,
+        query: Any,
+        *,
+        mode: Literal["auto", "single", "batch"] = "batch",
+    ) -> Any: ...
+
+    def maximize_with_population(
+        self,
+        acquisition_fn: AcquisitionFunction,
+        query: Any,
+        *,
+        mode: Literal["auto", "single", "batch"] = "batch",
+    ) -> tuple[Any, list[Any], list[GenerationRecord]]: ...
+
+
 class AcquisitionOptimizer:
     """Adapter that wraps an evolutionary optimizer to maximize an AcquisitionFunction.
 
@@ -334,3 +366,96 @@ class AcquisitionOptimizer:
         if mode == "batch":
             return _make_acquisition_objective_batch(acquisition_fn)
         return _make_acquisition_objective_single(acquisition_fn)
+
+
+class SampleMaximizer:
+    """Maximize an acquisition over one sample: draw it, score all of it, keep the best.
+
+    The baseline an evolutionary search is measured against, and the maximization of the loops
+    that search no further than their initial population.  The sample is what cosy's sampled
+    initialization draws, one stream of the sampler, ``sample_size`` terms, and it is refused, not
+    filled with repeats, where fewer inhabitants lie within the sampler's bound.  It is scored as
+    the evolutionary search scores, through the known-point floor, and the first of the best terms
+    in the order the stream delivered them is the pick, which is also what cosy's driver answers
+    for a search stopped after its initial population.
+
+    A sampler shared with the loop, the ``sampler=`` it draws its design and replacements from,
+    draws both from one stream; a twin (:func:`~bayesian_optimization.runs.twin_sampler`) keeps
+    them apart.
+
+    Attributes:
+        sampler (Sampler): What each sample is drawn from.
+        sample_size (int): How many terms one sample holds.
+    """
+
+    def __init__(self, sampler: Sampler, sample_size: int) -> None:
+        """Build the maximizer.
+
+        Raises:
+            ValueError: If ``sample_size`` is below one: a sample of nothing has no best term.
+        """
+        if sample_size < 1:
+            msg = f"a sample to maximize over holds at least one term, not {sample_size}"
+            raise ValueError(msg)
+        self.sampler = sampler
+        self.sample_size = sample_size
+
+    def maximize(
+        self,
+        acquisition_fn: AcquisitionFunction,
+        query: Any,
+        *,
+        mode: Literal["auto", "single", "batch"] = "batch",
+    ) -> Any:
+        """The best term of a new sample.  See :meth:`maximize_with_population`."""
+        pick, _sample, _generations = self.maximize_with_population(acquisition_fn, query, mode=mode)
+        return pick
+
+    def maximize_with_population(
+        self,
+        acquisition_fn: AcquisitionFunction,
+        query: Any,
+        *,
+        mode: Literal["auto", "single", "batch"] = "batch",
+    ) -> tuple[Any, list[Any], list[GenerationRecord]]:
+        """Draw a sample, score it, and answer its best term, the sample, and its one record.
+
+        Args:
+            acquisition_fn (AcquisitionFunction): The acquisition to maximize.
+            query (Any): The generator query naming the search space and the requested type.
+            mode (Literal["auto", "single", "batch"]): How the sample is scored, as for the
+                evolutionary search. (Default value = "batch")
+
+        Returns:
+            tuple[Any, list[Any], list[GenerationRecord]]: The best term, the sample in stream
+                order, and the record of its one generation.
+
+        Raises:
+            InitializationError: If fewer than ``sample_size`` inhabitants lie within the bound of
+                the sampler, or its stream ends before the sample is full.
+            ValueError: As the evolutionary search's objective refuses a mode.
+        """
+        resolved = resolve_fitness_mode(mode)
+        sample: list[Any] = SampledInitialization(self.sampler).initialize(query, self.sample_size)
+        objective = AcquisitionOptimizer._objective(acquisition_fn, resolved)
+        if resolved == "batch":
+            scored = objective(sample)
+            values = [float(scored[term]) for term in sample]
+        else:
+            values = [float(objective(term)) for term in sample]
+        best = 0
+        for index in range(1, len(sample)):
+            if values[index] > values[best]:
+                best = index
+        record = GenerationRecord(
+            generation=0,
+            best=values[best],
+            population_best=values[best],
+            population_mean=sum(values) / len(values),
+            population_worst=min(values),
+            distinct_members=len(set(sample)),
+            last_improvement=0,
+            offspring=0,
+        )
+        return sample[best], list(sample), [record]
+
