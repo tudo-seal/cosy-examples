@@ -545,30 +545,35 @@ def run_search(
                     ea_logger.log(step, getattr(strategy, "last_acquisition_run", None))
                     surrogate_logger.log(step, strategy)
                 passes.append((step, suggestion, acquisition_seconds))
-            label = (
-                f"pass {first}: the evaluation" if len(passes) == 1
-                else f"passes {first} to {passes[-1][0]}: the evaluations"
-            )
-            # A round evaluated term by term takes as long as its terms together; one evaluated
-            # side by side, as long as its slowest.
-            budget = budgets.per_evaluation * (len(passes) if evaluate_many is None else 1)
-            with step_budget(label, budget):
-                for term, metrics in _answers(
-                    [suggestion.candidate for _step, suggestion, _seconds in passes], evaluate,
-                    evaluate_many,
-                ):
-                    step, suggestion, acquisition_seconds = next(
-                        entry for entry in passes if entry[1].candidate is term
-                    )
-                    evaluated_here += 1
-                    value = _loop_value_or_record(objective, recorder, phase, step, term, metrics,
-                                                  suggestion=suggestion,
-                                                  acquisition_seconds=acquisition_seconds)
-                    recorder.log(phase, step, term, metrics, suggestion=suggestion,
-                                 acquisition_seconds=acquisition_seconds, loop_value=value)
-                    echo(f"  {phase}[{step}]: objective={objective.as_reported(value):.5f} "
-                         f"{schema.live_line(metrics)}".rstrip())
-                    strategy.observe(term, value)
+            round_answers = iter(_answers(
+                [suggestion.candidate for _step, suggestion, _seconds in passes], evaluate,
+                evaluate_many,
+            ))
+            for position in range(len(passes)):
+                # The watchdog times the wait for each answer, and nothing after it: one term
+                # after the other, the evaluation of the pass it names; side by side, the wait
+                # for the next evaluation to complete.
+                if evaluate_many is None or len(passes) == 1:
+                    label = f"pass {passes[position][0]}: the evaluation"
+                else:
+                    label = f"passes {first} to {passes[-1][0]}: the next evaluation"
+                with step_budget(label, budgets.per_evaluation):
+                    term, metrics = next(round_answers)
+                step, suggestion, acquisition_seconds = next(
+                    entry for entry in passes if entry[1].candidate is term
+                )
+                evaluated_here += 1
+                value = _loop_value_or_record(objective, recorder, phase, step, term, metrics,
+                                              suggestion=suggestion,
+                                              acquisition_seconds=acquisition_seconds)
+                recorder.log(phase, step, term, metrics, suggestion=suggestion,
+                             acquisition_seconds=acquisition_seconds, loop_value=value)
+                echo(f"  {phase}[{step}]: objective={objective.as_reported(value):.5f} "
+                     f"{schema.live_line(metrics)}".rstrip())
+                strategy.observe(term, value)
+            # An answer past the round's last is refused, as one to a term it did not ask.
+            for _surplus in round_answers:
+                pass
 
     result = strategy.finalize()
     # A draw up front is the run's: its time in the run's.  Where it drew the run's design it is

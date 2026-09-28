@@ -107,19 +107,32 @@ def test_without_an_evaluation_of_rounds_a_round_is_evaluated_term_by_term(tmp_p
     assert [row["index"] for row in _rows(tmp_path / "run.csv")] == ["0", "1", "2", "0", "1", "2"]
 
 
-@pytest.mark.parametrize("answer", ["a term not asked", "a term twice", "too few"])
-def test_an_evaluation_of_a_round_answers_each_term_once(tmp_path, answer):
+@pytest.mark.parametrize(
+    "answer", ["a term not asked", "a term twice", "too few", "one past the round"]
+)
+@pytest.mark.parametrize(("n_design", "n_passes"), [(2, 0), (2, 2)], ids=["design", "passes"])
+def test_an_evaluation_of_a_round_answers_each_term_once(tmp_path, answer, n_design, n_passes):
+    rounds: list[int] = []
+
     def evaluate_many(terms: list[Any]) -> Any:
+        rounds.append(len(terms))
+        if n_passes and len(rounds) == 1:  # the design answered right, the passes under test
+            for term in terms:
+                yield term, _metrics(term)
+            return
         if answer == "a term not asked":
             yield object(), {"score": 0.5, "length": 1}
         elif answer == "a term twice":
             yield terms[0], _metrics(terms[0])
             yield terms[0], _metrics(terms[0])
-        else:
+        elif answer == "too few":
             yield terms[0], _metrics(terms[0])
+        else:
+            for term in [*terms, terms[-1]]:
+                yield term, _metrics(term)
 
     with pytest.raises(RuntimeError, match="evaluate_many"):
-        _run(tmp_path / "run.csv", _bo(7), n_design=2, n_passes=0, batch_size=2,
+        _run(tmp_path / "run.csv", _bo(7), n_design=n_design, n_passes=n_passes, batch_size=2,
              evaluate_many=evaluate_many)
 
 
@@ -194,3 +207,40 @@ def test_a_pair_refuses_an_unclaimed_evaluation_of_rounds_before_it_draws(tmp_pa
                    n_design=2, n_passes=2, csv_paths=paths, pretty_algebra=dict, echo=_quiet,
                    batch_size=2, evaluate_many=_backwards([]), refuse_taken=False)
     assert draws == []
+
+
+def test_one_at_a_time_the_watchdog_times_the_evaluation_alone(tmp_path, monkeypatch):
+    """As before rounds: a pass's evaluation budget closes before its row is written and its line
+    printed, so a watchdog's report of it comes before the line, and times the evaluation only."""
+    import contextlib
+
+    import bayesian_optimization.runs.driver as driver
+
+    events: list[str] = []
+
+    @contextlib.contextmanager
+    def watching(label: str, *args: Any, **kwargs: Any) -> Any:
+        events.append(f"enter {label}")
+        yield
+        events.append(f"exit {label}")
+
+    monkeypatch.setattr(driver, "step_budget", watching)
+    run_search(_bo(6, capacity=1), _metrics, schema=SCHEMA, csv_path=str(tmp_path / "run.csv"),
+               pretty_algebra=dict, echo=lambda line: events.append(line.split(":")[0].strip()),
+               n_design=2, n_passes=1)
+    start = events.index("enter pass 0: the evaluation")
+    assert events[start:start + 3] == [
+        "enter pass 0: the evaluation", "exit pass 0: the evaluation", "bo_step[0]"]
+
+
+def test_a_trace_incumbent_keeps_the_sign_the_loop_s_incumbent_has(bo_factory, tree_corpus):
+    """A row's incumbent is read as the pass's own incumbent is, so a largest value of 0.0 among
+    -0.0 and 0.0 stays 0.0."""
+    import math
+
+    bo = bo_factory(candidates=[tree_corpus[3]])
+    bo.initialize(x0=tree_corpus[:3], y0=[-0.0, 0.0, -1.0])
+    suggestion = bo.suggest()
+    bo.observe(suggestion.candidate, -2.0)
+    assert math.copysign(1.0, suggestion.diagnostics["incumbent"]) == 1.0
+    assert math.copysign(1.0, bo.trace[-1].incumbent) == 1.0

@@ -1225,7 +1225,7 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         # was built with; under repeated measurements the acquisition compared against a posterior
         # mean, and in a batch the rows arrive in the order the values do, so the incumbent the
         # pass started from can be older than the row before it.  Its diagnostics keep it.
-        incumbent = max(self._y_list[:-1])
+        incumbent = float(np.max(np.array(self._y_list[:-1], dtype=float)))
         return TraceRecord(
             iteration=diagnostics["iteration"],
             acquisition=acquisition,
