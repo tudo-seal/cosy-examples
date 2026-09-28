@@ -139,7 +139,7 @@ is to be minimized is negated on the way in and the reported optimum on the way 
 | `diagnostics/` | the five reads over a run, and the run log beneath them |
 | `state.py` | `BOState`, `Suggestion`, `Diagnostics` |
 | `utils.py` | the conversions from a term to a labeled graph the graph kernels read |
-| `runs/` | the run layer: one driver for every strategy and the paired comparison, the metric schema and the recorder, the files of a run and its provenance, the term pool and resume, the search program and its samplers, the acquisition-optimizer builder, the watchdog |
+| `runs/` | the run layer: one driver for every strategy and the paired comparison, the metric schema and the recorder, the files of a run, the claim of its names and its provenance, the term pool and resume, the search program and its samplers, the acquisition-optimizer builder, the watchdog |
 
 That is 21 modules of core, 6426 lines, and the run layer's 12 modules, 2590 lines, which import
 no training framework and hold what a run over any space needs around the loop.

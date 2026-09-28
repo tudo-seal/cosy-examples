@@ -14,6 +14,7 @@ from .acquisition import (
 )
 from .artifacts import RunArtifacts, metadata_path_for
 from .budgets import StepBudgets, step_budget
+from .claims import RunClaim
 from .driver import DESIGN_PHASE, RunOutcome, run_paired, run_search
 from .metadata import write_run_metadata
 from .records import (
@@ -76,6 +77,7 @@ __all__ = [
     "LOOP_FIELDS",
     "POOL_PHASE",
     "ResumedDesign",
+    "RunClaim",
     "SPACE_CONSTRUCTION_WARN_SECONDS",
     "SURROGATE_CSV_COLUMNS",
     "VERSION",
