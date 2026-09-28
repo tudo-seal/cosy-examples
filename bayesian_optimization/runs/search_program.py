@@ -263,7 +263,26 @@ def draw_design(sampler, query, size, *, then=0, design=None):
     Returns:
         tuple[list, int]: The design, the first ``size`` terms, and how many repeats the stream
             delivered on the way and were skipped.
+
+    Raises:
+        ValueError: For a negative ``size`` or ``then``, and for a ``design`` that is not
+            ``size`` distinct terms, before anything is drawn: each of them would return a design,
+            and not the one asked for -- shortened, cut, topped up from the sampler, or with a
+            repeated term replaced by the sampler's next one.
     """
+    if size < 0:
+        raise ValueError(f"a design holds a non-negative number of terms, not {size}")
+    if then < 0:
+        raise ValueError(f"a paired arm draws a non-negative number of terms past the design, "
+                         f"not {then}")
+    if design is not None:
+        if len(design) != size:
+            raise ValueError(f"the design given as terms holds {len(design)} terms, and the draw "
+                             f"asks for {size}: a design given as terms is the whole design")
+        # Structural comparison, as the draw itself compares, not a set.
+        if any(term == earlier for index, term in enumerate(design) for earlier in design[:index]):
+            raise ValueError("the design given as terms repeats a term, which the stream would "
+                             "replace with the next term the sampler draws")
     source = sampler if design is None else _DesignFirst(design, sampler)
     terms, repeats = distinct_prefix(source, query, size + then)
     return terms[:size], repeats

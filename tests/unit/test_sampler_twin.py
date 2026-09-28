@@ -203,6 +203,34 @@ def test_a_given_design_heads_the_stream_and_only_the_paired_terms_move_the_samp
     assert paired.rng.getstate() != fresh_state, "the arm's two terms were drawn past it"
 
 
+@pytest.mark.parametrize(
+    ("size", "then", "given", "match"),
+    [
+        (2, -1, None, "past the design"),
+        (-1, 2, None, "non-negative number of terms, not -1"),
+        (2, 0, 3, "holds 3 terms"),
+        (3, 0, 2, "holds 2 terms"),
+        (3, 0, "repeat", "repeats a term"),
+    ],
+)
+def test_a_draw_that_would_not_be_the_design_asked_for_is_refused(size, then, given, match):
+    """Each of these returned a design, and not the one asked for: a negative count of paired terms
+    shortened the stream under the design, a negative size sliced it from the end, a given design
+    of another size was cut or topped up from the sampler, and a repeat in a given design was
+    replaced by the sampler's next term.  Refused before the stream is opened."""
+    space = list_space()
+    other = SizeUniformSampler(6, random.Random(1))
+    head, _ = distinct_prefix(other, _query(space, other), 3)
+    design = None if given is None else [head[0], head[0], head[1]] if given == "repeat" else head[:given]
+    sampler = SizeUniformSampler(6, random.Random(4))
+    query = _query(space, sampler)
+    state = sampler.rng.getstate()
+
+    with pytest.raises(ValueError, match=match):
+        draw_design(sampler, query, size, then=then, design=design)
+    assert sampler.rng.getstate() == state, "refused before anything was drawn"
+
+
 def test_a_resumed_design_is_held_against_the_head_of_the_stream():
     space = list_space()
     sampler = SizeUniformSampler(6, random.Random(4))
