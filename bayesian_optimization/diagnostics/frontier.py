@@ -208,7 +208,7 @@ def read_frontier(run: AcquisitionRun) -> FrontierRead:
     # longer hold.
     queried = [*members, pick]
     mean, deviation = acquisition.marginal_posterior(queried)
-    scores = np.asarray(acquisition.score(mean, deviation), dtype=float).reshape(-1)
+    scores = np.asarray(acquisition.score_terms(queried, mean, deviation), dtype=float).reshape(-1)
 
     member_mean, member_deviation, member_scores = mean[:-1], deviation[:-1], scores[:-1]
     pick_mean, pick_deviation, pick_score = (

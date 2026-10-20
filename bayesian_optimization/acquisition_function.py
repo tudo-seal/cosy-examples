@@ -137,6 +137,25 @@ class AcquisitionFunction:
         """
         raise NotImplementedError("Subclasses must implement score().")
 
+    def score_terms(
+        self, candidates: Sequence[Tree[Any]], mean: np.ndarray, deviation: np.ndarray
+    ) -> np.ndarray:
+        """Score candidates from the terms themselves and their marginal posterior.
+
+        The three standard scores read the posterior alone, so this is :meth:`score`.  An
+        acquisition into which a property of the term enters exactly, beside its posterior,
+        overrides this method instead, and every caller that scores goes through it.
+
+        Args:
+            candidates (Sequence[Tree[Any]]): The candidates, in the order of ``mean``.
+            mean (np.ndarray): Their posterior means.
+            deviation (np.ndarray): Their posterior standard deviations, non-negative.
+
+        Returns:
+            np.ndarray: One score per candidate.
+        """
+        return self.score(mean, deviation)
+
     def evaluate_batch(self, trees: Sequence[Any]) -> dict[Tree[Any], float]:
         """Score a batch of candidates in one call to the surrogate.
 
@@ -159,7 +178,9 @@ class AcquisitionFunction:
 
         if candidates:
             mean, deviation = self.marginal_posterior(candidates)
-            scores = np.asarray(self.score(mean, deviation), dtype=float).reshape(-1)
+            scores = np.asarray(
+                self.score_terms(candidates, mean, deviation), dtype=float
+            ).reshape(-1)
             for tree, value in zip(candidates, scores, strict=True):
                 result[tree] = float(value)
 
@@ -368,6 +389,39 @@ def require_beta(beta: float) -> float:
     return number
 
 
+def _expected_gain(improvement: np.ndarray, deviation: np.ndarray) -> np.ndarray:
+    """Return ``E[max(U, 0)]`` for a Gaussian ``U`` of the given mean and standard deviation.
+
+    The expectation expected improvement takes over the incumbent, with ``U = g(t) - y*``:
+    ``u Phi(u / s) + s phi(u / s)``, and the gain itself where ``s`` is zero.
+
+    Args:
+        improvement (np.ndarray): The means ``u`` of the gains.
+        deviation (np.ndarray): Their standard deviations ``s``, non-negative; broadcast to the
+            shape of ``improvement``.
+
+    Returns:
+        np.ndarray: One expected gain per entry of ``improvement``, never negative.
+    """
+    improvement = np.asarray(improvement, dtype=float)
+    deviation = np.broadcast_to(np.asarray(deviation, dtype=float), improvement.shape)
+    result = np.empty_like(improvement)
+
+    # Where the value is certain, the expectation over a point mass is the gain itself.  The
+    # previous implementation scored all of those 0.0, which is right only where the mean
+    # fails to beat the incumbent as well.  Two routes reach ``s = 0`` in practice: a caller
+    # who turns the numerical diagonal off (measured: at the default ``alpha=1e-6`` the
+    # deviation at a training point is ~1.7e-3, at ``alpha=0`` it is exactly zero), and
+    # sklearn clipping a numerically negative variance to zero on the way out.
+    certain = deviation == 0.0
+    result[certain] = np.maximum(improvement[certain], 0.0)
+
+    uncertain = ~certain
+    z = improvement[uncertain] / deviation[uncertain]
+    result[uncertain] = improvement[uncertain] * norm.cdf(z) + deviation[uncertain] * norm.pdf(z)
+    return np.maximum(result, 0.0)
+
+
 class ExpectedImprovement(AcquisitionFunction):
     """Expected improvement: the expected gain over the incumbent, ``E[max(g(t) - y*, 0) | D]``.
 
@@ -410,24 +464,7 @@ class ExpectedImprovement(AcquisitionFunction):
         Returns:
             np.ndarray: The expected improvement of each candidate, never negative.
         """
-        improvement = mean - self.incumbent
-        result = np.empty_like(improvement)
-
-        # Where the value is certain, the expectation over a point mass is the gain itself.  The
-        # previous implementation scored all of those 0.0, which is right only where the mean
-        # fails to beat the incumbent as well.  Two routes reach ``s = 0`` in practice: a caller
-        # who turns the numerical diagonal off (measured: at the default ``alpha=1e-6`` the
-        # deviation at a training point is ~1.7e-3, at ``alpha=0`` it is exactly zero), and
-        # sklearn clipping a numerically negative variance to zero on the way out.
-        certain = deviation == 0.0
-        result[certain] = np.maximum(improvement[certain], 0.0)
-
-        uncertain = ~certain
-        z = improvement[uncertain] / deviation[uncertain]
-        result[uncertain] = (
-            improvement[uncertain] * norm.cdf(z) + deviation[uncertain] * norm.pdf(z)
-        )
-        return np.maximum(result, 0.0)
+        return _expected_gain(mean - self.incumbent, deviation)
 
 
 class ProbabilityOfImprovement(AcquisitionFunction):
