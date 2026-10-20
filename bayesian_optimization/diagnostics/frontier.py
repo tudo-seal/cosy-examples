@@ -123,7 +123,7 @@ class FrontierRead:
             outscores the pick without dominating it.
         higher_scored_members (int): How many members score above the pick.  This is the question
             the maximization actually answers, and it does not follow from the one above.  See
-            :func:`read_frontier` for which of the three acquisitions relates the two and how.
+            :func:`read_frontier` for which of the acquisitions relates the two and how.
         mean_spread (float): The range of ``m_D`` over the population.
         deviation_spread (float): The range of ``s_D``.  Both near zero is the collapse to watch
             for: the population has converged onto one mediocre region.
@@ -174,8 +174,9 @@ def read_frontier(run: AcquisitionRun) -> FrontierRead:
       case, with the threshold sitting at the incumbent, so a member up and to the right of the
       pick can score below it, and a dominated pick is then not a fault at all.
     * For the expected hypervolume improvement the plane is not the whole of the score: a term's
-      exact cost enters beside its posterior.  At one cost the score is a positive sum of expected
-      improvements, increasing in the mean and in the deviation as expected improvement is; across
+      exact cost enters beside its posterior.  At one cost below the reference cost the score is a
+      sum of expected improvements, non-decreasing in the mean and in the deviation as expected
+      improvement is, and at or past the reference cost it is 0 whatever the posterior; across
       costs a member up and to the right of the pick can score below it.
 
     A caller who wants one number reads :attr:`FrontierRead.higher_scored_members`.  The dominance

@@ -13,7 +13,8 @@ from scipy.stats import norm
 class MarginalPosterior(Protocol):
     """What an acquisition function needs from a surrogate, and all that it needs.
 
-    All three scores consume a term through its marginal posterior alone, so they are defined
+    The three standard scores consume a term through its marginal posterior alone, and the
+    expected hypervolume improvement through it and the term's exact cost, so they are defined
     wherever the surrogate is.  Naming that as a protocol rather than as
     ``GaussianProcessRegressor`` is not genericity for its own sake: it is the whole interface the
     scores use, and it keeps a test able to place a candidate at a chosen ``(m, s)`` instead of
@@ -71,7 +72,7 @@ class AcquisitionFactory(Protocol):
     observed), and the points already observed, and answering a new
     :class:`AcquisitionFunction` each time: one that scores with that surrogate and was handed
     those points, so that its known-point floor keeps them below every novel candidate.  The
-    three scores the loop names by string are built the same way.
+    four acquisitions the loop names by string are built the same way.
     """
 
     def __call__(
@@ -90,10 +91,11 @@ class AcquisitionFunction:
     was read by the fallback floor below, which is how an already-evaluated point could outrank
     every genuine candidate.
 
-    A subclass supplies :meth:`score`, a map from the marginal posterior to a real number.
+    A subclass supplies :meth:`score`, a map from the marginal posterior to a real number, or,
+    where a property of the term enters exactly beside its posterior, :meth:`score_terms`.
     Everything else is shared: asking the surrogate, checking what it answered, and keeping
-    already-evaluated points out of the running.  The three definitions differ in that map and in
-    nothing else.
+    already-evaluated points out of the running.  The three standard scores differ in that map and
+    in nothing else.
 
     **The known-point floor is a deliberate deviation from the thesis.**  The optimization loop
     there allows a repeated evaluation and de-duplicates only when conditioning, which uses the
@@ -548,12 +550,17 @@ class ExpectedHypervolumeImprovement(AcquisitionFunction):
     point ``(r_g, r_c)`` when ``t`` joins them: the expected hypervolume improvement with the cheap
     objective evaluated rather than modelled, as Loka et al., "Bi-objective Bayesian optimization of
     engineering problems with cheap and expensive cost functions" (Engineering with Computers 39,
-    2023), define it, their CHVEI (Eqs. 12 to 15 of the authors' manuscript).
+    2023), define it, their CHVEI: Eqs. 12, 14 and 15 of the authors' manuscript, and Eq. 13 with
+    ``y_1`` in the second argument of its ``max``, where the manuscript prints ``l_1^m`` and Eq. 14,
+    the integral over the candidate's own cell, needs ``y_1``.  The cells reach without bound
+    towards better values, so the score is the expectation of their improvement function (Eqs. 6
+    and 7) itself; the "anti ref point" their Fig. 2 draws is defined nowhere in the text and is
+    not used.
 
     The closed form here slices that area along the cost.  A candidate of cost ``c`` below the
     reference cost adds, at every cost ``v`` from ``c`` to ``r_c``, the stretch of value between the
-    level ``h(v)`` already dominated there and its own value, where ``h(v)`` is the largest observed
-    value at a cost of at most ``v``, or the reference value where there is none.  The level steps
+    level ``h(v)`` already dominated there and its own value, where ``h(v)`` is the larger of the
+    reference value and the largest observed value at a cost of at most ``v``.  The level steps
     only at the observed costs, so on each interval ``[v_j, v_{j+1})`` that they cut ``[c, r_c]``
     into it is one number ``h_j``, and the score is
     ``sum_j (v_{j+1} - v_j) E[max(g(t) - h_j, 0) | D]``: the expected improvement over each level,

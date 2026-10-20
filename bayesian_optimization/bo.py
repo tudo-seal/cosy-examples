@@ -714,7 +714,7 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
             is exhausted.
         ValueError
             If the dataset gives one term two different values, if the configured acquisition
-            is neither one of the three this class knows nor a callable, if what a factory built
+            is neither one of the four this class knows nor a callable, if what a factory built
             cannot serve the pass, if ``acquisition_fitness_mode`` is not one of the three modes,
             or if it asks for ``"single"`` and that acquisition has no lower bound to floor the
             terms already evaluated against.
@@ -936,7 +936,9 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
                 other.
             posterior (MarginalPosterior | None): The posterior the incumbent was read from, which
                 the front of the expected hypervolume improvement is read from too; ``None`` reads
-                ``model``.  Under repeated measurements ``model`` is its latent copy.
+                ``model``.  Under repeated measurements with the loop's Gaussian process,
+                ``model`` is its latent copy; a caller's surrogate answers its latent posterior
+                itself.
 
         Returns:
             AcquisitionFunction: The acquisition to maximize.
@@ -1073,7 +1075,10 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
             means, _deviations = model.predict(measured, return_std=True)
             means = np.asarray(means, dtype=float).reshape(-1)
             if means.shape != (len(measured),) or not np.all(np.isfinite(means)):
-                msg = "the surrogate returned a posterior mean that is not finite at a measured term"
+                msg = (
+                    "the surrogate returned a posterior mean that is not finite at a measured "
+                    "term"
+                )
                 raise ValueError(msg)
             pairs = list(zip(measured, (float(mean) for mean in means)))
         front = []
@@ -1081,9 +1086,9 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
             cost = self._ehvi_cost_of(term)
             if not math.isfinite(cost):
                 msg = (
-                    f"ehvi_cost gave the observed term {term} the cost {cost}, which is not finite; "
-                    "a cost is a measurement, and one that failed is refused rather than placed "
-                    "on the front"
+                    f"ehvi_cost gave the observed term {term} the cost {cost}, which is not "
+                    "finite; a cost is a measurement, and one that failed is refused rather than "
+                    "placed on the front"
                 )
                 raise ValueError(msg)
             front.append((value, cost))
@@ -1704,7 +1709,7 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
                 )
                 raise TypeError(msg) from error
 
-        # Only a string can name one of the three.  Looking a name up in the table before saying
+        # Only a string can name one of the four.  Looking a name up in the table before saying
         # so answers a list or a dict with a TypeError about hashing, where the caller was
         # promised a ValueError about the name.
         name = self.acquisition_function
