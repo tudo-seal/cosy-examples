@@ -20,16 +20,23 @@ cost ``cost(term)``, which is minimized and computed, never modelled.  A term's 
 
 **The generations.**  The first population is the design: the dataset when the passes begin, every
 distinct term in the order it was observed, so ``mu`` is the design's size.  Each generation's
-offspring are bred as the driver breeds them -- at least ``mu`` of them, ``mu + 1`` where the last
-pass is a crossover's two children -- and those the dataset does not hold go out one per pass, in
-the order the driver would have evaluated them; an offspring the dataset holds is answered
-from it at no cost, as the driver answers it from its cache.  When every offspring has its value, the
-next population is the truncation of parents and offspring, and the next generation's tournaments
-read the rank and the distance that truncation formed it with.  A generation's boundary needs every
-value of its offspring, so one suggestion is outstanding at a time.
+offspring are bred as the driver breeds them.  A pass of its variation yields two offspring whether
+it crosses or copies, so a generation holds ``mu`` of them for an even ``mu`` and ``mu + 1`` for an
+odd one, where Deb et al. breed exactly ``N`` (§III-C, p. 186); the extra one competes in the
+truncation like the others.  Those the dataset does not hold go out one per pass, in the order the
+driver would have evaluated them; an offspring the dataset holds is answered from it at no cost, as
+the driver answers it from its cache.  When every offspring has its value, the next population is
+the truncation of parents and offspring, and the next generation's tournaments read the rank and the
+distance that truncation formed it with.  A generation's boundary needs every value of its
+offspring, so one suggestion is outstanding at a time.
+
+**A failure leaves the run where it was.**  Breeding commits nothing until it has succeeded, so a
+``suggest`` that raises inside it leaves the population and the queue as they were, and the next
+``suggest`` breeds the same population again, from where the generators stand.
 
 **What a run of it records.**  :attr:`formed_generations` holds one :class:`FormedGeneration` per
-population, the first one included: its members as rows of the dataset, their ranks and distances.
+population, the first one included: its members, their dataset rows, and the rank and distance each
+was formed with.
 """
 
 from __future__ import annotations
@@ -54,7 +61,6 @@ from cosy.evolutionary_algorithms import (
     Recombination,
     ResolutionMutation,
     SubtreeSwap,
-    crowding_distances,
     dominance_fronts,
 )
 from cosy.search import DepthBoundedRandomSampler, Sampler
@@ -67,9 +73,11 @@ from .state import Diagnostics, Suggestion
 #: operators and the terms are the same, so the reasons given there for the two numbers hold here.
 DEFAULT_CROSSOVER_RATE = 0.9
 DEFAULT_MUTATION_RATE = 0.03
-#: The depth bound of the mutation's sampler, the run layer's (``runs.search_program``).
+#: The depth bound of the mutation's sampler, the run layer's (``runs.search_program``), chosen for
+#: its finite network spaces.  On a recursive space whose terms can grow without bound, a draw
+#: bounded at 1000 levels can grow past any memory: pass a bound that fits the space.
 DEFAULT_DEPTH_BOUND = 1000
-#: Deb et al. select parents by binary tournaments (§III-B, p. 185).
+#: Deb et al. select parents by binary tournaments (§III-C, pp. 185 - 186).
 DEFAULT_TOURNAMENT_SIZE = 2
 #: How many generations in a row may breed no term the dataset does not hold before the run stops.
 DEFAULT_IDLE_GENERATIONS = 20
@@ -87,7 +95,9 @@ class FormedGeneration:
         generation (int): The generation; 0 is the design.
         members (tuple[Any, ...]): The population, in its order.
         rows (tuple[int, ...]): Per place, the dataset row its member was observed in.
-        ranks (tuple[int, ...]): Per place, the rank of its front, 0 for the first.
+        ranks (tuple[int, ...]): Per place, the rank of its front, 0 for the first: among the fronts
+            of parents and offspring together, as the truncation formed the population; for the
+            design, among its own members.
         distances (tuple[float, ...] | None): Per place, the crowding distance it was formed with,
             within its whole front.  None for generation 0, which no truncation formed: its
             tournaments compare the rank alone (§III-C, "the usual binary tournament selection").
@@ -148,7 +158,8 @@ class NSGA2(AskTellLoop[NT, T, G]):
     crossover_rate, mutation_rate:
         p_c and p_m of the driver: the crossover draw per pass, the mutation draw per offspring.
     depth_bound:
-        The bound of the depth-bounded sampler the default mutation draws its subtrees from.
+        The bound of the depth-bounded sampler the default mutation draws its subtrees from; see
+        :data:`DEFAULT_DEPTH_BOUND` for a space whose terms can grow without bound.
     tournament_size:
         Participants per tournament of the crowded tournament selection.
     attempt_factor:
@@ -212,6 +223,20 @@ class NSGA2(AskTellLoop[NT, T, G]):
         self._nsga_logger = get_logger("nsga2")
         self._clear_run()
 
+    @property
+    def max_outstanding(self) -> int:
+        """One: a generation's boundary needs the value of every offspring of the generation."""
+        return 1
+
+    @max_outstanding.setter
+    def max_outstanding(self, value: int) -> None:
+        if value != 1 or isinstance(value, bool):
+            msg = (
+                f"NSGA-II forms a population from the values of all of a generation's offspring, so "
+                f"one suggestion is outstanding at a time, not {value!r}"
+            )
+            raise ValueError(msg)
+
     # -------------------------------------------------------------------------
     # The run's own state
     # -------------------------------------------------------------------------
@@ -227,6 +252,8 @@ class NSGA2(AskTellLoop[NT, T, G]):
         self._population_fitness: dict[Any, tuple[float, float]] = {}
         self._offspring: list[Any] = []
         self._waiting: list[Any] = []
+        # Whether the current population has bred its offspring; a population is formed unbred.
+        self._bred_current = False
         self._bred: tuple[int, int, int] = (0, 0, 0)
         # Generations bred in a row without a term the dataset does not hold.
         self._idle = 0
@@ -306,35 +333,24 @@ class NSGA2(AskTellLoop[NT, T, G]):
         self._costs[term] = float(value)
         return float(value)
 
-    def initialize(
-        self,
-        *,
-        objective: Callable[[Any], float] | None = None,
-        x0: Sequence[Any] | None = None,
-        y0: Sequence[float] | None = None,
-        initial_size: int = 10,
-        design: Sequence[Any] | None = None,
-    ) -> None:
-        """Build the initial dataset, or start the design phase; see :meth:`AskTellLoop.initialize`.
+    def check_design(self, terms: Sequence[Any]) -> None:
+        """Refuse a design whose cost cannot be read, before a value of it is measured.
 
-        Every design term's cost is computed here, so a design whose cost cannot be read is refused
-        before a value is measured for it, wherever the design is handed out through the phase.
-        A refusal leaves the loop UNINITIALIZED.
+        Args:
+            terms (Sequence[Any]): The design.
+
+        Raises:
+            ValueError: If a term's cost is not a finite number, naming the term.
         """
-        super().initialize(objective=objective, x0=x0, y0=y0, initial_size=initial_size, design=design)
-        try:
-            for term in (*self._design, *self._x_list):
-                self._cost_of(term)
-        except BaseException:
-            self.reset()
-            raise
+        for term in terms:
+            self._cost_of(term)
 
     # -------------------------------------------------------------------------
     # The generations
     # -------------------------------------------------------------------------
 
     def _begin(self) -> None:
-        """Make the design the first population and breed the first generation's offspring."""
+        """Make the design the first population, unbred."""
         terms, values = self._distinct_pairs()
         if not terms:
             raise RuntimeError(
@@ -362,11 +378,18 @@ class NSGA2(AskTellLoop[NT, T, G]):
         self._population = list(terms)
         self._population_fitness = {term: self._fitness[term] for term in self._population}
         self._generation = 0
-        self._record(distances=None)
-        self._breed()
+        rank_of: dict[Any, int] = {}
+        for rank, front in enumerate(dominance_fronts(self._population, self._population_fitness, self._comparator)):
+            for member in front:
+                rank_of.setdefault(member, rank)
+        self._record(tuple(rank_of[term] for term in self._population), None)
 
     def _breed(self) -> None:
-        """Breed the next generation's offspring as the driver breeds them, and queue the new ones."""
+        """Breed the next generation's offspring as the driver breeds them, and queue the new ones.
+
+        Nothing of the run changes until the breeding has succeeded: a failure inside variation
+        leaves the population unbred, and the next call breeds it again.
+        """
         search = self._search
         assert search is not None and self._population is not None
         query = self._query()
@@ -384,13 +407,15 @@ class NSGA2(AskTellLoop[NT, T, G]):
                 raise RuntimeError(msg)
             attempts += 1
             offspring.extend(search._variation_pass(query, self._population, self._population_fitness))
-        self._offspring = offspring
         # In the order the driver's cache would ask for them: the first place of each term it lacks.
-        self._waiting = [term for term in dict.fromkeys(offspring) if term not in self._fitness]
+        waiting = [term for term in dict.fromkeys(offspring) if term not in self._fitness]
         known = sum(1 for term in offspring if term in self._fitness)
-        self._bred = (len(offspring), len(self._waiting), known)
+        self._offspring = offspring
+        self._waiting = waiting
+        self._bred = (len(offspring), len(waiting), known)
         self._known_total += known
-        self._idle = 0 if self._waiting else self._idle + 1
+        self._idle = 0 if waiting else self._idle + 1
+        self._bred_current = True
 
     def _form_next_population(self) -> None:
         """Truncate parents and offspring to the next population, as the driver does."""
@@ -409,25 +434,25 @@ class NSGA2(AskTellLoop[NT, T, G]):
             raise ValueError(msg)
         if any(term not in pool_fitness for term in population):
             raise ValueError("CrowdedTruncation returned an individual it was not given")
+        population_fitness = {term: self._fitness[term] for term in population}
+        standing = CrowdedTruncation.standing_of(population, population_fitness, self._comparator)
+        if standing is None:
+            raise RuntimeError("the population CrowdedTruncation formed does not carry its standing")
         self._population = population
-        self._population_fitness = {term: self._fitness[term] for term in population}
+        self._population_fitness = population_fitness
         self._generation += 1
-        standing = CrowdedTruncation.standing_of(population, self._population_fitness, self._comparator)
-        self._record(distances=None if standing is None else tuple(distance for _rank, distance in standing))
+        self._bred_current = False
+        self._record(tuple(rank for rank, _distance in standing), tuple(distance for _rank, distance in standing))
 
-    def _record(self, *, distances: tuple[float, ...] | None) -> None:
+    def _record(self, ranks: tuple[int, ...], distances: tuple[float, ...] | None) -> None:
         population = self._population or []
-        rank_of: dict[Any, int] = {}
-        for rank, front in enumerate(dominance_fronts(population, self._population_fitness, self._comparator)):
-            for member in front:
-                rank_of.setdefault(member, rank)
         offspring, evaluated, known = self._bred if self._generation > 0 else (0, 0, 0)
         self._formed.append(
             FormedGeneration(
                 generation=self._generation,
                 members=tuple(population),
                 rows=tuple(self._row_of[term] for term in population),
-                ranks=tuple(rank_of[term] for term in population),
+                ranks=ranks,
                 distances=distances,
                 offspring=offspring,
                 evaluated=evaluated,
@@ -447,9 +472,13 @@ class NSGA2(AskTellLoop[NT, T, G]):
             enable_verbose_logging()
         if self._population is None:
             self._begin()
-        # One suggestion is outstanding at a time, so an empty queue means every offspring of the
-        # generation has its value and the next population can be formed.
-        while not self._waiting:
+        while True:
+            if not self._bred_current:
+                self._breed()
+            if self._waiting:
+                break
+            # One suggestion is outstanding at a time, so an empty queue means every offspring of
+            # the generation has its value and the next population can be formed.
             if self._idle >= self.idle_generations:
                 msg = (
                     f"NSGA-II bred {self.idle_generations} generations in a row without a term the "
@@ -458,7 +487,6 @@ class NSGA2(AskTellLoop[NT, T, G]):
                 )
                 raise RuntimeError(msg)
             self._form_next_population()
-            self._breed()
         term = self._waiting[0]
         self._cost_of(term)
         self._waiting.pop(0)

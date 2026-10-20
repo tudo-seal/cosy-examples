@@ -37,8 +37,8 @@ from bayesian_optimization.runs import search_program
 from tests.spaces import EXPR, LIST, expression_space, list_space, lit
 
 SPACES = {"expressions": (expression_space, EXPR), "lists": (list_space, LIST)}
-# The default mutation draws its subtrees depth-bounded; on the infinite expression space a draw
-# bounded at the run layer's 1000 levels fails often enough to end variation at the attempt cap.
+# The default mutation draws its subtrees depth-bounded, and on the infinite expression space a draw
+# bounded at the run layer's 1000 levels can grow past any memory; these spaces get a bound that fits.
 DEPTH = 5
 
 
@@ -88,21 +88,30 @@ class GivenPopulation:
         return list(self.terms)
 
 
-def oracle(space, request, design, seed, generations, crossover_rate, mutation_rate):
-    """cosy's driver on the same components: the populations, and the new offspring in evaluation order."""
+COMPARATOR_MAXIMIZE = (True, False)
+
+
+def oracle(space, request, design, seed, generations, crossover_rate, mutation_rate, tournament_size=2):
+    """cosy's driver on the same components, run ``generations`` generations.
+
+    Returns, per generation from 0: the population, the standing the truncation formed it with
+    (None for the design), and from generation 1 the counts (offspring, distinct new terms, places of
+    known terms); and the new offspring over the whole run, in the order the driver evaluated them.
+    """
     parts = components(seed)
+    comparator = ParetoFitnessComparator(maximize=COMPARATOR_MAXIMIZE)
     search = EvolutionarySearch(
         initializer=GivenPopulation(design),
         mutation=parts["mutation"],
         recombination=parts["recombination"],
-        parent_selection=CrowdedTournamentSelection(2, parts["selection_rng"]),
+        parent_selection=CrowdedTournamentSelection(tournament_size, parts["selection_rng"]),
         survivor_selection=CrowdedTruncation(),
         termination=Generations(generations),
         population_size=len(design),
         crossover_rate=crossover_rate,
         mutation_rate=mutation_rate,
         rng=parts["rng"],
-        comparator=ParetoFitnessComparator(maximize=(True, False)),
+        comparator=comparator,
     )
     states = list(
         search.evolutionary_stream(
@@ -111,21 +120,24 @@ def oracle(space, request, design, seed, generations, crossover_rate, mutation_r
     )
     evaluated = set(design)
     new_in_order = []
-    counts = []  # per generation from 1: (offspring, distinct new terms, places of known terms)
+    counts = [None]
     for state in states[1:]:
         known = sum(1 for term in state.offspring if term in evaluated)
         new = [term for term in dict.fromkeys(state.offspring) if term not in evaluated]
         evaluated.update(new)
         new_in_order.extend(new)
         counts.append((len(state.offspring), len(new), known))
-    return [list(state.population) for state in states], new_in_order, counts
+    standings = [
+        CrowdedTruncation.standing_of(state.population, state.fitness, comparator) for state in states
+    ]
+    return [list(state.population) for state in states], standings, counts, new_in_order
 
 
-def ask_tell(space, request, design, seed, generations, crossover_rate, mutation_rate):
+def ask_tell(space, request, design, seed, generations, crossover_rate, mutation_rate, tournament_size=2):
     """The same run through the loop: the design phase, then one pass per new offspring."""
     search = NSGA2(
         space, request, cost=cost_of, crossover_rate=crossover_rate, mutation_rate=mutation_rate,
-        **components(seed),
+        tournament_size=tournament_size, **components(seed),
     )
     search.initialize(design=design)
     passes = []
@@ -141,30 +153,56 @@ def ask_tell(space, request, design, seed, generations, crossover_rate, mutation
     return search, populations, passes
 
 
+def ranks_of(population) -> list:
+    fitness = {term: (value_of(term), cost_of(term)) for term in population}
+    rank_of: dict = {}
+    comparator = ParetoFitnessComparator(maximize=COMPARATOR_MAXIMIZE)
+    for rank, front in enumerate(dominance_fronts(population, fitness, comparator)):
+        for member in front:
+            rank_of.setdefault(member, rank)
+    return [rank_of[term] for term in population]
+
+
 @pytest.mark.parametrize("space_name", sorted(SPACES))
 @pytest.mark.parametrize("seed", [0, 1, 2, 3])
-@pytest.mark.parametrize(("mu", "crossover_rate", "mutation_rate"), [(4, 0.9, 0.3), (7, 0.5, 0.8)])
-def test_nsga2_breeds_and_keeps_what_cosys_driver_does(space_name, seed, mu, crossover_rate, mutation_rate):
+@pytest.mark.parametrize(
+    ("mu", "crossover_rate", "mutation_rate", "tournament_size"),
+    [(4, 0.9, 0.3, 2), (7, 0.5, 0.8, 2), (5, 0.9, 0.5, 3)],
+)
+def test_nsga2_breeds_and_keeps_what_cosys_driver_does(
+    space_name, seed, mu, crossover_rate, mutation_rate, tournament_size
+):
     make, request = SPACES[space_name]
     space = make()
     design = design_of(space, request, mu, seed)
     generations = 4
 
-    populations, new_in_order, bred = oracle(space, request, design, seed, generations, crossover_rate, mutation_rate)
-    search, asked_populations, passes = ask_tell(
-        space, request, design, seed, generations, crossover_rate, mutation_rate
+    search, asked, passes = ask_tell(
+        space, request, design, seed, generations, crossover_rate, mutation_rate, tournament_size
+    )
+    # The ask/tell run stops inside the breeding of the generation after its current population;
+    # the driver runs far enough to cover it.
+    bred = search.generation + 1
+    populations, standings, counts, new_in_order = oracle(
+        space, request, design, seed, bred + 2, crossover_rate, mutation_rate, tournament_size
     )
 
-    assert asked_populations[: generations + 1] == populations
-    # The passes of the generations the oracle ran, and the first offspring of the next one.
-    assert passes[: len(new_in_order)] == new_in_order
-    assert [
-        (formed.offspring, formed.evaluated, formed.known)
-        for formed in search.formed_generations[1 : generations + 1]
-    ] == bred
+    assert asked == populations[: search.generation + 1]
+    # Every new offspring up to the one the last pass evaluated, in the driver's order.
+    assert passes == new_in_order[: len(passes)]
+    formed = search.formed_generations
+    assert [(f.offspring, f.evaluated, f.known) for f in formed[1:]] == counts[1 : search.generation + 1]
+    assert search.offspring_known == sum(known for _bred, _new, known in counts[1 : bred + 1])
+    # The ranks and distances each population was formed with, the design's ranks alone.
+    assert formed[0].ranks == tuple(ranks_of(design)) and formed[0].distances is None
+    for record, standing in zip(formed[1:], standings[1 : search.generation + 1], strict=True):
+        assert standing is not None
+        assert record.ranks == tuple(rank for rank, _distance in standing)
+        assert record.distances == tuple(distance for _rank, distance in standing)
     # Not a comparison of two runs that never moved.
-    assert new_in_order, "the run bred nothing new"
-    assert any(populations[t] != populations[t - 1] for t in range(1, generations + 1))
+    assert passes, "the run bred nothing new"
+    assert any(populations[t] != populations[t - 1] for t in range(1, search.generation + 1))
+    assert any(rank > 0 for record in formed for rank in record.ranks), "one front tests no ranking"
 
 
 def run(search: NSGA2, design, passes: int, value=value_of) -> list:
@@ -353,3 +391,139 @@ def test_the_defaults_are_the_acquisition_optimizers_and_the_run_layers():
     assert nsga2_module.DEFAULT_MUTATION_RATE == run_acquisition.DEFAULT_MUTATION_RATE
     assert nsga2_module.DEFAULT_DEPTH_BOUND == search_program.DEFAULT_DEPTH_BOUND
     assert nsga2_module.DEFAULT_TOURNAMENT_SIZE == 2
+
+
+class ScriptedSwap:
+    """A recombination whose children are scripted, one batch per call, and copies once the script ends."""
+
+    def __init__(self, script) -> None:
+        self.script = [list(batch) for batch in script]
+        self.calls = 0
+
+    def recombine(self, query, first, second):
+        self.calls += 1
+        return self.script.pop(0) if self.script else [first, second]
+
+
+class NeverMutate:
+    def mutate(self, query, term):
+        raise AssertionError("mutation_rate 0 never mutates")
+
+
+def scripted(space, request, design, script, **arguments):
+    """NSGA-II on two design terms, one pass per generation, the children the script names."""
+    return NSGA2(
+        space, request, cost=cost_of, crossover_rate=1.0, mutation_rate=0.0, mutation=NeverMutate(),
+        recombination=ScriptedSwap(script), seed=0, **arguments,
+    )
+
+
+def test_idle_generations_stop_a_run_only_in_a_row():
+    space = list_space()
+    terms = design_of(space, LIST, 5, 11)
+    first, second, new = terms[0], terms[1], terms[2:]
+    # idle, new, idle, new, idle, new, then idle twice
+    script = [(first, second), (new[0], first), (second, first), (new[1], second), (first, first), (new[2], first),
+              (first, second), (second, second)]
+    search = scripted(space, LIST, [first, second], script, idle_generations=2)
+    made = run(search, [first, second], 3)
+    assert [suggestion.candidate for suggestion in made] == new
+    # three idle generations so far, never two in a row: the run went on; two in a row stop it
+    with pytest.raises(RuntimeError, match="2 generations in a row without a term"):
+        search.suggest()
+    # every bred place counted: 2 + 1 + 2 + 1 + 2 + 1 + 2 + 2
+    assert search.offspring_known == 13
+
+
+def test_the_attempt_cap_is_attempt_factor_passes_per_member():
+    space = list_space()
+    terms = design_of(space, LIST, 2, 12)
+    search = scripted(space, LIST, terms, [()] * 50, attempt_factor=3)
+    run(search, terms, 0)
+    with pytest.raises(RuntimeError, match="produced 0 of 2 offspring in 6 passes"):
+        search.suggest()
+    assert search._given[1].calls == 6
+
+
+def test_a_failed_breeding_leaves_the_population_and_a_retry_breeds_it_again():
+    space = list_space()
+    terms = design_of(space, LIST, 3, 13)
+    new = design_of(space, LIST, 6, 13)[3:]
+    # The second call fails: the first generation's breeding had one batch when it failed.
+    script = [(new[0], terms[0]), "fail", (new[1], terms[1]), (new[2], terms[2])]
+
+    class FailingOnce(ScriptedSwap):
+        def recombine(self, query, first, second):
+            if self.script and self.script[0] == list("fail"):
+                self.script.pop(0)
+                self.calls += 1
+                raise KeyboardInterrupt
+            return super().recombine(query, first, second)
+
+    search = NSGA2(space, LIST, cost=cost_of, crossover_rate=1.0, mutation_rate=0.0, mutation=NeverMutate(),
+                   recombination=FailingOnce(script), seed=0)
+    run(search, terms, 0)
+    with pytest.raises(KeyboardInterrupt):
+        search.suggest()
+    assert search.generation == 0
+    assert [record.generation for record in search.formed_generations] == [0]
+    assert search.get_state_snapshot()["state"] == BOState.INITIALIZED.value
+    # The retry breeds the design again, from where the generators stand: no population was formed.
+    suggestion = search.suggest()
+    assert suggestion.diagnostics["generation"] == 1
+    assert [record.generation for record in search.formed_generations] == [0]
+
+
+def test_the_capacity_stays_one():
+    search = NSGA2(list_space(), LIST, cost=cost_of, depth_bound=DEPTH, seed=14)
+    assert search.max_outstanding == 1
+    with pytest.raises(ValueError, match="one suggestion is outstanding at a time"):
+        search.max_outstanding = 2
+    search.max_outstanding = 1
+    assert search.max_outstanding == 1
+
+
+def test_a_design_with_a_nan_cost_is_refused_before_the_objective_reads_it():
+    space = list_space()
+    terms = design_of(space, LIST, 5, 17)
+    victim = terms[3]
+    measured = []
+
+    def objective(term):
+        measured.append(term)
+        return value_of(term)
+
+    search = NSGA2(space, LIST, cost=lambda t: math.nan if t == victim else cost_of(t), depth_bound=DEPTH, seed=17)
+    with pytest.raises(ValueError, match="cost returned nan"):
+        search.initialize(objective=objective, x0=terms)
+    assert measured == []
+    assert search.get_state_snapshot()["state"] == BOState.UNINITIALIZED.value
+    with pytest.raises(ValueError, match="cost returned nan"):
+        search.initialize(x0=terms, y0=[value_of(term) for term in terms])
+    assert search.get_state_snapshot()["state"] == BOState.UNINITIALIZED.value
+
+
+def test_a_drawn_design_with_a_nan_cost_is_refused_before_the_objective_reads_it():
+    space = list_space()
+    sampler = SizeUniformSampler(6, random.Random(18))
+    measured = []
+
+    def objective(term):
+        measured.append(term)
+        return value_of(term)
+
+    search = NSGA2(space, LIST, cost=lambda t: math.nan if t.size == 3 else cost_of(t), depth_bound=DEPTH,
+                   sampler=sampler, seed=18)
+    with pytest.raises(ValueError, match="cost returned nan"):
+        search.initialize(objective=objective, initial_size=12)
+    assert measured == []
+
+
+def test_a_repeated_design_term_is_named_by_its_first_row():
+    space = list_space()
+    a, b, c = design_of(space, LIST, 3, 19)
+    search = NSGA2(space, LIST, cost=cost_of, depth_bound=DEPTH, seed=19, mutation_rate=0.5)
+    search.initialize(x0=[a, b, a, c], y0=[value_of(a), value_of(b), value_of(a), value_of(c)])
+    search.suggest()
+    assert search.formed_generations[0].rows == (0, 1, 3)
+    assert search.population == (a, b, c)

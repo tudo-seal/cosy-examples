@@ -445,6 +445,7 @@ class AskTellLoop(Generic[NT, T, G]):
                     "the design repeats a term: a repeated design term is an evaluation spent on "
                     "a value the dataset already holds"
                 )
+            self.check_design(design_terms)
             # A design handed over is not drawn, but the passes after it still replace a
             # duplicate with a fresh draw, so the sampler is built here as on every other path.
             self._resolve_sampling()
@@ -465,6 +466,9 @@ class AskTellLoop(Generic[NT, T, G]):
             # A design the caller hands over was not drawn here, so this loop redrew nothing in
             # it.  The count is about the repair, not about the design.
             repeats = 0
+
+        # Before a value is read for any term of it, and before the state moves.
+        self.check_design(x0_list)
 
         if x0 is None and y0 is None and objective is None:
             # The design phase: drawn above exactly as the closed path draws it, and evaluated by
@@ -1132,6 +1136,18 @@ class AskTellLoop(Generic[NT, T, G]):
             list[Any]: The records.
         """
         return list(self._trace)
+
+    def check_design(self, terms: Sequence[Any]) -> None:
+        """Refuse, before any of its values is read, a design no pass could use; nothing by default.
+
+        :meth:`initialize` asks it of every design, drawn or handed over, once the terms are known
+        and before a value is measured for one of them or the state moves, and the run layer asks
+        it of a design given as terms or resumed before it opens a file.  A strategy that reads
+        something of each design term besides its value overrides it, as NSGA-II reads a cost.
+
+        Args:
+            terms (Sequence[Any]): The design.
+        """
 
     def check_configuration(self) -> None:
         """Refuse, before anything is evaluated, a configuration no pass could use.
