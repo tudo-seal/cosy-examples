@@ -64,6 +64,20 @@ def test_the_incumbent_cannot_be_read_off_the_fitted_gp(fitted_gp, tree_corpus):
 # ExpectedImprovement
 # ---------------------------------------------------------------------------
 
+def test_the_expected_improvement_keeps_the_precision_it_is_handed():
+    """The score is the closed form on the arrays it is given, in their own precision.
+
+    ``score`` is public, and a caller who scores float32 posteriors reads float32 scores, as it
+    always did: the expectation moved into a function of its own without a cast on the way.
+    """
+    from bayesian_optimization.acquisition_function import ExpectedImprovement
+
+    mean = np.array([0.3, 0.1, -0.2], dtype=np.float32)
+    deviation = np.array([0.2, 0.0, 0.3], dtype=np.float32)
+    scores = ExpectedImprovement(gp=FixedPosterior({}), incumbent=0.05).score(mean, deviation)
+    assert scores.dtype == np.float32
+
+
 def test_ei_matches_its_closed_form(fitted_gp):
     """EI is ``(m - y*) Phi(z) + s phi(z)`` with ``z = (m - y*) / s``, and nothing else.
 

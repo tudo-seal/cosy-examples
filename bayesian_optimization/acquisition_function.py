@@ -396,16 +396,17 @@ def _expected_gain(improvement: np.ndarray, deviation: np.ndarray) -> np.ndarray
     The expectation expected improvement takes over the incumbent, with ``U = g(t) - y*``:
     ``u Phi(u / s) + s phi(u / s)``, and the gain itself where ``s`` is zero.
 
+    The arithmetic is the one :meth:`ExpectedImprovement.score` always ran, on the arrays it is
+    handed and in their precision.
+
     Args:
         improvement (np.ndarray): The means ``u`` of the gains.
-        deviation (np.ndarray): Their standard deviations ``s``, non-negative; broadcast to the
-            shape of ``improvement``.
+        deviation (np.ndarray): Their standard deviations ``s``, non-negative, one per entry of
+            ``improvement``.
 
     Returns:
         np.ndarray: One expected gain per entry of ``improvement``, never negative.
     """
-    improvement = np.asarray(improvement, dtype=float)
-    deviation = np.broadcast_to(np.asarray(deviation, dtype=float), improvement.shape)
     result = np.empty_like(improvement)
 
     # Where the value is certain, the expectation over a point mass is the gain itself.  The
@@ -653,7 +654,7 @@ class ExpectedHypervolumeImprovement(AcquisitionFunction):
             edges = np.array([cost, *self._costs[first:], reference_cost])
             level_at_cost = self._levels[first - 1] if first else reference_value
             levels = np.array([level_at_cost, *self._levels[first:]])
-            gains = _expected_gain(mean[index] - levels, deviation[index])
+            gains = _expected_gain(mean[index] - levels, np.full(len(levels), deviation[index]))
             scores[index] = float(np.dot(np.diff(edges), gains))
         return scores
 
