@@ -261,6 +261,83 @@ def test_the_score_rises_with_the_mean_and_the_deviation_and_falls_with_the_cost
         assert dearer <= base
 
 
+def test_negative_costs_and_values_are_measured_like_any_others():
+    """Costs and values below zero, a reference below zero too, against the oracle."""
+    rng = random.Random(41)
+    compared = 0
+    for _trial in range(40):
+        front = [(rng.uniform(-1.0, 1.0), rng.uniform(-6.0, 3.0)) for _ in range(5)]
+        reference = (-0.5, 2.0)
+        candidates = [
+            (
+                rng.uniform(-1.0, 1.5),
+                rng.choice([0.0, rng.uniform(0.01, 0.4)]),
+                rng.uniform(-8.0, 3.0),
+            )
+            for _ in range(6)
+        ]
+        terms, scores = scored(front, reference, candidates)
+        for term, (mean, deviation, cost) in zip(terms, candidates):
+            expected = expected_improvement_by_quadrature(front, reference, cost, mean, deviation)
+            assert scores[term] == pytest.approx(expected, rel=1e-7, abs=1e-10), (
+                front,
+                mean,
+                deviation,
+                cost,
+            )
+            compared += 1
+    assert compared == 240
+
+
+@pytest.mark.parametrize(
+    ("front", "reference", "candidate", "expected"),
+    [
+        ([(1.0, -1e308)], (0.0, 1e308), (0.5, 0.0, -1e308), 0.0),
+        ([], (0.0, 1e308), (1e-300, 0.0, -1e308), 2e8),
+        ([], (1e308, 2.0), (-1e308, 1.0, 1.0), 0.0),
+    ],
+)
+def test_scores_at_the_edges_of_the_floats_are_the_exact_ones(
+    front, reference, candidate, expected
+):
+    """Widths and gains past the largest float, on finite inputs whose score is not.
+
+    A width of 2e308 times a gain of zero is zero, not the product of an infinity and a zero, and
+    times a gain of 1e-300 it is 2e8.
+
+    Args:
+        front (list): The observed pairs.
+        reference (tuple): The reference point.
+        candidate (tuple): Mean, deviation and cost.
+        expected (float): The exact score.
+    """
+    terms, scores = scored(front, reference, [candidate])
+    assert scores[terms[0]] == pytest.approx(expected, rel=1e-12, abs=0.0)
+
+
+def test_a_score_past_the_floats_is_refused_naming_the_reference():
+    """A reference point far below every value bounds an area no float holds."""
+    with pytest.raises(
+        ValueError, match=r"exceeds the floats.*the reference point \(-1\.7e\+308, 8\.0\)"
+    ):
+        scored([(0.6, 3.0)], (-1.7e308, 8.0), [(0.7, 0.1, 1.0)])
+
+
+def test_the_front_the_reference_and_the_cost_are_read_only():
+    """The levels are built from them once.
+
+    A score after reassigning one of them would be read off levels that belong to the old value.
+    """
+    acquisition = ExpectedHypervolumeImprovement(
+        PlacedPosterior({}), cost=float, front=[(0.5, 7.0)], reference=(0.0, 10.0)
+    )
+    for name, value in (("reference", (0.0, 5.0)), ("front", [(0.95, 0.5)]), ("cost", abs)):
+        with pytest.raises(AttributeError):
+            setattr(acquisition, name, value)
+    assert acquisition.reference == (0.0, 10.0)
+    assert acquisition.front == [(0.5, 7.0)]
+
+
 # ---------------------------------------------------------------------------
 # The loop's contract: the floor, and refusals
 # ---------------------------------------------------------------------------
@@ -287,7 +364,20 @@ def test_a_cost_that_is_not_finite_is_refused_naming_the_term(cost):
         scored([(0.5, 2.0)], (0.0, 10.0), [(0.5, 0.1, cost)])
 
 
-@pytest.mark.parametrize("reference", [(math.nan, 10.0), (0.0, math.inf), (0.0,), "far"])
+@pytest.mark.parametrize(
+    "reference",
+    [
+        (math.nan, 10.0),
+        (0.0, math.inf),
+        (0.0,),
+        "far",
+        (None, 8.0),
+        "12",
+        ("0", "8"),
+        (True, 8.0),
+        {"value": 0.0, "cost": 8.0},
+    ],
+)
 def test_a_reference_point_that_is_not_two_finite_numbers_is_refused(reference):
     """The reference bounds the measured area, so one without a finite bound is no reference.
 

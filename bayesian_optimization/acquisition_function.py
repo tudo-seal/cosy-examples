@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import bisect
+import numbers
 from collections.abc import Callable, Sequence
 from typing import Any, Protocol
 
@@ -521,13 +522,17 @@ def _require_pair(name: str, pair: Any) -> tuple[float, float]:
         tuple[float, float]: The value and the cost.
 
     Raises:
-        ValueError: If it is not two numbers, or one of them is not finite.
+        ValueError: If it is not two real numbers, a truth value or a string not being one, or if
+            one of them is not finite.
     """
     try:
         value, cost = pair
     except (TypeError, ValueError):
-        msg = f"{name} is a pair (value, cost): {pair!r}"
+        msg = f"{name} is a pair of two numbers (value, cost), not {pair!r}"
         raise ValueError(msg) from None
+    if any(isinstance(part, bool) or not isinstance(part, numbers.Real) for part in (value, cost)):
+        msg = f"{name} is a pair of two numbers (value, cost), not {pair!r}"
+        raise ValueError(msg)
     return (
         _require_finite(f"the value of {name}", value),
         _require_finite(f"the cost of {name}", cost),
@@ -582,17 +587,19 @@ class ExpectedHypervolumeImprovement(AcquisitionFunction):
         known_points: set[Any] | None = None,
     ) -> None:
         super().__init__(gp, known_points=known_points)
-        self.cost = require_cost(cost)
-        self.reference = require_reference(reference)
-        self.front = [_require_pair("an observed pair", pair) for pair in front]
-        reference_value, reference_cost = self.reference
+        # Read-only below: the levels are built from these three once, here, so a score after
+        # reassigning one would be read off levels that belong to the old value.
+        self._cost = require_cost(cost)
+        self._reference = require_reference(reference)
+        self._front = [_require_pair("an observed pair", pair) for pair in front]
+        reference_value, reference_cost = self._reference
         # The levels, in increasing order of cost: at each observed cost below the reference cost
         # where the largest value so far rises, that value.  A pair that raises nothing is dominated
         # by one at a cost no higher, or lies below the reference value.
         self._costs: list[float] = []
         self._levels: list[float] = []
         level = reference_value
-        inside = [pair for pair in self.front if pair[1] < reference_cost]
+        inside = [pair for pair in self._front if pair[1] < reference_cost]
         for value, observed_cost in sorted(inside, key=lambda pair: pair[1]):
             if value <= level:
                 continue
@@ -602,6 +609,21 @@ class ExpectedHypervolumeImprovement(AcquisitionFunction):
             else:
                 self._costs.append(observed_cost)
                 self._levels.append(level)
+
+    @property
+    def cost(self) -> Callable[[Tree[Any]], float]:
+        """The exact cost of a term."""
+        return self._cost
+
+    @property
+    def reference(self) -> tuple[float, float]:
+        """The reference point ``(value, cost)``."""
+        return self._reference
+
+    @property
+    def front(self) -> list[tuple[float, float]]:
+        """The observed pairs ``(value, cost)``, a copy."""
+        return list(self._front)
 
     def score(self, mean: np.ndarray, deviation: np.ndarray) -> np.ndarray:
         """Refuse to score from the posterior alone.
@@ -636,12 +658,14 @@ class ExpectedHypervolumeImprovement(AcquisitionFunction):
             np.ndarray: One score per candidate, never negative.
 
         Raises:
-            ValueError: If the cost of a candidate is not finite.
+            ValueError: If the cost of a candidate is not finite, or if its score exceeds the
+                floats, which only a reference point far beyond the observed values and
+                costs produces.
         """
-        reference_value, reference_cost = self.reference
+        reference_value, reference_cost = self._reference
         scores = np.zeros(len(candidates))
         for index, term in enumerate(candidates):
-            cost = float(self.cost(term))
+            cost = float(self._cost(term))
             if not np.isfinite(cost):
                 msg = (
                     f"the cost of the term {term} is not finite: {cost}; a cost is a measurement, "
@@ -654,8 +678,26 @@ class ExpectedHypervolumeImprovement(AcquisitionFunction):
             edges = np.array([cost, *self._costs[first:], reference_cost])
             level_at_cost = self._levels[first - 1] if first else reference_value
             levels = np.array([level_at_cost, *self._levels[first:]])
-            gains = _expected_gain(mean[index] - levels, np.full(len(levels), deviation[index]))
-            scores[index] = float(np.dot(np.diff(edges), gains))
+            deviations = np.full(len(levels), deviation[index])
+            with np.errstate(over="ignore", invalid="ignore"):
+                widths = np.diff(edges)
+                improvements = mean[index] - levels
+                if np.all(np.isfinite(widths)) and np.all(np.isfinite(improvements)):
+                    score = float(np.dot(widths, _expected_gain(improvements, deviations)))
+                else:
+                    # A width or a gain past the largest float, on finite inputs: the same area on
+                    # halved values, exact at these magnitudes, where a width cannot overflow; the
+                    # expected gain is homogeneous of degree one, so the score is four times it.
+                    halved = _expected_gain(mean[index] / 2 - levels / 2, deviations / 2)
+                    score = 4.0 * float(np.dot(np.diff(edges / 2), halved))
+            if not np.isfinite(score):
+                msg = (
+                    f"the expected hypervolume improvement of the term {term} exceeds the floats: "
+                    f"the reference point {self._reference} bounds an area too large to measure. "
+                    "Set it near the observed values and costs."
+                )
+                raise ValueError(msg)
+            scores[index] = score
         return scores
 
 
