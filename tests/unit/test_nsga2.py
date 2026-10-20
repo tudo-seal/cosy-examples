@@ -483,6 +483,30 @@ def test_the_capacity_stays_one():
     assert search.max_outstanding == 1
 
 
+def test_finalize_forms_the_population_a_complete_generation_earned():
+    space = list_space()
+    terms = design_of(space, LIST, 2, 15)
+    new = design_of(space, LIST, 4, 15)[2:]
+    search = scripted(space, LIST, terms, [(new[0], terms[0]), (new[1], terms[1])])
+    run(search, terms, 2)
+    # Both generations' offspring have their values; the second population is formed by the next suggest.
+    assert [record.generation for record in search.formed_generations] == [0, 1]
+    search.finalize()
+    assert [record.generation for record in search.formed_generations] == [0, 1, 2]
+    assert search.formed_generations[2].evaluated == 1
+
+
+def test_finalize_forms_nothing_while_a_generation_awaits_values():
+    space = list_space()
+    terms = design_of(space, LIST, 2, 16)
+    new = design_of(space, LIST, 5, 16)[2:]
+    # The first generation breeds two new terms, and the run ends after one of them.
+    search = scripted(space, LIST, terms, [(new[0], new[1])])
+    run(search, terms, 1)
+    search.finalize()
+    assert [record.generation for record in search.formed_generations] == [0]
+
+
 def test_a_design_with_a_nan_cost_is_refused_before_the_objective_reads_it():
     space = list_space()
     terms = design_of(space, LIST, 5, 17)

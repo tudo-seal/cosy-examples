@@ -142,3 +142,89 @@ def test_nsga2_breeds_from_a_design_it_takes_over_in_a_paired_run(tmp_path):
     assert [terms[(phase, index)] for phase, index in lines[0]["members"]] == list(
         strategies["nsga2"].formed_generations[0].members
     )
+
+
+class _ScriptedSwap:
+    """Scripted children, one batch per call; copies once the script ends."""
+
+    def __init__(self, script):
+        self.script = [list(batch) for batch in script]
+
+    def recombine(self, query, first, second):
+        return self.script.pop(0) if self.script else [first, second]
+
+
+class _NeverMutate:
+    def mutate(self, query, term):
+        raise AssertionError("mutation_rate 0 never mutates")
+
+
+def _distinct(count, seed):
+    from cosy.search import generator_query  # noqa: PLC0415
+
+    from bayesian_optimization.initial_sampling import distinct_prefix  # noqa: PLC0415
+
+    terms, _repeats = distinct_prefix(SizeUniformSampler(6, random.Random(seed)), generator_query(list_space(), LIST),
+                                      count)
+    return terms
+
+
+def test_a_converged_run_has_every_population_it_formed_on_disk(tmp_path):
+    path = tmp_path / "run.csv"
+    strategy = NSGA2(list_space(), LIST, cost=_cost, seed=1, sampler=SizeUniformSampler(6, random.Random(1)),
+                     depth_bound=2, idle_generations=3)
+    with pytest.raises(RuntimeError, match="generations in a row without a term"):
+        run_search(strategy, _metrics, schema=SCHEMA, csv_path=str(path), pretty_algebra=dict, n_design=4,
+                   n_passes=200, echo=_quiet)
+    lines = _lines(RunArtifacts(str(path)).path("generations"))
+    assert [line["generation"] for line in lines] == [f.generation for f in strategy.formed_generations]
+    assert len(lines) > 3, "a run that converged at once tests no loss"
+
+
+def test_a_refused_offspring_cost_leaves_its_population_on_disk(tmp_path):
+    path = tmp_path / "run.csv"
+    design = _distinct(3, 20)
+    strategy = NSGA2(list_space(), LIST, cost=lambda t: _cost(t) if t in design else float("nan"), seed=20,
+                     depth_bound=4, mutation_rate=0.5)
+    with pytest.raises(ValueError, match="cost returned nan"):
+        run_search(strategy, _metrics, schema=SCHEMA, csv_path=str(path), pretty_algebra=dict, design=design,
+                   n_passes=4, echo=_quiet)
+    lines = _lines(RunArtifacts(str(path)).path("generations"))
+    assert [line["generation"] for line in lines] == [0]
+
+
+def test_nsga2_without_a_design_is_refused_before_anything_is_opened(tmp_path):
+    path = tmp_path / "run.csv"
+    with pytest.raises(ValueError, match="NSGA-II breeds its first generation from the design"):
+        run_search(_nsga2(21), _metrics, schema=SCHEMA, csv_path=str(path), pretty_algebra=dict, design=[],
+                   n_passes=3, echo=_quiet)
+    assert sorted(os.listdir(tmp_path)) == []
+    outcome = run_search(_nsga2(21), _metrics, schema=SCHEMA, csv_path=str(path), pretty_algebra=dict, n_design=3,
+                         n_passes=3, echo=_quiet)
+    assert outcome.summary["evaluated_here"] == 6
+
+
+def test_a_given_design_without_a_finite_cost_is_refused_before_anything_is_opened(tmp_path):
+    path = tmp_path / "run.csv"
+    design = _distinct(3, 22)
+    victim = design[1]
+    strategy = NSGA2(list_space(), LIST, cost=lambda t: float("inf") if t == victim else _cost(t), seed=22,
+                     depth_bound=4)
+    with pytest.raises(ValueError, match="cost returned inf"):
+        run_search(strategy, _metrics, schema=SCHEMA, csv_path=str(path), pretty_algebra=dict, design=design,
+                   n_passes=3, echo=_quiet)
+    assert sorted(os.listdir(tmp_path)) == []
+
+
+def test_the_population_the_last_generation_earned_reaches_the_log(tmp_path):
+    path = tmp_path / "run.csv"
+    design = _distinct(5, 23)
+    first, second, new = design[0], design[1], design[2:]
+    strategy = NSGA2(list_space(), LIST, cost=_cost, seed=23, crossover_rate=1.0, mutation_rate=0.0,
+                     mutation=_NeverMutate(),
+                     recombination=_ScriptedSwap([(new[0], first), (new[1], second), (new[2], first)]))
+    run_search(strategy, _metrics, schema=SCHEMA, csv_path=str(path), pretty_algebra=dict, design=[first, second],
+               n_passes=3, echo=_quiet)
+    lines = _lines(RunArtifacts(str(path)).path("generations"))
+    # one pass per generation: the third pass completes the third generation, and its population is formed
+    assert [line["generation"] for line in lines] == [0, 1, 2, 3]

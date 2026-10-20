@@ -12,7 +12,7 @@ interruption, and a file that only became valid once the run finished would not.
 
 One format serves a run and a pool, because they are the same thing measured twice. A run is a
 stream of records whose ``phase`` says where each evaluation came from (``pre_sample``,
-``bo_step``, ``random_sample``). A pool is a stream whose phase is ``pool`` and in which an
+``bo_step``, ``random_sample``, ``nsga2_offspring``). A pool is a stream whose phase is ``pool`` and in which an
 architecture may appear more than once, distinguished by ``repeat``. :func:`as_pool` groups the
 second shape into the ``{terms, rows, repeats, retrained}`` mapping that a kernel study reads over
 a pool. Two formats would have meant two readers, and the pool would have been the one nobody
@@ -70,8 +70,8 @@ class TermRecord:
     """One evaluation: the term that was trained and what came back.
 
     Attributes:
-        phase (str): Where the evaluation came from. ``pre_sample``, ``bo_step`` and
-            ``random_sample`` for a run, ``pool`` for a training pool.
+        phase (str): Where the evaluation came from. ``pre_sample``, ``bo_step``,
+            ``random_sample`` and ``nsga2_offspring`` for a run, ``pool`` for a training pool.
         index (int): The position within that phase. Together with ``phase`` and ``repeat`` this
             identifies the row of the run's CSV that the record belongs to.
         term: The structure itself, as the search produced it.

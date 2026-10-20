@@ -32,7 +32,8 @@ offspring, so one suggestion is outstanding at a time.
 
 **A failure leaves the run where it was.**  Breeding commits nothing until it has succeeded, so a
 ``suggest`` that raises inside it leaves the population and the queue as they were, and the next
-``suggest`` breeds the same population again, from where the generators stand.
+``suggest`` breeds the same population again, from where the generators stand.  ``finalize`` forms
+the population the last generation earned when every one of its offspring has its value.
 
 **What a run of it records.**  :attr:`formed_generations` holds one :class:`FormedGeneration` per
 population, the first one included: its members, their dataset rows, and the rank and distance each
@@ -503,3 +504,16 @@ class NSGA2(AskTellLoop[NT, T, G]):
         term = suggestion.candidate
         self._row_of.setdefault(term, len(self._x_list) - 1)
         self._fitness[term] = (observed, self._cost_of(term))
+
+    def finalize(self) -> dict[str, Any]:
+        """Form the population the last generation earned, then close the run; see :meth:`AskTellLoop.finalize`.
+
+        A population is formed when every offspring of its generation has its value, which a run
+        otherwise does only in the ``suggest`` after the generation's last pass.  So where the run
+        ends on that pass, the population is formed here and is the last of
+        :attr:`formed_generations`; where an offspring of the generation is still without a value,
+        nothing is formed.
+        """
+        if self._population is not None and self._bred_current and not self._waiting and not self._pending():
+            self._form_next_population()
+        return super().finalize()

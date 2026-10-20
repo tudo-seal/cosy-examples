@@ -1,6 +1,6 @@
 """One driver for every strategy of the ask/tell loop, and the paired comparison of several.
 
-:func:`run_search` runs a strategy, Bayesian optimization or random search, under a caller's
+:func:`run_search` runs a strategy -- Bayesian optimization, random search or NSGA-II -- under a caller's
 :class:`~bayesian_optimization.runs.schema.MetricSchema`.  The design is the loop's first phase: it
 is drawn by the strategy, given as terms, or resumed from the records of an earlier run, and on
 every one of those paths each evaluation is written, row and term record, before the loop takes its
@@ -237,11 +237,19 @@ def _design_of(strategy, *, n_design, n_passes, design, resume, resumed_value, o
             "Bayesian optimization conditions its first pass on the design, and a design of no "
             "terms leaves nothing to condition"
         )
+    if isinstance(strategy, NSGA2) and size == 0 and n_passes > 0:
+        raise ValueError(
+            "NSGA-II breeds its first generation from the design, and a design of no terms leaves "
+            "no population to breed from"
+        )
     if terms is not None:
         _require_hashable(terms, "the design")
         if len(set(terms)) != len(terms):
             raise ValueError("the design repeats a term: a repeated design term is an evaluation "
                              "spent on a value the dataset already holds")
+        # What a strategy reads of each design term besides its value, NSGA-II's exact cost, before
+        # anything is opened; a drawn design is checked by initialize() once it is drawn.
+        strategy.check_design(terms)
     _require_uninitialized(strategy)
     return records, values, terms, source, size
 
@@ -340,6 +348,14 @@ def _answers(round_terms, evaluate, evaluate_many):
 
 def _pairs(records):
     return [(record.term, record.metrics) for record in records]
+
+
+def _log_generations(logger, strategy, labels, written):
+    """Write the populations NSGA-II formed since ``written`` of them were; answer how many are now."""
+    formed = strategy.formed_generations
+    for record in formed[written:]:
+        logger.log(record, labels)
+    return len(formed)
 
 
 def run_search(
@@ -549,26 +565,28 @@ def run_search(
             passes: list[tuple[int, Any, float]] = []
             for step in range(first, min(first + batch_size, n_passes)):
                 proposal_started = time.time()
-                with step_budget(
-                    f"pass {step}: the proposal",
-                    budgets.acquisition_warn,
-                    hard_limit_seconds=budgets.acquisition_hard_limit if bayesian else None,
-                ):
-                    if bayesian:
-                        # The frontier read and the generation log need the population as scored.
-                        assert isinstance(strategy, BayesianOptimization)
-                        suggestion = strategy.suggest(verbose=verbose, record_population=True)
-                    else:
-                        suggestion = strategy.suggest(verbose=verbose)
+                try:
+                    with step_budget(
+                        f"pass {step}: the proposal",
+                        budgets.acquisition_warn,
+                        hard_limit_seconds=budgets.acquisition_hard_limit if bayesian else None,
+                    ):
+                        if bayesian:
+                            # The frontier read and the generation log need the population as scored.
+                            assert isinstance(strategy, BayesianOptimization)
+                            suggestion = strategy.suggest(verbose=verbose, record_population=True)
+                        else:
+                            suggestion = strategy.suggest(verbose=verbose)
+                finally:
+                    if generation_logger is not None:
+                        # A population is formed inside the suggestion that breeds from it, and
+                        # every member was recorded before it: written before the offspring is
+                        # evaluated, and also where the suggestion raised, convergence included.
+                        assert isinstance(strategy, NSGA2)
+                        generations_written = _log_generations(
+                            generation_logger, strategy, labels, generations_written
+                        )
                 acquisition_seconds = time.time() - proposal_started
-                if generation_logger is not None:
-                    # A population is formed inside the suggestion that breeds from it, and every
-                    # member was recorded before it; written before the offspring is evaluated.
-                    assert isinstance(strategy, NSGA2)
-                    formed = strategy.formed_generations
-                    for record in formed[generations_written:]:
-                        generation_logger.log(record, labels)
-                    generations_written = len(formed)
                 if ea_logger is not None and surrogate_logger is not None:
                     # Written before the evaluation, so an interrupted pass keeps its inner search;
                     # in a round, the surrogate of a later pass holds the earlier ones as assumed.
@@ -606,7 +624,11 @@ def run_search(
             for _surplus in round_answers:
                 pass
 
-    result = strategy.finalize()
+        result = strategy.finalize()
+        if generation_logger is not None:
+            # The population the last generation earned, which finalize() forms.
+            assert isinstance(strategy, NSGA2)
+            _log_generations(generation_logger, strategy, labels, generations_written)
     # A draw up front is the run's: its time in the run's.  Where it drew the run's design it is
     # the design's source and its repeats are the run's, the other arms' terms among them, as the
     # paired path always counted them; a design given or resumed was not the run's to draw, and the
