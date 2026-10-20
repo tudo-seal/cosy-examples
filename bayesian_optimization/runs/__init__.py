@@ -23,6 +23,7 @@ from .records import (
     SURROGATE_CSV_COLUMNS,
     EAGenerationLogger,
     EvaluationRecorder,
+    NSGA2GenerationLogger,
     SurrogateLogger,
     kernel_hyperparameters,
 )
@@ -87,6 +88,7 @@ __all__ = [
     "EAGenerationLogger",
     "EvaluationRecorder",
     "MetricSchema",
+    "NSGA2GenerationLogger",
     "Objective",
     "RunArtifacts",
     "RunOutcome",

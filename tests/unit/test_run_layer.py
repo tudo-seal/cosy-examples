@@ -176,6 +176,7 @@ def test_the_artifacts_of_a_run_are_named_after_its_csv():
         "config": "out/run_config.json",
         "diagnostics": "out/run_diagnostics.json",
         "trace": "out/run_trace.csv",
+        "generations": "out/run_generations.jsonl",
     }
 
 

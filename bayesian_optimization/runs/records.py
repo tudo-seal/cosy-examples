@@ -2,6 +2,7 @@
 
 import csv
 import json
+import math
 import os
 import time
 
@@ -144,6 +145,63 @@ def kernel_hyperparameters(surrogate):
         )
         index += count
     return result
+
+
+class NSGA2GenerationLogger:
+    """Writes every population an NSGA-II run forms, one JSON line each, flushed as it is formed.
+
+    The run's front is read off the evaluation records (:mod:`~bayesian_optimization.runs.fronts`).
+    This file says how the search moved: which measured terms each generation kept, their ranks
+    and crowding distances, and how many offspring each generation bred, measured new or answered
+    from the dataset.  A member is named by the phase and the index its evaluation was recorded
+    under, so a line joins the CSV and the term pool.  An infinite distance, a front's boundary, is
+    written as the string ``"inf"``, which strict JSON has no number for.
+
+    Args:
+        path (str): The run's ``_generations.jsonl``.
+        mode (str): ``"w"`` or ``"x"``, as the evaluation recorder opens. (Default value = "w")
+    """
+
+    def __init__(self, path, *, mode="w"):
+        if mode not in ("w", "x"):
+            msg = f"mode is 'w' or 'x', not {mode!r}"
+            raise ValueError(msg)
+        self._file = open(path, mode)  # noqa: SIM115, closed by __exit__
+
+    def log(self, formed, label_of):
+        """Append one formed population.
+
+        Args:
+            formed: The strategy's ``FormedGeneration``.
+            label_of: The recorded ``(phase, index)`` of every evaluated term.
+
+        Raises:
+            KeyError: If a member was never recorded, which no run of the driver produces: every
+                member of a population was evaluated before the population was formed.
+        """
+        line = {
+            "generation": formed.generation,
+            "members": [list(label_of[member]) for member in formed.members],
+            "ranks": list(formed.ranks),
+            "distances": None if formed.distances is None else [
+                distance if math.isfinite(distance) else "inf" for distance in formed.distances
+            ],
+            "offspring": formed.offspring,
+            "evaluated": formed.evaluated,
+            "known": formed.known,
+            "timestamp": time.time(),
+        }
+        self._file.write(json.dumps(line) + "\n")
+        self._file.flush()
+
+    def close(self):
+        self._file.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        self.close()
 
 
 class EAGenerationLogger:

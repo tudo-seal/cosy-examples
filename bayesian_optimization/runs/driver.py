@@ -32,11 +32,12 @@ from typing import Any
 
 from ..bo import BayesianOptimization
 from ..loop import AskTellLoop, _require_hashable
+from ..nsga2 import NSGA2
 from ..random_search import RandomSearch
 from ..state import BOState
 from .artifacts import RunArtifacts
 from .budgets import StepBudgets, step_budget
-from .records import EAGenerationLogger, EvaluationRecorder, SurrogateLogger
+from .records import EAGenerationLogger, EvaluationRecorder, NSGA2GenerationLogger, SurrogateLogger
 from .resume import ResumedDesign, check_resumed_design
 from .schema import MetricSchema, Objective
 from .search_program import DesignDraw, draw_design
@@ -75,6 +76,8 @@ def _run_kind(strategy: AskTellLoop, n_passes: int) -> str:
         return "bayesian_optimization"
     if isinstance(strategy, RandomSearch):
         return "random_search"
+    if isinstance(strategy, NSGA2):
+        return "nsga2"
     return type(strategy).__name__
 
 
@@ -483,6 +486,14 @@ def run_search(
         if bayesian and n_passes > 0:
             ea_logger = stack.enter_context(EAGenerationLogger(artifacts.path("ea")))
             surrogate_logger = stack.enter_context(SurrogateLogger(artifacts.path("surrogate")))
+        generation_logger = None
+        if isinstance(strategy, NSGA2) and n_passes > 0:
+            generation_logger = stack.enter_context(NSGA2GenerationLogger(
+                artifacts.path("generations"), mode="x" if refuse_taken else "w"))
+        # The phase and index every evaluated term was recorded under, which names a population's
+        # members in the generation log.
+        labels: dict[Any, tuple[str, int]] = {}
+        generations_written = 0
 
         # --- The design, the loop's first phase: every term written before its value is taken.
         with step_budget(f"the design ({size} evaluations)", max(size, 1) * budgets.per_evaluation):
@@ -528,6 +539,7 @@ def run_search(
                     # a non-finite one, is on disk with the metrics that explain it.
                     recorder.log(DESIGN_PHASE, index, term, metrics, loop_value=value,
                                  taken_over=values is not None)
+                    labels.setdefault(term, (DESIGN_PHASE, index))
                     echo(f"  {DESIGN_PHASE}[{index}]: objective={objective.as_reported(value):.5f} "
                          f"{schema.live_line(metrics)}{note}".rstrip())
                     strategy.observe(term, value)
@@ -549,6 +561,14 @@ def run_search(
                     else:
                         suggestion = strategy.suggest(verbose=verbose)
                 acquisition_seconds = time.time() - proposal_started
+                if generation_logger is not None:
+                    # A population is formed inside the suggestion that breeds from it, and every
+                    # member was recorded before it; written before the offspring is evaluated.
+                    assert isinstance(strategy, NSGA2)
+                    formed = strategy.formed_generations
+                    for record in formed[generations_written:]:
+                        generation_logger.log(record, labels)
+                    generations_written = len(formed)
                 if ea_logger is not None and surrogate_logger is not None:
                     # Written before the evaluation, so an interrupted pass keeps its inner search;
                     # in a round, the surrogate of a later pass holds the earlier ones as assumed.
@@ -578,6 +598,7 @@ def run_search(
                                               acquisition_seconds=acquisition_seconds)
                 recorder.log(phase, step, term, metrics, suggestion=suggestion,
                              acquisition_seconds=acquisition_seconds, loop_value=value)
+                labels.setdefault(term, (phase, step))
                 echo(f"  {phase}[{step}]: objective={objective.as_reported(value):.5f} "
                      f"{schema.live_line(metrics)}".rstrip())
                 strategy.observe(term, value)
@@ -615,6 +636,9 @@ def run_search(
         summary["design_drawn_up_front"] = drawn_up_front.record()
     if isinstance(strategy, RandomSearch):
         summary["terms_skipped"] = strategy.terms_skipped
+    if isinstance(strategy, NSGA2):
+        summary["generations_formed"] = len(strategy.formed_generations)
+        summary["offspring_known"] = strategy.offspring_known
     return RunOutcome(result, seconds, summary)
 
 

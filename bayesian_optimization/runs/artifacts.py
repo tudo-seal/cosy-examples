@@ -18,7 +18,7 @@ def _sibling_path(csv_path, suffix):
 class RunArtifacts:
     """Every file a run writes, named after its CSV.
 
-    A run writes seven files beside each other, and a second start against the same name would
+    A run writes up to eight files beside each other, and a second start against the same name would
     truncate the ones a first run is still writing, since the per-pass loggers open in ``"w"`` mode.  Named
     here in one place, they can be checked all at once before anything is opened.
 
@@ -34,6 +34,7 @@ class RunArtifacts:
         "config": "_config.json",
         "diagnostics": "_diagnostics.json",
         "trace": "_trace.csv",
+        "generations": "_generations.jsonl",
     }
 
     def __init__(self, stem):
