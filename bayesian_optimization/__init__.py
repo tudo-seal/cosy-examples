@@ -44,6 +44,7 @@ from .kernels.graph_kernel import (
 from .kernels.kernel_base import StructuredKernelBase
 from .kernels.tree_kernel import OrderedRootedSubtreeKernel, SubsetTreeKernel
 from .loop import AskTellLoop
+from .nsga2 import NSGA2, FormedGeneration
 from .random_search import RandomSearch
 from .state import BOState, Diagnostics, Suggestion
 
@@ -61,12 +62,14 @@ __all__ = [
     "ExpectedHypervolumeImprovement",
     "ExpectedImprovement",
     "FitRead",
+    "FormedGeneration",
     "FrontierRead",
     "GenerationRecord",
     "GramRead",
     "HierarchicalWLKernel",
     "KernelDiverseInitializer",
     "MarginalPosterior",
+    "NSGA2",
     "OrderedRootedSubtreeKernel",
     "PiStrategy",
     "ProbabilityOfImprovement",

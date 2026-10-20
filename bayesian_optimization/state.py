@@ -34,6 +34,8 @@ class Diagnostics(TypedDict, total=False):
     phase: NotRequired[Literal["main", "design"]]
     # The position of a design term in the design, only on a suggestion of the design phase.
     design_index: NotRequired[int]
+    # The generation an NSGA-II offspring was bred for, 1 for the offspring of the design.
+    generation: NotRequired[int]
 
 
 @dataclass(frozen=True)
