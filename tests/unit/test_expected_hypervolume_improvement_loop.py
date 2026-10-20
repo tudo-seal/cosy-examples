@@ -9,8 +9,10 @@ cost and the reference point are refused before the design is paid.
 
 from __future__ import annotations
 
+import logging
 import math
 import random
+from collections import Counter
 from typing import Any
 
 import numpy as np
@@ -177,6 +179,60 @@ def test_the_cost_and_the_reference_are_read_under_this_acquisition_alone():
     """The parameters of an acquisition the run does not build are not the run's parameters."""
     bo = _loop(acquisition_function="ExpectedImprovement", ehvi_cost=None, ehvi_reference=None)
     bo.check_configuration()
+
+
+def test_a_reference_cost_below_every_cost_is_named_rather_than_the_kernel(caplog):
+    """Every term costs 5 to 7 and the reference cost is 4: nothing can add to the front's area.
+
+    The score is then 0 everywhere for a reason the surrogate has no part in, and the warning says
+    which setting it comes from instead of sending the reader to the kernel.
+    """
+    bo = _loop(ehvi_reference=(0.0, 4.0))
+    with caplog.at_level(logging.WARNING, logger="bayesian_optimization"):
+        bo.optimize(_objective, 2, initial_size=4)
+    assert "ehvi_reference" in caplog.text
+    assert "(0.0, 4.0)" in caplog.text
+    assert "read_calibration" not in caplog.text
+
+
+def test_an_observed_cost_that_is_not_finite_is_refused_naming_the_term_and_the_cost():
+    """A cost is a measurement, and a failed one on the front is refused with what produced it."""
+    bo = _loop(ehvi_cost=lambda term: math.inf if term.size == 5 else float(term.size))
+    with pytest.raises(ValueError, match=r"ehvi_cost gave the observed term .* the cost inf"):
+        bo.optimize(_objective, 2, initial_size=4)
+
+
+def test_each_term_is_costed_once_per_run():
+    """The cost is exact, so a term is costed once in a run however often a pass meets it; a reset,
+    or another cost function, costs it afresh."""
+    calls: Counter = Counter()
+
+    def counting(term: Any) -> float:
+        calls[term] += 1
+        return float(term.size)
+
+    bo = _loop(ehvi_cost=counting)
+    bo.optimize(_objective, 3, initial_size=4)
+    assert calls and max(calls.values()) == 1
+    observed = list(bo.get_state_snapshot()["x_list"])
+    values = [float(y) for y in bo.get_state_snapshot()["y_list"]]
+
+    bo.reset()
+    calls.clear()
+    bo.initialize(x0=observed, y0=values)
+    suggestion = bo.suggest()
+    bo.observe(suggestion.candidate, _objective(suggestion.candidate))
+    assert all(calls[term] == 1 for term in observed), "the reset forgot the costs"
+
+    other: Counter = Counter()
+
+    def recounting(term: Any) -> float:
+        other[term] += 1
+        return float(term.size)
+
+    bo.ehvi_cost = recounting
+    bo.suggest()
+    assert all(other[term] == 1 for term in observed), "another cost function costs afresh"
 
 
 def test_a_run_completes_and_answers_a_term_it_measured():

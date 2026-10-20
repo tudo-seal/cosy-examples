@@ -21,6 +21,7 @@ from sklearn.gaussian_process.kernels import RBF, ConstantKernel
 from bayesian_optimization import (
     AcquisitionRun,
     BayesianOptimization,
+    ExpectedHypervolumeImprovement,
     ExpectedImprovement,
     ProbabilityOfImprovement,
     TraceRecord,
@@ -1146,6 +1147,7 @@ def test_the_recorded_acquisition_does_not_change_after_its_pass(toy_loop):
         ("ExpectedImprovement", ExpectedImprovement, "incumbent", 0.2),
         ("ProbabilityOfImprovement", ProbabilityOfImprovement, "margin", 0.75),
         ("UpperConfidenceBound", UpperConfidenceBound, "beta", 3.5),
+        ("ExpectedHypervolumeImprovement", ExpectedHypervolumeImprovement, "reference", (0.0, 9.0)),
     ],
 )
 def test_a_pass_builds_the_acquisition_its_name_asks_for(
@@ -1162,6 +1164,8 @@ def test_a_pass_builds_the_acquisition_its_name_asks_for(
     bo.acquisition_function = name
     bo.pi_margin = value if attribute == "margin" else 0.0
     bo.ucb_beta = value if attribute == "beta" else 2.0
+    bo.ehvi_cost = lambda term: 1.0
+    bo.ehvi_reference = value if attribute == "reference" else None
     bo.initialize(x0=terms[:3], y0=[values[term] for term in terms[:3]])
 
     bo.suggest(record_population=True)

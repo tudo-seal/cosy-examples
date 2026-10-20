@@ -608,6 +608,10 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         self.pi_margin = float(pi_margin)
         self.ehvi_cost = ehvi_cost
         self.ehvi_reference = ehvi_reference
+        # The cost of every term this run has costed, under the cost function it was costed with:
+        # the cost is exact, so a term costs the same every time a pass meets it.
+        self._ehvi_costs: dict[Any, float] = {}
+        self._ehvi_costed_with: Callable[[Any], float] | None = None
         self.kernel: Kernel = (
             OrderedRootedSubtreeKernel() if kernel is None else kernel
         )
@@ -874,6 +878,10 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         # broken posterior is reported here the same way it is reported everywhere else.
         mean_at_pick, deviation_at_pick = af.marginal_posterior([candidate])
 
+        if not self._warned_about_exploitation and self._reference_bounds_out(
+            af, candidate, acq_value, fallback_used
+        ):
+            self._warned_about_exploitation = True
         if not self._warned_about_exploitation:
             self._warned_about_exploitation = warn_if_exploitation_stalls(
                 _LOG,
@@ -972,7 +980,7 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         elif self.acquisition_function == "ExpectedHypervolumeImprovement":
             af = ExpectedHypervolumeImprovement(
                 gp=model,
-                cost=require_cost(self.ehvi_cost),
+                cost=self._ehvi_cost_of,
                 front=self._observed_front(posterior if posterior is not None else model),
                 reference=require_reference(self.ehvi_reference),
                 known_points=known_points,
@@ -980,6 +988,63 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         else:
             raise ValueError(_unknown_acquisition(self.acquisition_function))
         return af
+
+    def _ehvi_cost_of(self, term: Any) -> float:
+        """The cost of a term under ``ehvi_cost``, costed once per run and cost function.
+
+        Args:
+            term (Any): The term.
+
+        Returns:
+            float: Its cost, as the cost function answered it.
+
+        Raises:
+            TypeError: If ``ehvi_cost`` is not a function.
+        """
+        cost = require_cost(self.ehvi_cost)
+        if cost is not self._ehvi_costed_with:
+            self._ehvi_costs = {}
+            self._ehvi_costed_with = cost
+        if term not in self._ehvi_costs:
+            self._ehvi_costs[term] = float(cost(term))
+        return self._ehvi_costs[term]
+
+    def _reference_bounds_out(
+        self, af: AcquisitionFunction, pick: Any, value: float, fallback_used: bool
+    ) -> bool:
+        """Say so when the expected hypervolume improvement is 0 because of its reference cost.
+
+        A pick at or past the reference cost adds nothing to the front's area whatever the
+        surrogate says, and a maximum of 0 found there is a statement about the reference point,
+        not about the kernel the generic warning would send the reader to.
+
+        Args:
+            af (AcquisitionFunction): The pass's acquisition.
+            pick (Any): The term the maximization returned.
+            value (float): Its score.
+            fallback_used (bool): Whether the pick is a random replacement.
+
+        Returns:
+            bool: Whether the warning fired.
+        """
+        if fallback_used or not isinstance(af, ExpectedHypervolumeImprovement) or value > 0.0:
+            return False
+        cost = self._ehvi_cost_of(pick)
+        reference_cost = af.reference[1]
+        if cost < reference_cost:
+            return False
+        _LOG.warning(
+            "iteration %d: the best expected hypervolume improvement is 0, and its pick costs "
+            "%.6g, at or past the reference cost %.6g of ehvi_reference %r: no term at that cost "
+            "can add to the front's area, whatever the surrogate says.  ehvi_reference bounds "
+            "the costs that count; it has to be in the units of ehvi_cost and above the costs "
+            "the search should reach.",
+            self._passes_suggested,
+            cost,
+            reference_cost,
+            af.reference,
+        )
+        return True
 
     def _observed_front(self, model: MarginalPosterior) -> list[tuple[float, float]]:
         """The pairs of value and cost the expected hypervolume improvement measures against.
@@ -998,18 +1063,31 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
 
         Raises:
             TypeError: If ``ehvi_cost`` is not a function.
-            ValueError: If the posterior answers a mean that is not finite at a measured term.
+            ValueError: If the posterior answers a mean that is not finite at a measured term, or
+                if ``ehvi_cost`` gives a measured term a cost that is not finite.
         """
-        cost = require_cost(self.ehvi_cost)
         if not self.repeated_measurements:
-            return [(float(y), float(cost(x))) for x, y in zip(self._x_list, self._y_list)]
-        measured = list(dict.fromkeys(self._x_list))
-        means, _deviations = model.predict(measured, return_std=True)
-        means = np.asarray(means, dtype=float).reshape(-1)
-        if means.shape != (len(measured),) or not np.all(np.isfinite(means)):
-            msg = "the surrogate returned a posterior mean that is not finite at a measured term"
-            raise ValueError(msg)
-        return [(float(mean), float(cost(x))) for x, mean in zip(measured, means)]
+            pairs = list(zip(self._x_list, (float(y) for y in self._y_list)))
+        else:
+            measured = list(dict.fromkeys(self._x_list))
+            means, _deviations = model.predict(measured, return_std=True)
+            means = np.asarray(means, dtype=float).reshape(-1)
+            if means.shape != (len(measured),) or not np.all(np.isfinite(means)):
+                msg = "the surrogate returned a posterior mean that is not finite at a measured term"
+                raise ValueError(msg)
+            pairs = list(zip(measured, (float(mean) for mean in means)))
+        front = []
+        for term, value in pairs:
+            cost = self._ehvi_cost_of(term)
+            if not math.isfinite(cost):
+                msg = (
+                    f"ehvi_cost gave the observed term {term} the cost {cost}, which is not finite; "
+                    "a cost is a measurement, and one that failed is refused rather than placed "
+                    "on the front"
+                )
+                raise ValueError(msg)
+            front.append((value, cost))
+        return front
 
     def _replace_duplicate(self, avoid: set[Any], what: str = "an already evaluated") -> Any:
         """Draw a term the loop has not evaluated yet, in place of one it already has.
@@ -1390,6 +1468,8 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         self._warned_about_model_selection = False
         self._warned_about_frozen_hyperparameters = False
         self.last_acquisition_run = None
+        self._ehvi_costs = {}
+        self._ehvi_costed_with = None
         clear_kernel_caches()
 
     def _check_pass_suggestion(self, suggestion: Suggestion) -> None:
