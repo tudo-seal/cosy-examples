@@ -300,6 +300,19 @@ def test_a_reference_point_that_is_not_two_finite_numbers_is_refused(reference):
         )
 
 
+@pytest.mark.parametrize("cost", [None, "size", 3.0])
+def test_a_cost_that_is_not_a_function_is_refused(cost):
+    """The cost is read off every term, so it has to be something a term can be handed to.
+
+    Args:
+        cost: What is handed in as the cost.
+    """
+    with pytest.raises(TypeError, match="the cost of a term"):
+        ExpectedHypervolumeImprovement(
+            PlacedPosterior({}), cost=cost, front=[], reference=(0.0, 1.0)
+        )
+
+
 def test_an_observed_pair_that_is_not_finite_is_refused():
     """The loop observes finite values only, so a pair that is not finite came from elsewhere."""
     with pytest.raises(ValueError, match="an observed pair"):

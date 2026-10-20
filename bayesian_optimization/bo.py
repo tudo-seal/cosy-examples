@@ -24,13 +24,16 @@ from sklearn.gaussian_process.kernels import Kernel, WhiteKernel
 from .acquisition_function import (
     AcquisitionFactory,
     AcquisitionFunction,
+    ExpectedHypervolumeImprovement,
     ExpectedImprovement,
     MarginalPosterior,
     ProbabilityOfImprovement,
     Surrogate,
     UpperConfidenceBound,
     require_beta,
+    require_cost,
     require_margin,
+    require_reference,
 )
 from .acquisition_optimizer import (
     AcquisitionMaximizer,
@@ -76,18 +79,20 @@ _LOG = get_logger("bo")
 # diagonal, and it is spelled with a ``WhiteKernel`` in the kernel rather than with this constant.
 _JITTER = 1e-6
 
-# The three acquisitions this loop maximizes, under the names ``acquisition_function`` takes.
-# One list rather than one written out per site: the check a run passes before it spends anything
-# reads it, and so does the message that names the admitted values, so the message cannot name a
-# set the check does not admit.  What it does not bind is the construction inside a pass, which
-# builds each of the three from arguments of its own and names them again there.  A fourth entry
-# added here alone is therefore admitted by the check and refused by the pass, after the design
-# has been spent.  The value is the class, which is what tells whether a score can be given to an
-# evolutionary run one candidate at a time.
+# The acquisitions this loop maximizes, under the names ``acquisition_function`` takes: the three
+# standard scores, and the expected hypervolume improvement with an exact cost.  One list rather
+# than one written out per site: the check a run passes before it spends anything reads it, and so
+# does the message that names the admitted values, so the message cannot name a set the check does
+# not admit.  What it does not bind is the construction inside a pass, which builds each of them
+# from arguments of its own and names them again there.  An entry added here alone is therefore
+# admitted by the check and refused by the pass, after the design has been spent.  The value is the
+# class, which is what tells whether a score can be given to an evolutionary run one candidate at a
+# time.
 _ACQUISITIONS: dict[str, type[AcquisitionFunction]] = {
     "ExpectedImprovement": ExpectedImprovement,
     "ProbabilityOfImprovement": ProbabilityOfImprovement,
     "UpperConfidenceBound": UpperConfidenceBound,
+    "ExpectedHypervolumeImprovement": ExpectedHypervolumeImprovement,
 }
 
 # An evolutionary algorithm is what a pass hands its acquisition to, so a run without one cannot
@@ -384,7 +389,9 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         has none is refused, here and again where the query is built.  Its default ``None`` is
         the setting for ``search_space=None``, where there is no query to pose.
     acquisition_function:
-        Which of the three standard acquisition scores to maximize, by name, or an
+        Which acquisition to maximize, by name: one of the three standard scores, or
+        ``"ExpectedHypervolumeImprovement"``, which measures a term against the pairs of value
+        and exact cost the loop has observed (``ehvi_cost``, ``ehvi_reference``).  Or an
         :class:`~bayesian_optimization.acquisition_function.AcquisitionFactory` that builds one of
         the caller's own for each pass from the surrogate it fitted, the incumbent and the points
         observed.  Any callable is taken for a factory, and a class with that signature, such as
@@ -402,6 +409,16 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         score is the posterior probability that the value at a term exceeds the threshold, and
         zero puts the threshold at the incumbent, which is the other admissible setting.  It is
         the only margin among the three scores, and expected improvement has none.
+    ehvi_cost:
+        The cost of a term for the expected hypervolume improvement, a function from a term to a
+        number, smaller being better, and known exactly: the surrogate models the objective alone.
+        Required under that acquisition and read under no other.  Every pass applies it to the
+        observed terms, to place them on the front, and to the candidates.
+    ehvi_reference:
+        The reference point ``(value, cost)`` of the expected hypervolume improvement: no value
+        below the first and no cost above the second counts.  Required under that acquisition and
+        read under no other.  It bounds the area being measured, so it moves which term scores
+        higher, and it has no default for that reason.
     kernel:
         sklearn kernel for the GP.  Defaults to ``OrderedRootedSubtreeKernel()``.
 
@@ -554,11 +571,16 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         request: NT | None = None,
         *,
         acquisition_function: Literal[
-            "ExpectedImprovement", "ProbabilityOfImprovement", "UpperConfidenceBound"
+            "ExpectedImprovement",
+            "ProbabilityOfImprovement",
+            "UpperConfidenceBound",
+            "ExpectedHypervolumeImprovement",
         ]
         | AcquisitionFactory = "ExpectedImprovement",
         ucb_beta: float = 2.0,
         pi_margin: float = 0.0,
+        ehvi_cost: Callable[[Any], float] | None = None,
+        ehvi_reference: tuple[float, float] | None = None,
         kernel: Kernel | None = None,
         kernel_optimizer: str | None = None,
         n_restarts_kernel_optimizer: int = 20,
@@ -584,6 +606,8 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         self.acquisition_function = acquisition_function
         self.ucb_beta = float(ucb_beta)
         self.pi_margin = float(pi_margin)
+        self.ehvi_cost = ehvi_cost
+        self.ehvi_reference = ehvi_reference
         self.kernel: Kernel = (
             OrderedRootedSubtreeKernel() if kernel is None else kernel
         )
@@ -800,7 +824,7 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         # The terms no pass may propose: the measured ones, where a term is measured once, and the
         # outstanding ones, which are being measured.
         avoid = (set() if self.repeated_measurements else set(self._x_set)) | set(pending_terms)
-        af = self._build_acquisition(scored, incumbent, avoid)
+        af = self._build_acquisition(scored, incumbent, avoid, posterior=model)
 
         # --- Optimize acquisition function ------------------------------------
         acq_opt: AcquisitionMaximizer = (
@@ -882,27 +906,35 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         )
 
     def _build_acquisition(
-        self, model: MarginalPosterior, incumbent: float, known: set[Any]
+        self,
+        model: MarginalPosterior,
+        incumbent: float,
+        known: set[Any],
+        *,
+        posterior: MarginalPosterior | None = None,
     ) -> AcquisitionFunction:
         """Build the acquisition of one pass, with the known-point floor beneath it.
 
-        The name and the two parameters are public attributes, so a pass reads them for itself
+        The name and its parameters are public attributes, so a pass reads them for itself
         rather than trusting what the run started with.  A name assigned to a live object reaches
         its refusal here, and the check a run passes before it spends anything does not stand in
         for this one.
 
         Args:
-            model (MarginalPosterior): The surrogate this pass fitted.
+            model (MarginalPosterior): The surrogate this pass scores with.
             incumbent (float): The largest observed value, which the two improvement scores
                 measure a candidate against.
             known (set[Any]): The terms no pass may propose, which the floor keeps below every
                 other.
+            posterior (MarginalPosterior | None): The posterior the incumbent was read from, which
+                the front of the expected hypervolume improvement is read from too; ``None`` reads
+                ``model``.  Under repeated measurements ``model`` is its latent copy.
 
         Returns:
             AcquisitionFunction: The acquisition to maximize.
 
         Raises:
-            ValueError: If ``acquisition_function`` is neither one of the three nor a callable,
+            ValueError: If ``acquisition_function`` is neither one of the four nor a callable,
                 or if what a factory built scores with another surrogate or lacks the points.
             TypeError: If a factory cannot be called as one, or builds no acquisition.
         """
@@ -937,9 +969,47 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
                 beta=self.ucb_beta,
                 known_points=known_points,
             )
+        elif self.acquisition_function == "ExpectedHypervolumeImprovement":
+            af = ExpectedHypervolumeImprovement(
+                gp=model,
+                cost=require_cost(self.ehvi_cost),
+                front=self._observed_front(posterior if posterior is not None else model),
+                reference=require_reference(self.ehvi_reference),
+                known_points=known_points,
+            )
         else:
             raise ValueError(_unknown_acquisition(self.acquisition_function))
         return af
+
+    def _observed_front(self, model: MarginalPosterior) -> list[tuple[float, float]]:
+        """The pairs of value and cost the expected hypervolume improvement measures against.
+
+        Read where the incumbent is read and for the same reasons: the observed values, one pair
+        per row of the dataset, and under repeated measurements the posterior mean at each
+        measured term instead, since the largest single observation is the one the noise inflated
+        most.  An outstanding term is not on it, as it is not in the incumbent; it is in the known
+        points, and conditions the surrogate at its assumed value.
+
+        Args:
+            model (MarginalPosterior): The pass's posterior, the one the incumbent is read from.
+
+        Returns:
+            list[tuple[float, float]]: The pairs ``(value, cost)``.
+
+        Raises:
+            TypeError: If ``ehvi_cost`` is not a function.
+            ValueError: If the posterior answers a mean that is not finite at a measured term.
+        """
+        cost = require_cost(self.ehvi_cost)
+        if not self.repeated_measurements:
+            return [(float(y), float(cost(x))) for x, y in zip(self._x_list, self._y_list)]
+        measured = list(dict.fromkeys(self._x_list))
+        means, _deviations = model.predict(measured, return_std=True)
+        means = np.asarray(means, dtype=float).reshape(-1)
+        if means.shape != (len(measured),) or not np.all(np.isfinite(means)):
+            msg = "the surrogate returned a posterior mean that is not finite at a measured term"
+            raise ValueError(msg)
+        return [(float(mean), float(cost(x))) for x, mean in zip(measured, means)]
 
     def _replace_duplicate(self, avoid: set[Any], what: str = "an already evaluated") -> Any:
         """Draw a term the loop has not evaluated yet, in place of one it already has.
@@ -1492,7 +1562,7 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
 
         A pass conditions the surrogate, builds its acquisition and hands it to the evolutionary
         algorithm or the maximizer, and what those steps read is fixed before the run starts.  Left
-        to the pass, a name that is not one of the three, a callable that cannot be called as a
+        to the pass, a name that is not one of the four, a callable that cannot be called as a
         factory, a parameter outside the range its acquisition admits, a missing maximization, a
         caller's surrogate beside settings of the Gaussian process or one that cannot be copied,
         and a score the maximization cannot be given one candidate at a time all surface after the
@@ -1503,8 +1573,9 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
 
         The acquisition and the algorithm are checked, and nothing else.  The parameter of an
         acquisition this run will not build is not this run's parameter, so the exploration
-        parameter is read only under an upper confidence bound and the margin only under a
-        probability of improvement.  The arguments this class forwards to
+        parameter is read only under an upper confidence bound, the margin only under a
+        probability of improvement, and the cost and the reference point only under the expected
+        hypervolume improvement.  The arguments this class forwards to
         ``GaussianProcessRegressor`` keep scikit-learn's rules and its messages rather than a copy
         of them here, which leaves the cost in place for them: a wrong ``alpha`` or a wrong entry
         in ``gp_params`` still surfaces at the first fit, with the design drawn and evaluated
@@ -1524,13 +1595,15 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
 
         Raises:
             RuntimeError: If neither an evolutionary algorithm nor a maximizer was configured.
-            ValueError: If both were; if the acquisition is neither one of the three nor a
+            ValueError: If both were; if the acquisition is neither one of the four nor a
                 callable; if the parameter of the acquisition this run would build lies outside
-                its range; if the mode is not one of the three modes, or that acquisition cannot
-                be scored the way ``acquisition_fitness_mode`` asks; or if a caller's surrogate
-                stands beside settings of the Gaussian process.
-            TypeError: If a callable cannot be called as an acquisition factory, or a caller's
-                surrogate cannot be copied.
+                its range, the reference point of the expected hypervolume improvement included;
+                if the mode is not one of the three modes, or that acquisition cannot be scored
+                the way ``acquisition_fitness_mode`` asks; or if a caller's surrogate stands
+                beside settings of the Gaussian process.
+            TypeError: If a callable cannot be called as an acquisition factory, a caller's
+                surrogate cannot be copied, or the cost of the expected hypervolume improvement
+                is not a function.
         """
         if self.optimizer is None and self.maximizer is None:
             raise RuntimeError(_NO_OPTIMIZER)
@@ -1571,6 +1644,9 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
                 require_beta(self.ucb_beta)
             elif name == "ProbabilityOfImprovement":
                 require_margin(self.pi_margin)
+            elif name == "ExpectedHypervolumeImprovement":
+                require_cost(self.ehvi_cost)
+                require_reference(self.ehvi_reference)
             lower_bound, label = acquisition.lower_bound, name
 
         # The mode is resolved by the same function the maximization resolves it with, so that
@@ -1652,7 +1728,7 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         ------
         ValueError
             If ``budget`` is negative, or, where the run has passes to run, if the acquisition
-            those passes would maximize is neither one of the three nor a callable, carries a
+            those passes would maximize is neither one of the four nor a callable, carries a
             parameter outside its range, or cannot be scored the way ``acquisition_fitness_mode``
             asks, or if that mode is not one of the three modes.  All of these are checked before the initial design is
             drawn, so that a typo costs no evaluation of the objective.  Also for the dataset

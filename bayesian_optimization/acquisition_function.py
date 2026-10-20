@@ -468,6 +468,47 @@ class ExpectedImprovement(AcquisitionFunction):
         return _expected_gain(mean - self.incumbent, deviation)
 
 
+def require_cost(cost: Any) -> Callable[[Tree[Any]], float]:
+    """Return the cost of the expected hypervolume improvement, or say why it is not one.
+
+    Shared with the loop for the same reason as :func:`require_margin`.
+
+    Args:
+        cost (Any): What is handed in as the cost.
+
+    Returns:
+        Callable[[Tree[Any]], float]: The cost, a function from a term to a number.
+
+    Raises:
+        TypeError: If it is not callable, ``None`` included.
+    """
+    if not callable(cost):
+        msg = (
+            "the expected hypervolume improvement needs the cost of a term, a function from a "
+            f"term to a number, smaller being better: {cost!r}"
+        )
+        raise TypeError(msg)
+    checked: Callable[[Tree[Any]], float] = cost
+    return checked
+
+
+def require_reference(reference: Any) -> tuple[float, float]:
+    """Return the reference point of the expected hypervolume improvement, or say why it is not one.
+
+    Shared with the loop for the same reason as :func:`require_margin`.
+
+    Args:
+        reference (Any): What is handed in as the reference point ``(value, cost)``.
+
+    Returns:
+        tuple[float, float]: The reference value and the reference cost.
+
+    Raises:
+        ValueError: If it is not two numbers, or one of them is not finite, ``None`` included.
+    """
+    return _require_pair("the reference point", reference)
+
+
 def _require_pair(name: str, pair: Any) -> tuple[float, float]:
     """Return a pair ``(value, cost)`` as two finite numbers, or say why it is not one.
 
@@ -540,8 +581,8 @@ class ExpectedHypervolumeImprovement(AcquisitionFunction):
         known_points: set[Any] | None = None,
     ) -> None:
         super().__init__(gp, known_points=known_points)
-        self.cost = cost
-        self.reference = _require_pair("the reference point", reference)
+        self.cost = require_cost(cost)
+        self.reference = require_reference(reference)
         self.front = [_require_pair("an observed pair", pair) for pair in front]
         reference_value, reference_cost = self.reference
         # The levels, in increasing order of cost: at each observed cost below the reference cost

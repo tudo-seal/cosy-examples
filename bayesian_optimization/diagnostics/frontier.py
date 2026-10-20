@@ -173,6 +173,10 @@ def read_frontier(run: AcquisitionRun) -> FrontierRead:
       the deviation grows once the mean is above the threshold, which in the loop is the normal
       case, with the threshold sitting at the incumbent, so a member up and to the right of the
       pick can score below it, and a dominated pick is then not a fault at all.
+    * For the expected hypervolume improvement the plane is not the whole of the score: a term's
+      exact cost enters beside its posterior.  At one cost the score is a positive sum of expected
+      improvements, increasing in the mean and in the deviation as expected improvement is; across
+      costs a member up and to the right of the pick can score below it.
 
     A caller who wants one number reads :attr:`FrontierRead.higher_scored_members`.  The dominance
     count is what makes the picture of the plane legible.
