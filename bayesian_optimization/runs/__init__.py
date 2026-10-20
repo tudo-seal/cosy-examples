@@ -16,6 +16,7 @@ from .artifacts import RunArtifacts, metadata_path_for
 from .budgets import StepBudgets, step_budget
 from .claims import RunClaim
 from .driver import DESIGN_PHASE, RunOutcome, run_paired, run_search
+from .fronts import best_value_under, front_hypervolume, nondominated, run_pairs
 from .metadata import write_run_metadata
 from .records import (
     EA_CSV_COLUMNS,
@@ -96,19 +97,23 @@ __all__ = [
     "TermRecord",
     "TruncatedTermPool",
     "as_pool",
+    "best_value_under",
     "build_acquisition_optimizer",
     "build_search",
     "check_resumed_design",
     "describe_sampler",
     "describe_search",
     "draw_design",
+    "front_hypervolume",
     "kernel_hyperparameters",
     "load_design_records",
     "load_initial_design",
     "metadata_path_for",
+    "nondominated",
     "read_term_pool",
     "resume_term_pool",
     "run_paired",
+    "run_pairs",
     "run_search",
     "step_budget",
     "twin_sampler",
