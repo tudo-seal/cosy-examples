@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
+import bisect
+from collections.abc import Callable, Sequence
 from typing import Any, Protocol
 
 import numpy as np
@@ -465,6 +466,155 @@ class ExpectedImprovement(AcquisitionFunction):
             np.ndarray: The expected improvement of each candidate, never negative.
         """
         return _expected_gain(mean - self.incumbent, deviation)
+
+
+def _require_pair(name: str, pair: Any) -> tuple[float, float]:
+    """Return a pair ``(value, cost)`` as two finite numbers, or say why it is not one.
+
+    Args:
+        name (str): What the pair is, for the message.
+        pair (Any): The pair handed in.
+
+    Returns:
+        tuple[float, float]: The value and the cost.
+
+    Raises:
+        ValueError: If it is not two numbers, or one of them is not finite.
+    """
+    try:
+        value, cost = pair
+    except (TypeError, ValueError):
+        msg = f"{name} is a pair (value, cost): {pair!r}"
+        raise ValueError(msg) from None
+    return (
+        _require_finite(f"the value of {name}", value),
+        _require_finite(f"the cost of {name}", cost),
+    )
+
+
+class ExpectedHypervolumeImprovement(AcquisitionFunction):
+    """Expected hypervolume improvement over a modelled value and a cost known exactly.
+
+    Two objectives: the value ``g(t)``, maximized and modelled by the surrogate, and the cost
+    ``c(t)``, minimized and known exactly for every term, so the value is the only random variable.
+    The score is the expected growth of the area the observed pairs dominate within the reference
+    point ``(r_g, r_c)`` when ``t`` joins them: the expected hypervolume improvement with the cheap
+    objective evaluated rather than modelled, as Loka et al., "Bi-objective Bayesian optimization of
+    engineering problems with cheap and expensive cost functions" (Engineering with Computers 39,
+    2023), define it, their CHVEI (Eqs. 12 to 15 of the authors' manuscript).
+
+    The closed form here slices that area along the cost.  A candidate of cost ``c`` below the
+    reference cost adds, at every cost ``v`` from ``c`` to ``r_c``, the stretch of value between the
+    level ``h(v)`` already dominated there and its own value, where ``h(v)`` is the largest observed
+    value at a cost of at most ``v``, or the reference value where there is none.  The level steps
+    only at the observed costs, so on each interval ``[v_j, v_{j+1})`` that they cut ``[c, r_c]``
+    into it is one number ``h_j``, and the score is
+    ``sum_j (v_{j+1} - v_j) E[max(g(t) - h_j, 0) | D]``: the expected improvement over each level,
+    weighted by the width of its interval.  Loka et al.
+    slice the same area along the value, which is why their closed form runs over cells of the front
+    in both coordinates; the two are one integral taken in two orders.  A candidate at or past the
+    reference cost adds nothing, and an observed pair that is dominated, or lies outside the
+    reference point, raises no level.
+
+    Args:
+        gp (MarginalPosterior): The fitted surrogate of the value.
+        cost (Callable[[Tree[Any]], float]): The exact cost of a term, smaller being better.  A cost
+            that is not finite is refused when the term is scored.
+        front (Sequence[tuple[float, float]]): The observed pairs ``(value, cost)``, all of them;
+            only the non-dominated ones within the reference point shape the score.
+        reference (tuple[float, float]): The reference point ``(r_g, r_c)``: no value below ``r_g``
+            and no cost above ``r_c`` counts.  It has no default.  It bounds the area being
+            measured, so it moves which candidate scores higher, and it is the decision maker's.
+        known_points (set[Any] | None): Candidates the loop has already evaluated.
+    """
+
+    lower_bound = 0.0
+
+    def __init__(
+        self,
+        gp: MarginalPosterior,
+        *,
+        cost: Callable[[Tree[Any]], float],
+        front: Sequence[tuple[float, float]],
+        reference: tuple[float, float],
+        known_points: set[Any] | None = None,
+    ) -> None:
+        super().__init__(gp, known_points=known_points)
+        self.cost = cost
+        self.reference = _require_pair("the reference point", reference)
+        self.front = [_require_pair("an observed pair", pair) for pair in front]
+        reference_value, reference_cost = self.reference
+        # The levels, in increasing order of cost: at each observed cost below the reference cost
+        # where the largest value so far rises, that value.  A pair that raises nothing is dominated
+        # by one at a cost no higher, or lies below the reference value.
+        self._costs: list[float] = []
+        self._levels: list[float] = []
+        level = reference_value
+        inside = [pair for pair in self.front if pair[1] < reference_cost]
+        for value, observed_cost in sorted(inside, key=lambda pair: pair[1]):
+            if value <= level:
+                continue
+            level = value
+            if self._costs and self._costs[-1] == observed_cost:
+                self._levels[-1] = level
+            else:
+                self._costs.append(observed_cost)
+                self._levels.append(level)
+
+    def score(self, mean: np.ndarray, deviation: np.ndarray) -> np.ndarray:
+        """Refuse to score from the posterior alone.
+
+        Args:
+            mean (np.ndarray): The posterior means.
+            deviation (np.ndarray): The posterior standard deviations.
+
+        Returns:
+            np.ndarray: Never.
+
+        Raises:
+            TypeError: Always.  The score reads each candidate's cost beside its posterior.
+        """
+        msg = (
+            "the expected hypervolume improvement reads each candidate's cost beside its "
+            "posterior, so it scores terms: call score_terms(candidates, mean, deviation)"
+        )
+        raise TypeError(msg)
+
+    def score_terms(
+        self, candidates: Sequence[Tree[Any]], mean: np.ndarray, deviation: np.ndarray
+    ) -> np.ndarray:
+        """Return the expected hypervolume improvement of each candidate.
+
+        Args:
+            candidates (Sequence[Tree[Any]]): The candidates, in the order of ``mean``.
+            mean (np.ndarray): Their posterior means of the value.
+            deviation (np.ndarray): Their posterior standard deviations, non-negative.
+
+        Returns:
+            np.ndarray: One score per candidate, never negative.
+
+        Raises:
+            ValueError: If the cost of a candidate is not finite.
+        """
+        reference_value, reference_cost = self.reference
+        scores = np.zeros(len(candidates))
+        for index, term in enumerate(candidates):
+            cost = float(self.cost(term))
+            if not np.isfinite(cost):
+                msg = (
+                    f"the cost of the term {term} is not finite: {cost}; a cost is a measurement, "
+                    "and one that failed is refused rather than scored"
+                )
+                raise ValueError(msg)
+            if cost >= reference_cost:
+                continue
+            first = bisect.bisect_right(self._costs, cost)
+            edges = np.array([cost, *self._costs[first:], reference_cost])
+            level_at_cost = self._levels[first - 1] if first else reference_value
+            levels = np.array([level_at_cost, *self._levels[first:]])
+            gains = _expected_gain(mean[index] - levels, deviation[index])
+            scores[index] = float(np.dot(np.diff(edges), gains))
+        return scores
 
 
 class ProbabilityOfImprovement(AcquisitionFunction):

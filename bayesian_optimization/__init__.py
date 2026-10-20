@@ -4,6 +4,7 @@ from __future__ import annotations
 from .acquisition_function import (
     AcquisitionFactory,
     AcquisitionFunction,
+    ExpectedHypervolumeImprovement,
     ExpectedImprovement,
     MarginalPosterior,
     ProbabilityOfImprovement,
@@ -57,6 +58,7 @@ __all__ = [
     "BayesianOptimization",
     "CalibrationRead",
     "Diagnostics",
+    "ExpectedHypervolumeImprovement",
     "ExpectedImprovement",
     "FitRead",
     "FrontierRead",
