@@ -50,7 +50,7 @@ from .diagnostics import (
     log_suggestion,
     warn_if_exploitation_stalls,
 )
-from .duplicates import DuplicateTest, KnownTerms
+from .duplicates import DuplicateTest, KnownTerms, one_test
 from .initial_sampling import _sample_fallback_tree
 from .kernels.graph_kernel import clear_kernel_caches
 from .kernels.tree_kernel import OrderedRootedSubtreeKernel
@@ -239,10 +239,21 @@ def _built_by(
         )
         raise ValueError(msg)
     held = built.known_points
+    if isinstance(known_points, KnownTerms) and held is not None and not (
+        isinstance(held, KnownTerms) and one_test(held.test, known_points.test)
+    ):
+        # Held under a duplicate test, the known points are kept below a novel term by membership
+        # under that test; a set of them answers term equality, and a term the test merges with a
+        # known one would score as novel and win.
+        msg = (
+            f"the acquisition factory's {type(built).__name__} holds the known points as a "
+            f"{type(held).__name__}, which does not ask the loop's duplicate test: hold them as "
+            "the pass hands them over, or as their union() with terms of its own"
+        )
+        raise ValueError(msg)
     if held is None:
         holds = False
     elif isinstance(known_points, KnownTerms):
-        # Held under a duplicate test, the known points are held where the test finds them.
         holds = all(term in held for term in known_points)
     else:
         # Under term equality a set, compared as the loop always compared it.
