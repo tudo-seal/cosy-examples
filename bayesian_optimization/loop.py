@@ -1052,8 +1052,8 @@ class AskTellLoop(Generic[NT, T, G]):
         # state the reverse of the truth.  The row the term went into answers it exactly, because
         # the two lists are appended in step and read by position everywhere else, so the
         # suggestion has its value if and only if a y entry stands in that row.  Membership in the
-        # duplicate index is not the same test: the index is written between the two appends, so an
-        # interrupt there leaves it claiming a value the dataset does not hold.  Nor is the term's
+        # duplicate index is not the same test: the index is written before the two appends, so an
+        # interrupt there leaves it holding a term the dataset does not.  Nor is the term's
         # having some value: that is the same answer only while a suggested term is always new.
         valued_terms = self._x_list[: len(self._y_list)]
         dropped: list[Any] = []
