@@ -18,7 +18,7 @@ from __future__ import annotations
 from collections.abc import Hashable, Iterable, Iterator
 from typing import Any
 
-__all__ = ["TERM_EQUALITY", "DuplicateTest", "KnownTerms"]
+__all__ = ["TERM_EQUALITY", "DuplicateTest", "KnownTerms", "one_test"]
 
 
 class DuplicateTest:
@@ -34,6 +34,11 @@ class DuplicateTest:
     both methods functions of their terms. :class:`KnownTerms` holds the first term of each class
     and asks a new term against the held ones only, so under a relation that is not transitive
     what it holds depends on the order the terms arrive in. Neither property is checked.
+
+    Where two tests must be one -- the strategies of a paired run, which are compared on one
+    design -- they are one when :func:`one_test` says so: the same object, both term equality, or
+    equal by the class's own ``==``. A test whose instances differ by a configuration is one object
+    handed to each, or defines ``__eq__`` (and ``__hash__``) over that configuration.
     """
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
@@ -73,6 +78,25 @@ class DuplicateTest:
 
 #: The default test of every loop: term equality, as before the test was exchangeable.
 TERM_EQUALITY = DuplicateTest()
+
+
+def one_test(a: DuplicateTest, b: DuplicateTest) -> bool:
+    """Whether two duplicate tests are one.
+
+    They are where they are the same object, where both are term equality (:class:`DuplicateTest`
+    itself, however many instances), or where the class's own ``==`` says so; without an ``__eq__``
+    of its own, two instances of one class are two tests, since a configuration may tell them apart.
+
+    Args:
+        a: A test.
+        b: A test.
+
+    Returns:
+        bool: Whether they are one.
+    """
+    if a is b or (type(a) is DuplicateTest and type(b) is DuplicateTest):
+        return True
+    return type(a) is type(b) and bool(a == b)
 
 
 class KnownTerms:

@@ -156,3 +156,32 @@ def test_paired_strategies_under_two_tests_of_one_name_are_refused(tmp_path):
     with pytest.raises(ValueError, match="share one duplicate test"):
         _paired(tmp_path, strategies)
     assert not list(tmp_path.iterdir()), "the refusal comes before any file is written"
+
+
+class ModValue(DuplicateTest):
+    """Two expressions whose values agree modulo ``k`` are one evaluation: a test with a configuration."""
+
+    def __init__(self, k: int) -> None:
+        self.k = k
+
+    def key(self, term):
+        return value(term) % self.k
+
+    def same(self, a, b) -> bool:
+        return value(a) % self.k == value(b) % self.k
+
+
+def test_paired_strategies_under_two_configurations_of_one_test_are_refused(tmp_path):
+    # The arm's test is finer than the leader's, so the shared design passes it: nothing downstream notices.
+    strategies = _strategies(5, ModValue(7))
+    strategies["random"] = RandomSearch(expression_space(), EXPR, sampler=SizeUniformSampler(BOUND, random.Random(5)),
+                                        seed=5, duplicate_test=ModValue(1000))
+    with pytest.raises(ValueError, match="share one duplicate test"):
+        _paired(tmp_path / "two", strategies)
+    assert not list((tmp_path / "two").iterdir()), "the refusal comes before any file is written"
+    shared = _paired(tmp_path / "one", _strategies(5, ModValue(7)))
+    assert set(shared) == {"bo", "random"}, "one object handed to each arm is one test"
+    plain = {"bo": _strategies(5, None)["bo"],
+             "random": RandomSearch(expression_space(), EXPR, sampler=SizeUniformSampler(BOUND, random.Random(5)), seed=5,
+                                    duplicate_test=DuplicateTest())}
+    assert set(_paired(tmp_path / "plain", plain)) == {"bo", "random"}, "term equality is one test however it is given"

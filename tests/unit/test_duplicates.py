@@ -14,7 +14,7 @@ import pytest
 from cosy.core.tree import Tree
 from cosy.search import DepthBoundedRandomSampler, generator_query
 
-from bayesian_optimization.duplicates import TERM_EQUALITY, DuplicateTest, KnownTerms
+from bayesian_optimization.duplicates import TERM_EQUALITY, DuplicateTest, KnownTerms, one_test
 from tests.spaces import EXPR, add, expression_space, lit, neg
 
 
@@ -173,3 +173,36 @@ def test_a_copy_asks_the_test_nothing_and_a_union_asks_only_of_the_terms_it_adds
     size = len(held)
     assert copy.add(beside)
     assert len(held) == size and beside not in held, "the copy holds its own buckets"
+
+
+class Mod(DuplicateTest):
+    """Values agreeing modulo ``k``; no ``==`` of its own, so two instances are two tests."""
+
+    def __init__(self, k: int) -> None:
+        self.k = k
+
+    def key(self, term):
+        return value(term) % self.k
+
+    def same(self, a, b) -> bool:
+        return value(a) % self.k == value(b) % self.k
+
+
+class ModByConfiguration(Mod):
+    """The same test, saying that two instances of one ``k`` are one test."""
+
+    def __eq__(self, other) -> bool:
+        return isinstance(other, ModByConfiguration) and other.k == self.k
+
+    def __hash__(self) -> int:
+        return hash(self.k)
+
+
+def test_two_tests_are_one_where_they_are_one_object_term_equality_or_equal_by_their_class():
+    test = Mod(3)
+    assert one_test(test, test)
+    assert one_test(TERM_EQUALITY, DuplicateTest()) and one_test(DuplicateTest(), DuplicateTest())
+    assert not one_test(Mod(3), Mod(3)), "without an == of its own, a configuration may tell two instances apart"
+    assert one_test(ModByConfiguration(3), ModByConfiguration(3))
+    assert not one_test(ModByConfiguration(3), ModByConfiguration(4))
+    assert not one_test(Mod(3), TERM_EQUALITY) and not one_test(TERM_EQUALITY, Mod(3))

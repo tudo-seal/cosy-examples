@@ -31,7 +31,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from ..bo import BayesianOptimization
-from ..duplicates import TERM_EQUALITY
+from ..duplicates import TERM_EQUALITY, one_test
 from ..loop import AskTellLoop, _require_distinct_under, _require_hashable
 from ..nsga2 import NSGA2
 from ..random_search import RandomSearch
@@ -740,14 +740,20 @@ def run_paired(
         raise ValueError("one CSV path per strategy, under the same names")
     if len({id(strategy) for strategy in strategies.values()}) != len(names):
         raise ValueError("one strategy object under two names would run twice on one state")
-    # By type: two classes of one name are two tests, and a design distinct under one of them need
-    # not be under the other.
-    tests = {type(_duplicate_test_of(strategy)) for strategy in strategies.values()}
-    if len(tests) > 1:
-        named = sorted(f"{test.__module__}.{test.__qualname__}" for test in tests)
+    # One test, as one_test reads it: two classes of one name are two tests, and so are two
+    # instances of one class that could differ by a configuration; a design distinct under one of
+    # them need not be under the other, and the arms would skip by different rules.
+    tests = {name: _duplicate_test_of(strategy) for name, strategy in strategies.items()}
+    first = next(iter(tests.values()))
+    if not all(one_test(first, test) for test in tests.values()):
+        named = ", ".join(
+            f"{name}: {type(test).__module__}.{type(test).__qualname__} at {id(test):#x}"
+            for name, test in tests.items()
+        )
         msg = (
             "the strategies of a paired run take one design and are compared on it, so they share "
-            f"one duplicate test; these use {', '.join(named)}"
+            "one duplicate test -- one object handed to each, or tests their class calls equal; "
+            f"these use {named}"
         )
         raise ValueError(msg)
     claimed: dict[str, str] = {}
