@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import random
 
+import pytest
+from cosy.core.tree import Tree
 from cosy.search import DepthBoundedRandomSampler, generator_query
 
 from bayesian_optimization.duplicates import TERM_EQUALITY, DuplicateTest, KnownTerms
@@ -98,3 +100,23 @@ def test_a_union_holds_both_and_leaves_the_first_as_it_was():
     assert set(both) == set(first) | set(second)
     assert set(known) == set(first)
     assert both.test is known.test
+
+
+def test_a_test_that_overrides_same_and_not_key_is_refused_where_it_is_defined():
+    # Under the default key, the term itself, same() would be asked only of equal terms.
+    with pytest.raises(TypeError, match="overrides same\\(\\) and not key\\(\\)"):
+
+        class OnlySame(DuplicateTest):
+            def same(self, a, b) -> bool:
+                return value(a) == value(b)
+
+    class KeyOnly(DuplicateTest):
+        def key(self, term):
+            return value(term)
+
+    class BothFromTheBase(SameValue):
+        def same(self, a, b) -> bool:
+            return value(a) == value(b)
+
+    assert Tree(add, (Tree(lit, ()), Tree(lit, ()))) not in KnownTerms([Tree(lit, ())], KeyOnly())
+    assert len(KnownTerms([Tree(lit, ()), Tree(neg, (Tree(neg, (Tree(lit, ()),)),))], BothFromTheBase())) == 1

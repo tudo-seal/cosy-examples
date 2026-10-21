@@ -25,8 +25,21 @@ class DuplicateTest:
     """When two terms are one evaluation; this class itself is term equality.
 
     A test of a caller's own overrides both methods, or ``key`` alone when equality inside a bucket
-    is what it means. Both must be consistent: ``same(a, b)`` only for terms with one key.
+    is what it means. Both must be consistent: ``same(a, b)`` only for terms with one key. A class
+    that overrides ``same`` and not ``key`` is refused where it is defined: under the default key,
+    the term itself, ``same`` would be asked of equal terms only, and the test would be term
+    equality whatever it says.
     """
+
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        super().__init_subclass__(**kwargs)
+        if cls.same is not DuplicateTest.same and cls.key is DuplicateTest.key:
+            msg = (
+                f"{cls.__name__} overrides same() and not key(): the default key is the term "
+                "itself, so same() would be asked of equal terms only and the test would be term "
+                "equality; give key() a bucket that the terms same() merges share"
+            )
+            raise TypeError(msg)
 
     def key(self, term: Any) -> Hashable:
         """The bucket a term falls in; two terms in different buckets are never one evaluation.
