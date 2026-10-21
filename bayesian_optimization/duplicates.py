@@ -61,7 +61,9 @@ class KnownTerms:
     """Terms held under a duplicate test: ``term in known`` asks the test, not equality alone.
 
     It holds one term per class the test forms, the first one added, so its length counts
-    evaluations rather than spellings. Under :data:`TERM_EQUALITY` it is a set of terms.
+    evaluations rather than spellings. Under plain term equality (:class:`DuplicateTest` itself) it
+    keeps a set and asks only the set, so membership is the loops' former ``term in set`` exactly,
+    down to which side of ``==`` is asked.
 
     Args:
         terms: The terms to hold from the start, in order.
@@ -70,6 +72,9 @@ class KnownTerms:
 
     def __init__(self, terms: Iterable[Any] = (), test: DuplicateTest = TERM_EQUALITY) -> None:
         self.test = test
+        self._plain = type(test) is DuplicateTest
+        self._set: set[Any] = set()
+        self._order: list[Any] = []
         self._buckets: dict[Hashable, list[Any]] = {}
         self._count = 0
         for term in terms:
@@ -82,8 +87,11 @@ class KnownTerms:
             term: The term to look up.
 
         Returns:
-            Any | None: The first held term the test calls the same, or None.
+            Any | None: The first held term the test calls the same, or None; under plain term
+            equality the term itself when an equal one is held.
         """
+        if self._plain:
+            return term if term in self._set else None
         for held in self._buckets.get(self.test.key(term), ()):
             if self.test.same(term, held):
                 return held
@@ -98,6 +106,13 @@ class KnownTerms:
         Returns:
             bool: Whether the term was new under the test.
         """
+        if self._plain:
+            if term in self._set:
+                return False
+            self._set.add(term)
+            self._order.append(term)
+            self._count += 1
+            return True
         bucket = self._buckets.setdefault(self.test.key(term), [])
         if any(self.test.same(term, held) for held in bucket):
             return False
@@ -128,9 +143,14 @@ class KnownTerms:
         return KnownTerms(self, self.test)
 
     def __contains__(self, term: Any) -> bool:
+        if self._plain:
+            return term in self._set
         return self.match(term) is not None
 
     def __iter__(self) -> Iterator[Any]:
+        if self._plain:
+            yield from self._order
+            return
         for bucket in self._buckets.values():
             yield from bucket
 
