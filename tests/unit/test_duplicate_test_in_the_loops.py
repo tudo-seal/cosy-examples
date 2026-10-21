@@ -122,6 +122,38 @@ def test_nsga2_answers_what_the_test_merges_from_the_term_it_measured():
             assert value(measured[row]) == value(member)
 
 
+def test_nsga2_reads_a_merged_offsprings_cost_when_it_breeds_it_and_none_while_it_takes_a_value_back():
+    space = expression_space()
+    design, _ = distinct_prefix(SizeUniformSampler(9, random.Random(5)), generator_query(space, EXPR), 6,
+                                test=SameValue())
+    events: list[tuple[str, object]] = []
+    where = ["initialize"]
+
+    def cost(term) -> float:
+        events.append((where[0], term))
+        return float(term.size)
+
+    search = NSGA2(space, EXPR, cost=cost, depth_bound=DEPTH, seed=5, duplicate_test=SameValue())
+    search.initialize(design=design)
+    # Three passes: the fourth generation of this seed breeds nothing new, which is convergence.
+    for _ in range(len(design) + 3):
+        where[0] = "suggest"
+        suggestion = search.suggest()
+        where[0] = "observe"
+        search.observe(suggestion.candidate, measure(suggestion.candidate))
+        events.append(("observed", suggestion.candidate))
+    assert [term for place, term in events if place == "observe"] == []
+    observed = {term for place, term in events if place == "observed"}
+    measured_values: set[int] = set()
+    early = 0
+    for place, term in events:
+        if place == "observed":
+            measured_values.add(value(term))
+        elif place == "suggest" and term not in observed and value(term) not in measured_values:
+            early += 1
+    assert early > 0, "no offspring was merged with one waiting in its generation, so no cost was read for it"
+
+
 def test_a_drawn_design_is_pairwise_distinct_under_the_test():
     query = generator_query(expression_space(), EXPR)
     design, rejected = distinct_prefix(DepthBoundedRandomSampler(3, random.Random(0)), query, 5, test=SameValue())

@@ -400,8 +400,9 @@ class NSGA2(AskTellLoop[NT, T, G]):
     def _breed(self) -> None:
         """Breed the next generation's offspring as the driver breeds them, and queue the new ones.
 
-        Nothing of the run changes until the breeding has succeeded: a failure inside variation
-        leaves the population unbred, and the next call breeds it again.
+        Nothing of the run changes until the breeding has succeeded: a failure inside variation, or
+        the cost of an offspring the duplicate test merged refused, leaves the population unbred,
+        and the next call breeds it again.
         """
         search = self._search
         assert search is not None and self._population is not None
@@ -427,22 +428,33 @@ class NSGA2(AskTellLoop[NT, T, G]):
         measured = KnownTerms(self._fitness, self.duplicate_test)
         queued = KnownTerms(test=self.duplicate_test)
         waiting: list[Any] = []
-        aliased: set[Any] = set()
+        answered: list[tuple[Any, Any]] = []
+        aliases: dict[Any, list[Any]] = {}
         for term in dict.fromkeys(offspring):
             if term in self._fitness:
                 continue
             held = measured.match(term)
             if held is not None:
-                self._answer_from(term, held)
+                answered.append((term, held))
                 continue
             first = queued.match(term)
             if first is not None:
-                self._aliases.setdefault(first, []).append(term)
-                aliased.add(term)
+                aliases.setdefault(first, []).append(term)
                 continue
             queued.add(term)
             waiting.append(term)
-        known = sum(1 for term in offspring if term in self._fitness or term in aliased)
+        aliased = [term for merged in aliases.values() for term in merged]
+        # A merged offspring is answered without an evaluation, so its cost is all of it that can be
+        # refused: read here, before anything of the run changes, as a waiting offspring's is read
+        # before it is handed out, and never while the value of another term is taken back.
+        for term in (*(term for term, _held in answered), *aliased):
+            self._cost_of(term)
+        for term, held in answered:
+            self._answer_from(term, held)
+        for first, merged in aliases.items():
+            self._aliases.setdefault(first, []).extend(merged)
+        merged_with_waiting = set(aliased)
+        known = sum(1 for term in offspring if term in self._fitness or term in merged_with_waiting)
         self._offspring = offspring
         self._waiting = waiting
         self._bred = (len(offspring), len(waiting), known)
@@ -499,7 +511,9 @@ class NSGA2(AskTellLoop[NT, T, G]):
         Raises:
             RuntimeError: If ``idle_generations`` generations in a row breed no new term, or if
                 variation fails the driver's attempt cap.
-            ValueError: If the offspring's cost is not a finite number, before it is handed out.
+            ValueError: If the offspring's cost is not a finite number, before it is handed out;
+                under a duplicate test also the cost of an offspring answered from another term,
+                in the call that breeds it.
         """
         if verbose:
             enable_verbose_logging()
