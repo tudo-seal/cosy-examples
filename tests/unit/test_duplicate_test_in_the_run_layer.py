@@ -25,7 +25,14 @@ from bayesian_optimization.runs import (
 from bayesian_optimization.runs.driver import run_paired, run_search
 from bayesian_optimization.runs.search_program import draw_design
 from tests.spaces import EXPR, expression_space
-from tests.unit.test_duplicate_test_in_the_loops import BOUND, DEPTH, SameValue, measure, value
+from tests.unit.test_duplicate_test_in_the_loops import (
+    BOUND,
+    DEPTH,
+    SameValue,
+    measure,
+    merged_pair,
+    value,
+)
 
 SCHEMA = MetricSchema.for_metrics(Objective("score"), ["score"])
 
@@ -102,6 +109,16 @@ def test_an_nsga2_run_names_a_member_the_test_merged_by_the_evaluation_it_was_an
         named = [term_of[tuple(label)] for label in line["members"]]
         assert named == [evaluated[row] for row in formed.rows]
         assert [value(term) for term in named] == [value(member) for member in formed.members]
+
+
+def test_a_design_given_to_a_run_that_the_test_merges_is_refused_before_anything_is_opened(tmp_path):
+    a, b = merged_pair()
+    search = RandomSearch(expression_space(), EXPR, sampler=SizeUniformSampler(BOUND, random.Random(0)), seed=0,
+                          duplicate_test=SameValue())
+    with pytest.raises(ValueError, match="the duplicate test calls two terms of the design one evaluation"):
+        run_search(search, lambda term: {"score": measure(term)}, schema=SCHEMA, design=[a, b], n_passes=1,
+                   csv_path=str(tmp_path / "run.csv"), pretty_algebra=dict, echo=_quiet)
+    assert not list(tmp_path.iterdir()), "the refusal comes before any file is written"
 
 
 def test_paired_strategies_under_two_duplicate_tests_are_refused_before_anything_is_drawn(tmp_path):

@@ -105,6 +105,29 @@ def _require_hashable(candidates: Sequence[Any], source: str) -> None:
             raise TypeError(msg) from unhashable
 
 
+def _require_distinct_under(terms: Sequence[Any], test: DuplicateTest) -> None:
+    """Refuse a design two of whose terms the duplicate test calls one evaluation.
+
+    Asked where a design handed over as terms is refused for a repeated term, after that check;
+    under term equality it asks nothing more.
+
+    Args:
+        terms (Sequence[Any]): The design, no term repeated.
+        test (DuplicateTest): The loop's duplicate test.
+
+    Raises:
+        ValueError: If the test merges two of the terms.
+    """
+    if type(test) is DuplicateTest:
+        return
+    held = KnownTerms(test=test)
+    if not all(held.add(term) for term in terms):
+        raise ValueError(
+            "the duplicate test calls two terms of the design one evaluation: a design term it "
+            "merges with an earlier one is an evaluation spent on a value the dataset already holds"
+        )
+
+
 def _require_duplicate_test(value: Any) -> DuplicateTest:
     """The loop's duplicate test, term equality where none is given.
 
@@ -460,7 +483,8 @@ class AskTellLoop(Generic[NT, T, G]):
             :meth:`suggest` in this order.  A fixed design, given rather than drawn, so it needs
             no search space.  It takes no ``x0``, ``y0`` or ``objective`` beside it, and it must
             not repeat a term, since a repeated design term is an evaluation spent on a value the
-            dataset already holds.  An empty design is a complete one.
+            dataset already holds; nor, under a duplicate test of the caller's own, hold two terms
+            the test calls one evaluation.  An empty design is a complete one.
         """
         if self._bo_state != BOState.UNINITIALIZED:
             raise RuntimeError(
@@ -481,6 +505,7 @@ class AskTellLoop(Generic[NT, T, G]):
                     "the design repeats a term: a repeated design term is an evaluation spent on "
                     "a value the dataset already holds"
                 )
+            _require_distinct_under(design_terms, self.duplicate_test)
             self.check_design(design_terms)
             # A design handed over is not drawn, but the passes after it still replace a
             # duplicate with a fresh draw, so the sampler is built here as on every other path.

@@ -68,6 +68,13 @@ def run(loop, size: int, passes: int) -> list:
 BOUND = 9
 
 
+def merged_pair():
+    """Two distinct terms of one value, from the head of a stream."""
+    drawn = [term for term, _ in zip(SizeUniformSampler(BOUND, random.Random(3)).sample(
+        generator_query(expression_space(), EXPR)), range(40))]
+    return next((x, y) for i, x in enumerate(drawn) for y in drawn[i + 1:] if value(x) == value(y))
+
+
 def random_search(seed: int, test=None) -> RandomSearch:
     return RandomSearch(expression_space(), EXPR, sampler=SizeUniformSampler(BOUND, random.Random(seed)), seed=seed,
                         duplicate_test=test)
@@ -167,6 +174,17 @@ def test_a_drawn_design_is_pairwise_distinct_under_the_test():
     plain_bo = bayesian(0, sampler=DepthBoundedRandomSampler(3, random.Random(0)))
     plain_bo.initialize(initial_size=5)
     assert len({value(term) for term in plain_bo.design}) < 5, "under term equality the loop's design repeats a value"
+
+
+@pytest.mark.parametrize("make", [random_search, bayesian])
+def test_a_design_handed_over_whose_terms_the_test_merges_is_refused_as_a_repeated_one_is(make):
+    a, b = merged_pair()
+    assert a != b
+    with pytest.raises(ValueError, match="the duplicate test calls two terms of the design one evaluation"):
+        make(0, SameValue()).initialize(design=[a, b])
+    loop = make(0)
+    loop.initialize(design=[a, b])
+    assert loop.design == (a, b), "under term equality two distinct terms are a design"
 
 
 @pytest.mark.parametrize("make", [random_search, bayesian])

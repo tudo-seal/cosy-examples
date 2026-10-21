@@ -31,7 +31,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from ..bo import BayesianOptimization
-from ..loop import AskTellLoop, _require_hashable
+from ..duplicates import TERM_EQUALITY
+from ..loop import AskTellLoop, _require_distinct_under, _require_hashable
 from ..nsga2 import NSGA2
 from ..random_search import RandomSearch
 from ..state import BOState
@@ -248,6 +249,7 @@ def _design_of(strategy, *, n_design, n_passes, design, resume, resumed_value, o
         if len(set(terms)) != len(terms):
             raise ValueError("the design repeats a term: a repeated design term is an evaluation "
                              "spent on a value the dataset already holds")
+        _require_distinct_under(terms, getattr(strategy, "duplicate_test", None) or TERM_EQUALITY)
         # What a strategy reads of each design term besides its value, NSGA-II's exact cost, before
         # anything is opened; a drawn design is checked by initialize() once it is drawn.
         strategy.check_design(terms)
