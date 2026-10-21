@@ -102,6 +102,27 @@ class KnownTerms:
         """
         return self._plain
 
+    def as_set(self) -> set[Any]:
+        """Under plain term equality, a copy of the set membership asks.
+
+        That set is built term by term in the order the terms were added, as the loops built their
+        sets of terms, so its copy iterates as theirs did.
+
+        Returns:
+            set[Any]: The copy.
+
+        Raises:
+            TypeError: Under any other test, whose membership a set of the held terms would not
+                answer.
+        """
+        if not self._plain:
+            msg = (
+                f"terms held under {type(self.test).__name__} are no set: a set of them would "
+                "answer term equality"
+            )
+            raise TypeError(msg)
+        return set(self._set)
+
     def match(self, term: Any) -> Any | None:
         """The held term ``term`` is one evaluation with, or None.
 

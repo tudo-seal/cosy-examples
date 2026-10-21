@@ -188,7 +188,8 @@ def distinct_prefix(
         # where a term has just been kept, and an empty design keeps none.
         return [], 0
     plain = type(test) is DuplicateTest
-    held = KnownTerms(test=test)
+    # Under term equality the scan below compares structurally and hashes nothing.
+    held = None if plain else KnownTerms(test=test)
     drawn: list[Tree[Any]] = []
     rejected = 0
     repeats_in_a_row = 0
@@ -197,7 +198,7 @@ def distinct_prefix(
         # labels alone, and nothing here requires a label to hash consistently with its equality
         # or to stay unchanged afterwards.  ``Tree.__eq__`` compares the size first, so the scan
         # short-circuits on almost every pair and the design is small either way.
-        if any(candidate == kept for kept in drawn) if plain else candidate in held:
+        if any(candidate == kept for kept in drawn) if held is None else candidate in held:
             rejected += 1
             repeats_in_a_row += 1
             if repeats_in_a_row >= max_draws_per_term:
@@ -219,7 +220,8 @@ def distinct_prefix(
                 raise RuntimeError(msg)
         else:
             drawn.append(candidate)
-            held.add(candidate)
+            if held is not None:
+                held.add(candidate)
             if len(drawn) == count:
                 return drawn, rejected
             repeats_in_a_row = 0

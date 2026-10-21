@@ -18,6 +18,7 @@ from cosy.core.tree import Tree
 from cosy.search import DepthBoundedRandomSampler, SizeUniformSampler, generator_query
 
 from bayesian_optimization import NSGA2, RandomSearch
+from bayesian_optimization.acquisition_function import ExpectedImprovement
 from bayesian_optimization.bo import BayesianOptimization
 from bayesian_optimization.duplicates import TERM_EQUALITY, DuplicateTest, KnownTerms
 from bayesian_optimization.initial_sampling import _sample_fallback_tree, distinct_prefix
@@ -267,6 +268,65 @@ def test_under_term_equality_a_loop_runs_as_it_did(make):
     default = run(make(7), 3, 4)
     for test in (TERM_EQUALITY, DuplicateTest()):
         assert run(make(7, test), 3, 4) == default
+
+
+def test_under_term_equality_the_acquisition_holds_the_former_set_of_known_points():
+    for size in (6, 20, 30):
+        seen = []
+
+        def factory(gp, *, incumbent, known_points, seen=seen):
+            seen.append(list(known_points))
+            return ExpectedImprovement(gp, incumbent=incumbent, known_points=known_points)
+
+        space = expression_space()
+        loop = BayesianOptimization(search_space=space, request=EXPR, sampler=SizeUniformSampler(BOUND, random.Random(1)),
+                                    seed=1, optimizer=_make_ea(space, 1), n_restarts_kernel_optimizer=0,
+                                    acquisition_function=factory)
+        measured = run(loop, size, 1)
+        former: set = set()
+        for term in measured[:size]:
+            former.add(term)
+        assert seen[0] == list(set(set(former) | set())), f"the former sets, down to their order ({size})"
+
+
+class _HoldsAll:
+    """Answers every membership with yes, and iterates nothing."""
+
+    def __contains__(self, item) -> bool:
+        return True
+
+    def __iter__(self):
+        return iter(())
+
+    def __len__(self) -> int:
+        return 0
+
+
+def test_under_term_equality_a_factorys_known_points_are_held_as_a_set_of_them():
+    def factory(gp, *, incumbent, known_points):
+        return ExpectedImprovement(gp, incumbent=incumbent, known_points=_HoldsAll())
+
+    space = expression_space()
+    loop = BayesianOptimization(search_space=space, request=EXPR, sampler=SizeUniformSampler(BOUND, random.Random(1)),
+                                seed=1, optimizer=_make_ea(space, 1), n_restarts_kernel_optimizer=0,
+                                acquisition_function=factory)
+    with pytest.raises(ValueError, match="does not hold the known points"):
+        run(loop, 4, 1)
+
+
+class _Script:
+    """A sampler whose stream is a fixed list."""
+
+    def __init__(self, script) -> None:
+        self.script = script
+
+    def sample(self, query):
+        yield from self.script
+
+
+def test_under_term_equality_a_design_is_scanned_without_a_hash():
+    # Lists cannot be hashed; under term equality the scan compares structurally and hashes nothing.
+    assert distinct_prefix(_Script([[1], [1], [2]]), None, 2) == ([[1], [2]], 1)
 
 
 def test_something_that_is_no_duplicate_test_is_refused_by_name():

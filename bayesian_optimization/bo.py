@@ -239,7 +239,15 @@ def _built_by(
         )
         raise ValueError(msg)
     held = built.known_points
-    if held is None or not all(term in held for term in known_points):
+    if held is None:
+        holds = False
+    elif isinstance(known_points, KnownTerms):
+        # Held under a duplicate test, the known points are held where the test finds them.
+        holds = all(term in held for term in known_points)
+    else:
+        # Under term equality a set, compared as the loop always compared it.
+        holds = set(known_points) <= set(held)
+    if not holds:
         msg = (
             f"the acquisition factory's {type(built).__name__} does not hold the known points the "
             "pass handed it: without them nothing keeps an observed term below a novel one"
@@ -835,9 +843,14 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         )
         # The terms no pass may propose: the measured ones, where a term is measured once, and the
         # outstanding ones, which are being measured.
-        avoid = (
-            KnownTerms(test=self.duplicate_test) if self.repeated_measurements else self._x_set.copy()
-        ).union(pending_terms)
+        avoid: Collection[Any]
+        if self._x_set.plain:
+            # Under term equality the sets the loop always built, down to their iteration order.
+            avoid = (set() if self.repeated_measurements else self._x_set.as_set()) | set(pending_terms)
+        else:
+            avoid = (
+                KnownTerms(test=self.duplicate_test) if self.repeated_measurements else self._x_set.copy()
+            ).union(pending_terms)
         af = self._build_acquisition(scored, incumbent, avoid, posterior=model)
 
         # --- Optimize acquisition function ------------------------------------
