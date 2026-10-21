@@ -20,6 +20,7 @@ from bayesian_optimization.runs import (
     Objective,
     RunArtifacts,
     build_acquisition_optimizer,
+    load_design_records,
     read_term_pool,
 )
 from bayesian_optimization.runs.driver import run_paired, run_search
@@ -119,6 +120,18 @@ def test_a_design_given_to_a_run_that_the_test_merges_is_refused_before_anything
         run_search(search, lambda term: {"score": measure(term)}, schema=SCHEMA, design=[a, b], n_passes=1,
                    csv_path=str(tmp_path / "run.csv"), pretty_algebra=dict, echo=_quiet)
     assert not list(tmp_path.iterdir()), "the refusal comes before any file is written"
+
+
+def test_a_design_the_loop_drew_under_the_test_resumes_against_the_head_of_its_stream(tmp_path):
+    first = str(tmp_path / "first.csv")
+    run_search(_strategies(4, SameValue())["bo"], lambda term: {"score": measure(term)}, schema=SCHEMA, n_design=6,
+               csv_path=first, pretty_algebra=dict, echo=_quiet)
+    records = load_design_records(RunArtifacts(first).path("terms"), {})
+    assert records.origin == "drawn"
+    stream = [term for term, _ in zip(SizeUniformSampler(BOUND, random.Random(4)).sample(_query()), range(6))]
+    assert [record.term for record in records] != stream, "the design must skip a merged term, or it is the raw head"
+    run_search(_strategies(4, SameValue())["bo"], lambda term: {"score": measure(term)}, schema=SCHEMA,
+               resume=records, csv_path=str(tmp_path / "again.csv"), pretty_algebra=dict, echo=_quiet)
 
 
 def test_paired_strategies_under_two_duplicate_tests_are_refused_before_anything_is_drawn(tmp_path):

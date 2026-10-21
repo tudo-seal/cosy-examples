@@ -187,6 +187,16 @@ def test_a_design_handed_over_whose_terms_the_test_merges_is_refused_as_a_repeat
     assert loop.design == (a, b), "under term equality two distinct terms are a design"
 
 
+def test_the_loops_own_design_under_the_test_is_the_head_of_its_stream_the_run_layer_draws():
+    query = generator_query(expression_space(), EXPR)
+    head, rejected = distinct_prefix(SizeUniformSampler(BOUND, random.Random(4)), query, 6, test=SameValue())
+    assert rejected > 0, "the stream must offer a merged term within the design, or both draws agree by construction"
+    loop = bayesian(4, SameValue())
+    loop.initialize(initial_size=6)
+    assert list(loop.design) == head
+    assert loop.initial_repeats_rejected == rejected
+
+
 @pytest.mark.parametrize("make", [random_search, bayesian])
 def test_under_term_equality_a_loop_runs_as_it_did(make):
     default = run(make(7), 3, 4)

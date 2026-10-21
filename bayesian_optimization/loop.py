@@ -29,7 +29,7 @@ from cosy.search import Sampler, SizeUniformSampler, generator_query
 
 from .diagnostics import enable_verbose_logging, get_logger, log_suggestion
 from .duplicates import TERM_EQUALITY, DuplicateTest, KnownTerms
-from .initial_sampling import _sample_fallback_tree
+from .initial_sampling import _sample_fallback_tree, distinct_prefix
 from .state import BOState, Diagnostics, Suggestion
 
 NT = TypeVar("NT", bound=Hashable)
@@ -573,8 +573,10 @@ class AskTellLoop(Generic[NT, T, G]):
         """Draw an initial design of ``size`` pairwise distinct terms, and count the repeats redrawn.
 
         The loop's own draw: the configured initializer, then the repair that makes the design a
-        set.  A strategy that draws its terms another way, from one stream for design and passes
-        alike, overrides this.
+        set.  Under a duplicate test of the caller's own with the default initializer, the first
+        ``size`` terms of one stream the test keeps apart, as the run layer draws a design up front.
+        A strategy that draws its terms another way, from one stream for design and passes alike,
+        overrides this.
 
         Args:
             size (int): The size of the design.
@@ -584,6 +586,13 @@ class AskTellLoop(Generic[NT, T, G]):
         """
         assert self._initializer is not None
         assert self._sampler is not None
+        if self.initializer is None and type(self.duplicate_test) is not DuplicateTest:
+            # The default initializer collects the design from one stream, and the run layer draws
+            # the same design up front as that stream's head and holds a resumed one against it.
+            # Under a coarser test the stream holds terms the test merges, and the repair below
+            # would replace one from a new stream, which is another design than that head; so the
+            # stream is read on past them, as the run layer reads it.
+            return distinct_prefix(self._sampler, self._query(), size, test=self.duplicate_test)
         # The previous code drew a pool a hundred times the size and thinned it with a
         # greedy determinantal point process, which is related work rather than either of the
         # initializers this loop admits, and it warned and came back short where the stream
