@@ -15,6 +15,7 @@ import pytest
 from cosy.search import DepthBoundedRandomSampler, SizeUniformSampler, generator_query
 
 from bayesian_optimization import NSGA2, BayesianOptimization, RandomSearch
+from bayesian_optimization.duplicates import DuplicateTest
 from bayesian_optimization.runs import (
     MetricSchema,
     Objective,
@@ -137,6 +138,21 @@ def test_a_design_the_loop_drew_under_the_test_resumes_against_the_head_of_its_s
 def test_paired_strategies_under_two_duplicate_tests_are_refused_before_anything_is_drawn(tmp_path):
     strategies = _strategies(5, SameValue())
     strategies["random"] = RandomSearch(expression_space(), EXPR, sampler=SizeUniformSampler(BOUND, random.Random(5)), seed=5)
+    with pytest.raises(ValueError, match="share one duplicate test"):
+        _paired(tmp_path, strategies)
+    assert not list(tmp_path.iterdir()), "the refusal comes before any file is written"
+
+
+def test_paired_strategies_under_two_tests_of_one_name_are_refused(tmp_path):
+    # Finer than SameValue, so nothing downstream notices: a design distinct under one is under both.
+    namesake = type(SameValue.__name__, (DuplicateTest,), {
+        "key": lambda self, term: (value(term), term.size),
+        "same": lambda self, a, b: (value(a), a.size) == (value(b), b.size),
+    })
+    assert namesake.__name__ == SameValue.__name__ and namesake is not SameValue
+    strategies = _strategies(5, SameValue())
+    strategies["random"] = RandomSearch(expression_space(), EXPR, sampler=SizeUniformSampler(BOUND, random.Random(5)),
+                                        seed=5, duplicate_test=namesake())
     with pytest.raises(ValueError, match="share one duplicate test"):
         _paired(tmp_path, strategies)
     assert not list(tmp_path.iterdir()), "the refusal comes before any file is written"

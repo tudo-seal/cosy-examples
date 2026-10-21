@@ -165,6 +165,11 @@ def _require_uninitialized(strategy: AskTellLoop, name: str = "the strategy") ->
         raise RuntimeError(msg)
 
 
+def _duplicate_test_of(strategy):
+    """The strategy's duplicate test, term equality where it carries none."""
+    return getattr(strategy, "duplicate_test", None) or TERM_EQUALITY
+
+
 def _draw_up_front(strategy, size, *, then, design, budgets, echo):
     """Draw a design, or head the stream with a given one, and ``then`` terms past it, up front.
 
@@ -188,7 +193,7 @@ def _draw_up_front(strategy, size, *, then, design, budgets, echo):
     with step_budget(label, budgets.acquisition_warn):
         started = time.time()
         head, repeats = draw_design(strategy.sampler, strategy.query, size, then=then, design=design,
-                                    test=strategy.duplicate_test)
+                                    test=_duplicate_test_of(strategy))
         seconds = time.time() - started
     return head, DesignDraw(size, then, repeats, seconds, drawn=design is None)
 
@@ -249,7 +254,7 @@ def _design_of(strategy, *, n_design, n_passes, design, resume, resumed_value, o
         if len(set(terms)) != len(terms):
             raise ValueError("the design repeats a term: a repeated design term is an evaluation "
                              "spent on a value the dataset already holds")
-        _require_distinct_under(terms, getattr(strategy, "duplicate_test", None) or TERM_EQUALITY)
+        _require_distinct_under(terms, _duplicate_test_of(strategy))
         # What a strategy reads of each design term besides its value, NSGA-II's exact cost, before
         # anything is opened; a drawn design is checked by initialize() once it is drawn.
         strategy.check_design(terms)
@@ -735,11 +740,14 @@ def run_paired(
         raise ValueError("one CSV path per strategy, under the same names")
     if len({id(strategy) for strategy in strategies.values()}) != len(names):
         raise ValueError("one strategy object under two names would run twice on one state")
-    tests = sorted({type(strategy.duplicate_test).__name__ for strategy in strategies.values()})
+    # By type: two classes of one name are two tests, and a design distinct under one of them need
+    # not be under the other.
+    tests = {type(_duplicate_test_of(strategy)) for strategy in strategies.values()}
     if len(tests) > 1:
+        named = sorted(f"{test.__module__}.{test.__qualname__}" for test in tests)
         msg = (
             "the strategies of a paired run take one design and are compared on it, so they share "
-            f"one duplicate test; these use {', '.join(tests)}"
+            f"one duplicate test; these use {', '.join(named)}"
         )
         raise ValueError(msg)
     claimed: dict[str, str] = {}
