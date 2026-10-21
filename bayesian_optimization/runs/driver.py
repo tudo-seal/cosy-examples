@@ -351,11 +351,11 @@ def _pairs(records):
     return [(record.term, record.metrics) for record in records]
 
 
-def _log_generations(logger, strategy, labels, written):
+def _log_generations(logger, strategy, row_labels, written):
     """Write the populations NSGA-II formed since ``written`` of them were; answer how many are now."""
     formed = strategy.formed_generations
     for record in formed[written:]:
-        logger.log(record, labels)
+        logger.log(record, row_labels)
     return len(formed)
 
 
@@ -507,9 +507,10 @@ def run_search(
         if isinstance(strategy, NSGA2) and n_passes > 0:
             generation_logger = stack.enter_context(NSGA2GenerationLogger(
                 artifacts.path("generations"), mode="x" if refuse_taken else "w"))
-        # The phase and index every evaluated term was recorded under, which names a population's
-        # members in the generation log.
-        labels: dict[Any, tuple[str, int]] = {}
+        # Per dataset row, in the order the loop observed them, the phase and index its evaluation
+        # was recorded under: a population's member is named in the generation log by the row its
+        # value was observed in.
+        row_labels: list[tuple[str, int]] = []
         generations_written = 0
 
         # --- The design, the loop's first phase: every term written before its value is taken.
@@ -556,10 +557,10 @@ def run_search(
                     # a non-finite one, is on disk with the metrics that explain it.
                     recorder.log(DESIGN_PHASE, index, term, metrics, loop_value=value,
                                  taken_over=values is not None)
-                    labels.setdefault(term, (DESIGN_PHASE, index))
                     echo(f"  {DESIGN_PHASE}[{index}]: objective={objective.as_reported(value):.5f} "
                          f"{schema.live_line(metrics)}{note}".rstrip())
                     strategy.observe(term, value)
+                    row_labels.append((DESIGN_PHASE, index))
 
         # --- The passes, in rounds of up to batch_size suggestions.
         for first in range(0, n_passes, batch_size):
@@ -585,7 +586,7 @@ def run_search(
                         # evaluated, and also where the suggestion raised, convergence included.
                         assert isinstance(strategy, NSGA2)
                         generations_written = _log_generations(
-                            generation_logger, strategy, labels, generations_written
+                            generation_logger, strategy, row_labels, generations_written
                         )
                 acquisition_seconds = time.time() - proposal_started
                 if ea_logger is not None and surrogate_logger is not None:
@@ -617,10 +618,10 @@ def run_search(
                                               acquisition_seconds=acquisition_seconds)
                 recorder.log(phase, step, term, metrics, suggestion=suggestion,
                              acquisition_seconds=acquisition_seconds, loop_value=value)
-                labels.setdefault(term, (phase, step))
                 echo(f"  {phase}[{step}]: objective={objective.as_reported(value):.5f} "
                      f"{schema.live_line(metrics)}".rstrip())
                 strategy.observe(term, value)
+                row_labels.append((phase, step))
             # An answer past the round's last is refused, as one to a term it did not ask.
             for _surplus in round_answers:
                 pass
@@ -629,7 +630,7 @@ def run_search(
         if generation_logger is not None:
             # The population the last generation earned, which finalize() forms.
             assert isinstance(strategy, NSGA2)
-            _log_generations(generation_logger, strategy, labels, generations_written)
+            _log_generations(generation_logger, strategy, row_labels, generations_written)
     # A draw up front is the run's: its time in the run's.  Where it drew the run's design it is
     # the design's source and its repeats are the run's, the other arms' terms among them, as the
     # paired path always counted them; a design given or resumed was not the run's to draw, and the

@@ -8,17 +8,24 @@ those of :mod:`tests.unit.test_duplicate_test_in_the_loops`: one value, one eval
 
 from __future__ import annotations
 
+import json
 import random
 
 import pytest
 from cosy.search import DepthBoundedRandomSampler, SizeUniformSampler, generator_query
 
-from bayesian_optimization import BayesianOptimization, RandomSearch
-from bayesian_optimization.runs import MetricSchema, Objective, build_acquisition_optimizer
-from bayesian_optimization.runs.driver import run_paired
+from bayesian_optimization import NSGA2, BayesianOptimization, RandomSearch
+from bayesian_optimization.runs import (
+    MetricSchema,
+    Objective,
+    RunArtifacts,
+    build_acquisition_optimizer,
+    read_term_pool,
+)
+from bayesian_optimization.runs.driver import run_paired, run_search
 from bayesian_optimization.runs.search_program import draw_design
 from tests.spaces import EXPR, expression_space
-from tests.unit.test_duplicate_test_in_the_loops import BOUND, SameValue, measure, value
+from tests.unit.test_duplicate_test_in_the_loops import BOUND, DEPTH, SameValue, measure, value
 
 SCHEMA = MetricSchema.for_metrics(Objective("score"), ["score"])
 
@@ -75,6 +82,26 @@ def test_a_paired_run_draws_its_design_and_makes_its_passes_under_the_test(tmp_p
     plain = _paired(tmp_path / "plain", _strategies(2, None))
     assert any(len({value(term) for term in outcome.result["x"]}) < len(outcome.result["x"]) for outcome in plain.values()), (
         "under term equality some arm must measure two terms of one value, or nothing is merged")
+
+
+def test_an_nsga2_run_names_a_member_the_test_merged_by_the_evaluation_it_was_answered_from(tmp_path):
+    csv_path = str(tmp_path / "nsga2.csv")
+    search = NSGA2(expression_space(), EXPR, cost=lambda term: float(term.size), depth_bound=DEPTH, seed=6,
+                   sampler=SizeUniformSampler(BOUND, random.Random(6)), duplicate_test=SameValue())
+    outcome = run_search(search, lambda term: {"score": measure(term)}, schema=SCHEMA, n_design=6, n_passes=5,
+                         csv_path=csv_path, pretty_algebra=dict, echo=_quiet)
+    evaluated = list(outcome.result["x"])
+    merged = {member for formed in search.formed_generations for member in formed.members} - set(evaluated)
+    assert merged, "no population holds a term the test merged with a measured one, so no label is borrowed"
+    _header, records = read_term_pool(RunArtifacts(csv_path).path("terms"))
+    term_of = {(record.phase, record.index): record.term for record in records}
+    with open(RunArtifacts(csv_path).path("generations")) as handle:
+        lines = [json.loads(line) for line in handle]
+    assert len(lines) == len(search.formed_generations)
+    for line, formed in zip(lines, search.formed_generations, strict=True):
+        named = [term_of[tuple(label)] for label in line["members"]]
+        assert named == [evaluated[row] for row in formed.rows]
+        assert [value(term) for term in named] == [value(member) for member in formed.members]
 
 
 def test_paired_strategies_under_two_duplicate_tests_are_refused_before_anything_is_drawn(tmp_path):

@@ -153,9 +153,12 @@ class NSGA2GenerationLogger:
     The run's front is read off the evaluation records (:mod:`~bayesian_optimization.runs.fronts`).
     This file says how the search moved: which measured terms each generation kept, their ranks
     and crowding distances, and how many offspring each generation bred, measured new or answered
-    from the dataset.  A member is named by the phase and the index its evaluation was recorded
-    under, so a line joins the CSV and the term pool.  An infinite distance, a front's boundary, is
-    written as the string ``"inf"``, which strict JSON has no number for.
+    from the dataset.  A member is named by the phase and the index of the evaluation its value was
+    observed in, so a line joins the CSV and the term pool.  That is its own evaluation, or, under a
+    duplicate test of the loop's, the evaluation of the measured term the test merged it with and it
+    was answered from: such a member is another term than the one its label names, and its cost is
+    its own.  An infinite distance, a front's boundary, is written as the string ``"inf"``, which
+    strict JSON has no number for.
 
     Args:
         path (str): The run's ``_generations.jsonl``.
@@ -168,20 +171,21 @@ class NSGA2GenerationLogger:
             raise ValueError(msg)
         self._file = open(path, mode)  # noqa: SIM115, closed by __exit__
 
-    def log(self, formed, label_of):
+    def log(self, formed, row_labels):
         """Append one formed population.
 
         Args:
             formed: The strategy's ``FormedGeneration``.
-            label_of: The recorded ``(phase, index)`` of every evaluated term.
+            row_labels: Per dataset row, in the order the loop observed them, the ``(phase, index)``
+                its evaluation was recorded under.
 
         Raises:
-            KeyError: If a member was never recorded, which no run of the driver produces: every
-                member of a population was evaluated before the population was formed.
+            IndexError: If a member's row was never recorded, which no run of the driver produces:
+                every member of a population has its value before the population is formed.
         """
         line = {
             "generation": formed.generation,
-            "members": [list(label_of[member]) for member in formed.members],
+            "members": [list(row_labels[row]) for row in formed.rows],
             "ranks": list(formed.ranks),
             "distances": None if formed.distances is None else [
                 distance if math.isfinite(distance) else "inf" for distance in formed.distances
