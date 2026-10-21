@@ -227,6 +227,30 @@ def test_nsga2_reads_a_merged_offsprings_cost_when_it_breeds_it_and_none_while_i
     assert early > 0, "no offspring was merged with one waiting in its generation, so no cost was read for it"
 
 
+class _Given:
+    """An initializer of the caller's own: it answers with the terms it was built with."""
+
+    def __init__(self, terms) -> None:
+        self.terms = list(terms)
+
+    def initialize(self, query, size):
+        return self.terms[:size]
+
+
+def test_a_design_from_an_initializer_of_the_callers_own_is_made_distinct_under_the_test():
+    a, b = merged_pair()
+    c = next(term for term in SizeUniformSampler(BOUND, random.Random(5)).sample(generator_query(expression_space(), EXPR))
+             if value(term) != value(a))
+    space = expression_space()
+    loop = BayesianOptimization(search_space=space, request=EXPR, sampler=SizeUniformSampler(BOUND, random.Random(2)),
+                                seed=2, initializer=_Given([a, b, c]), optimizer=_make_ea(space, 2),
+                                n_restarts_kernel_optimizer=0, duplicate_test=SameValue())
+    loop.initialize(initial_size=3)
+    assert loop.design[0] == a and loop.design[1] == c, "the initializer's terms the test keeps apart are kept"
+    assert len({value(term) for term in loop.design}) == 3
+    assert loop.initial_repeats_rejected == 1
+
+
 def test_a_drawn_design_is_pairwise_distinct_under_the_test():
     query = generator_query(expression_space(), EXPR)
     design, rejected = distinct_prefix(DepthBoundedRandomSampler(3, random.Random(0)), query, 5, test=SameValue())
