@@ -531,7 +531,8 @@ def run_search(
         generation_logger = None
         if isinstance(strategy, NSGA2) and n_passes > 0:
             generation_logger = stack.enter_context(NSGA2GenerationLogger(
-                artifacts.path("generations"), mode="x" if refuse_taken else "w"))
+                artifacts.path("generations"), mode="x" if refuse_taken else "w",
+                answers=_recorded_test(strategy) is not None))
         # Per dataset row, in the order the loop observed them, the phase and index its evaluation
         # was recorded under: a population's member is named in the generation log by the row its
         # value was observed in.

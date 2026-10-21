@@ -218,3 +218,32 @@ def test_a_design_measured_under_one_test_is_not_resumed_under_another(tmp_path)
     plain = load_design_records(RunArtifacts(str(tmp_path / "plain.csv")).path("terms"), {})
     with pytest.raises(ValueError, match="measured under the duplicate test"):
         _ran(tmp_path / "as_under.csv", _searching(SameValue()), resume=plain)
+
+
+def _generations(csv_path) -> list:
+    with open(RunArtifacts(csv_path).path("generations")) as handle:
+        return [json.loads(line) for line in handle]
+
+
+def test_an_nsga2_run_under_a_test_logs_each_members_own_cost_and_whether_it_was_answered(tmp_path):
+    cost = lambda term: float(term.size)  # noqa: E731
+    csv_path = str(tmp_path / "nsga2.csv")
+    search = NSGA2(expression_space(), EXPR, cost=cost, depth_bound=DEPTH, seed=6,
+                   sampler=SizeUniformSampler(BOUND, random.Random(6)), duplicate_test=SameValue())
+    outcome = run_search(search, lambda term: {"score": measure(term)}, schema=SCHEMA, n_design=6, n_passes=5,
+                         csv_path=csv_path, pretty_algebra=dict, echo=_quiet)
+    evaluated = list(outcome.result["x"])
+    lines = _generations(csv_path)
+    answered = []
+    for line, formed in zip(lines, search.formed_generations, strict=True):
+        assert line["costs"] == [cost(member) for member in formed.members]
+        assert line["answered"] == [evaluated[row] != member for member, row in zip(formed.members, formed.rows,
+                                                                                      strict=True)]
+        answered.extend(line["answered"])
+    assert any(answered), "no member was answered from another term, so the flag says nothing"
+    plain_path = str(tmp_path / "plain.csv")
+    run_search(NSGA2(expression_space(), EXPR, cost=cost, depth_bound=DEPTH, seed=6,
+                     sampler=SizeUniformSampler(BOUND, random.Random(6))),
+               lambda term: {"score": measure(term)}, schema=SCHEMA, n_design=6, n_passes=5, csv_path=plain_path,
+               pretty_algebra=dict, echo=_quiet)
+    assert all("costs" not in line and "answered" not in line for line in _generations(plain_path))

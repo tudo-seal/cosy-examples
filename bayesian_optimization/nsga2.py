@@ -113,6 +113,10 @@ class FormedGeneration:
             answered at no cost; a term bred twice counts twice.  Under a duplicate test also
             every place whose term it merges with a measured one or with one evaluated for this
             generation.
+        costs (tuple[float, ...]): Per place, its member's own exact cost, which ranked it.
+        answered (tuple[bool, ...]): Per place, whether its member is another term than the one its
+            row was observed for: one the duplicate test merged with it, its value that term's and
+            its cost its own.  All False under term equality.
     """
 
     generation: int
@@ -123,6 +127,8 @@ class FormedGeneration:
     offspring: int
     evaluated: int
     known: int
+    costs: tuple[float, ...]
+    answered: tuple[bool, ...]
 
 
 class _GivenPopulation:
@@ -506,6 +512,8 @@ class NSGA2(AskTellLoop[NT, T, G]):
                 offspring=offspring,
                 evaluated=evaluated,
                 known=known,
+                costs=tuple(self._fitness[term][1] for term in population),
+                answered=tuple(self._x_list[self._row_of[term]] != term for term in population),
             )
         )
 

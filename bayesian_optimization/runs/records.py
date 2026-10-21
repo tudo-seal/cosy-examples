@@ -163,12 +163,18 @@ class NSGA2GenerationLogger:
     Args:
         path (str): The run's ``_generations.jsonl``.
         mode (str): ``"w"`` or ``"x"``, as the evaluation recorder opens. (Default value = "w")
+        answers (bool): Whether each line also carries every member's own cost and whether it was
+            answered from another term, which a run under a duplicate test needs: such a member is
+            in no file of its own, and its cost may not be its row's.  Off under term equality,
+            whose members are their rows' terms, so its lines stay as they were.
+            (Default value = False)
     """
 
-    def __init__(self, path, *, mode="w"):
+    def __init__(self, path, *, mode="w", answers=False):
         if mode not in ("w", "x"):
             msg = f"mode is 'w' or 'x', not {mode!r}"
             raise ValueError(msg)
+        self._answers = answers
         self._file = open(path, mode)  # noqa: SIM115, closed by __exit__
 
     def log(self, formed, row_labels):
@@ -195,6 +201,9 @@ class NSGA2GenerationLogger:
             "known": formed.known,
             "timestamp": time.time(),
         }
+        if self._answers:
+            line["costs"] = list(formed.costs)
+            line["answered"] = list(formed.answered)
         self._file.write(json.dumps(line) + "\n")
         self._file.flush()
 
