@@ -9,13 +9,14 @@ own, run through the same :class:`~bayesian_optimization.loop.AskTellLoop` as Ba
 from __future__ import annotations
 
 import time
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Collection, Iterator, Sequence
 from typing import Any, ClassVar
 
 from cosy.core.solution_space import SolutionSpace
 from cosy.search import Sampler
 
 from .diagnostics import enable_verbose_logging, get_logger
+from .duplicates import DuplicateTest, KnownTerms
 from .initial_sampling import _MAX_DRAWS_PER_TERM
 from .loop import NT, AskTellLoop, G, T, _require_hashable
 from .state import Diagnostics, Suggestion
@@ -48,6 +49,11 @@ class RandomSearch(AskTellLoop[NT, T, G]):
         delivers for the first time, such as a term of a handed-over design at the head of the
         stream, is skipped without counting against it.  Reachable only for a sampler that draws
         with replacement.
+    duplicate_test:
+        When two terms are one evaluation; see :class:`~bayesian_optimization.loop.AskTellLoop`.
+        Design and passes skip every term the test calls one evaluation with a held or an
+        outstanding one, so under a test of the caller's own a run evaluates the first terms of the
+        stream that are pairwise distinct under it.
     """
 
     #: A pass of random search, as the paired random-search arm was named in a run's rows.
@@ -62,9 +68,11 @@ class RandomSearch(AskTellLoop[NT, T, G]):
         sampler: Sampler | None = None,
         max_draws_per_term: int = _MAX_DRAWS_PER_TERM,
         max_outstanding: int = 1,
+        duplicate_test: DuplicateTest | None = None,
     ) -> None:
         super().__init__(
-            search_space, request, seed=seed, sampler=sampler, max_outstanding=max_outstanding
+            search_space, request, seed=seed, sampler=sampler, max_outstanding=max_outstanding,
+            duplicate_test=duplicate_test,
         )
         self.max_draws_per_term = max_draws_per_term
         self._stream: Iterator[Any] | None = None
@@ -128,14 +136,14 @@ class RandomSearch(AskTellLoop[NT, T, G]):
         self._delivered = set()
         self._skips_pending = 0
 
-    def _next_new_term(self, held: set[Any]) -> Any:
+    def _next_new_term(self, held: Collection[Any]) -> Any:
         """Return the next term of the stream that ``held`` does not contain.
 
         Every term passed over on the way is added to ``_skips_pending``, which the caller reads,
         also when this raises.
 
         Args:
-            held (set[Any]): The terms not to return again.
+            held (Collection[Any]): The terms not to return again, under the loop's duplicate test.
 
         Returns:
             Any: The term.
@@ -190,7 +198,7 @@ class RandomSearch(AskTellLoop[NT, T, G]):
             msg = f"a design holds a non-negative number of terms, not {size}"
             raise ValueError(msg)
         design: list[Any] = []
-        held: set[Any] = set()
+        held = KnownTerms(test=self.duplicate_test)
         self._skips_pending = 0
         for _ in range(size):
             term = self._next_new_term(held)
@@ -214,7 +222,7 @@ class RandomSearch(AskTellLoop[NT, T, G]):
         try:
             # neither a held term nor an outstanding one, which is being measured
             term = self._next_new_term(
-                self._x_set | {entry.suggestion.candidate for entry in self._pending()}
+                self._x_set.union(entry.suggestion.candidate for entry in self._pending())
             )
         finally:
             self._terms_skipped += self._skips_pending

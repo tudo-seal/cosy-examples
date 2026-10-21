@@ -67,6 +67,7 @@ from cosy.evolutionary_algorithms import (
 from cosy.search import DepthBoundedRandomSampler, Sampler
 
 from .diagnostics import enable_verbose_logging, get_logger
+from .duplicates import DuplicateTest, KnownTerms
 from .loop import NT, AskTellLoop, G, T
 from .state import Diagnostics, Suggestion
 
@@ -169,6 +170,13 @@ class NSGA2(AskTellLoop[NT, T, G]):
         How many generations in a row may breed nothing the dataset does not hold before
         ``suggest`` raises: a population that only reproduces terms already measured has
         converged, and saying so is the result, where a substitute draw would hide it.
+    duplicate_test:
+        When two terms are one evaluation; see :class:`~bayesian_optimization.loop.AskTellLoop`.
+        An offspring the test calls one evaluation with a measured term is answered from that
+        term's value at no cost, its own cost beside it; one it calls one evaluation with an
+        offspring already waiting in its generation is answered when that one is measured.  So no
+        two offspring the test merges are evaluated, and every place of a generation has a value
+        when the next population is formed.
     mutation, recombination, rng, selection_rng:
         The variation's components and generators, each built from ``seed`` where it is not
         given: ``ResolutionMutation`` over a ``DepthBoundedRandomSampler``, ``SubtreeSwap``, the
@@ -198,6 +206,7 @@ class NSGA2(AskTellLoop[NT, T, G]):
         recombination: Recombination[NT, T, G] | None = None,
         rng: random.Random | None = None,
         selection_rng: random.Random | None = None,
+        duplicate_test: DuplicateTest | None = None,
     ) -> None:
         if search_space is None:
             raise ValueError(
@@ -206,7 +215,7 @@ class NSGA2(AskTellLoop[NT, T, G]):
             )
         super().__init__(
             search_space, request, initializer=initializer, seed=seed, sampler=sampler,
-            max_outstanding=1,
+            max_outstanding=1, duplicate_test=duplicate_test,
         )
         if not callable(cost):
             msg = f"cost is the exact cost of a term, a callable, not {cost!r}"
@@ -249,6 +258,9 @@ class NSGA2(AskTellLoop[NT, T, G]):
         self._fitness: dict[Any, tuple[float, float]] = {}
         self._costs: dict[Any, float] = {}
         self._row_of: dict[Any, int] = {}
+        # Per waiting offspring, the offspring of its generation the duplicate test merged into it,
+        # answered when it is measured.
+        self._aliases: dict[Any, list[Any]] = {}
         self._population: list[Any] | None = None
         self._population_fitness: dict[Any, tuple[float, float]] = {}
         self._offspring: list[Any] = []
@@ -409,8 +421,28 @@ class NSGA2(AskTellLoop[NT, T, G]):
             attempts += 1
             offspring.extend(search._variation_pass(query, self._population, self._population_fitness))
         # In the order the driver's cache would ask for them: the first place of each term it lacks.
-        waiting = [term for term in dict.fromkeys(offspring) if term not in self._fitness]
-        known = sum(1 for term in offspring if term in self._fitness)
+        # Under the duplicate test: an offspring merged with a measured term is answered from it, one
+        # merged with an offspring already waiting is answered when that one is measured.  Under
+        # term equality neither happens, and this is the former `waiting`, `known` exactly.
+        measured = KnownTerms(self._fitness, self.duplicate_test)
+        queued = KnownTerms(test=self.duplicate_test)
+        waiting: list[Any] = []
+        aliased: set[Any] = set()
+        for term in dict.fromkeys(offspring):
+            if term in self._fitness:
+                continue
+            held = measured.match(term)
+            if held is not None:
+                self._answer_from(term, held)
+                continue
+            first = queued.match(term)
+            if first is not None:
+                self._aliases.setdefault(first, []).append(term)
+                aliased.add(term)
+                continue
+            queued.add(term)
+            waiting.append(term)
+        known = sum(1 for term in offspring if term in self._fitness or term in aliased)
         self._offspring = offspring
         self._waiting = waiting
         self._bred = (len(offspring), len(waiting), known)
@@ -504,6 +536,17 @@ class NSGA2(AskTellLoop[NT, T, G]):
         term = suggestion.candidate
         self._row_of.setdefault(term, len(self._x_list) - 1)
         self._fitness[term] = (observed, self._cost_of(term))
+        for alias in self._aliases.pop(term, ()):
+            self._answer_from(alias, term)
+
+    def _answer_from(self, term: Any, held: Any) -> None:
+        """Answer an offspring from the measured term the duplicate test merged it with, at no cost.
+
+        Its value and its dataset row are the measured term's; its cost is its own, as the cost is
+        a function of the term.
+        """
+        self._fitness[term] = (self._fitness[held][0], self._cost_of(term))
+        self._row_of.setdefault(term, self._row_of[held])
 
     def finalize(self) -> dict[str, Any]:
         """Form the population the last generation earned, then close the run; see :meth:`AskTellLoop.finalize`.

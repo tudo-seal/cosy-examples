@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import bisect
 import numbers
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Collection, Sequence
 from typing import Any, Protocol
 
 import numpy as np
@@ -76,7 +76,7 @@ class AcquisitionFactory(Protocol):
     """
 
     def __call__(
-        self, gp: MarginalPosterior, *, incumbent: float, known_points: set[Any]
+        self, gp: MarginalPosterior, *, incumbent: float, known_points: Collection[Any]
     ) -> AcquisitionFunction: ...
 
 
@@ -108,7 +108,7 @@ class AcquisitionFunction:
 
     Args:
         gp (MarginalPosterior): The fitted surrogate.
-        known_points (set[Any] | None): Candidates the loop has already evaluated.  They are
+        known_points (Collection[Any] | None): Candidates the loop has already evaluated.  They are
             scored strictly below every genuine score, so they can never win the optimization.
     """
 
@@ -122,7 +122,7 @@ class AcquisitionFunction:
     of the optimizer adapter refuses to carry it.
     """
 
-    def __init__(self, gp: MarginalPosterior, *, known_points: set[Any] | None = None) -> None:
+    def __init__(self, gp: MarginalPosterior, *, known_points: Collection[Any] | None = None) -> None:
         self.gp = gp
         self.known_points = known_points
 
@@ -444,7 +444,7 @@ class ExpectedImprovement(AcquisitionFunction):
             scaled while ``predict`` returns them in the caller's scale, so a default taken from
             ``gp.y_train_`` would compare the two across a change of units.  The incumbent belongs
             to the dataset, and the dataset belongs to the loop.
-        known_points (set[Any] | None): Candidates the loop has already evaluated.
+        known_points (Collection[Any] | None): Candidates the loop has already evaluated.
     """
 
     lower_bound = 0.0
@@ -454,7 +454,7 @@ class ExpectedImprovement(AcquisitionFunction):
         gp: MarginalPosterior,
         *,
         incumbent: float,
-        known_points: set[Any] | None = None,
+        known_points: Collection[Any] | None = None,
     ) -> None:
         super().__init__(gp, known_points=known_points)
         self.incumbent = _require_finite("the incumbent", incumbent)
@@ -579,7 +579,7 @@ class ExpectedHypervolumeImprovement(AcquisitionFunction):
         reference (tuple[float, float]): The reference point ``(r_g, r_c)``: no value below ``r_g``
             and no cost above ``r_c`` counts.  It has no default.  It bounds the area being
             measured, so it moves which candidate scores higher, and it is the decision maker's.
-        known_points (set[Any] | None): Candidates the loop has already evaluated.
+        known_points (Collection[Any] | None): Candidates the loop has already evaluated.
     """
 
     lower_bound = 0.0
@@ -591,7 +591,7 @@ class ExpectedHypervolumeImprovement(AcquisitionFunction):
         cost: Callable[[Tree[Any]], float],
         front: Sequence[tuple[float, float]],
         reference: tuple[float, float],
-        known_points: set[Any] | None = None,
+        known_points: Collection[Any] | None = None,
     ) -> None:
         super().__init__(gp, known_points=known_points)
         # Read-only below: the levels are built from these three once, here, so a score after
@@ -721,7 +721,7 @@ class ProbabilityOfImprovement(AcquisitionFunction):
         gp (MarginalPosterior): The fitted surrogate.
         incumbent (float): The maximal observed value ``y*``.  See :class:`ExpectedImprovement`
             for why it is required rather than read off the model.
-        known_points (set[Any] | None): Candidates the loop has already evaluated.
+        known_points (Collection[Any] | None): Candidates the loop has already evaluated.
         margin (float): How far above the incumbent the threshold sits.  Zero puts it at the
             incumbent, which is the other reading the definition allows.
     """
@@ -733,7 +733,7 @@ class ProbabilityOfImprovement(AcquisitionFunction):
         gp: MarginalPosterior,
         *,
         incumbent: float,
-        known_points: set[Any] | None = None,
+        known_points: Collection[Any] | None = None,
         margin: float = 0.0,
     ) -> None:
         super().__init__(gp, known_points=known_points)
@@ -780,7 +780,7 @@ class UpperConfidenceBound(AcquisitionFunction):
     Args:
         gp (MarginalPosterior): The fitted surrogate.
         beta (float): The exploration parameter, strictly positive.
-        known_points (set[Any] | None): Candidates the loop has already evaluated.
+        known_points (Collection[Any] | None): Candidates the loop has already evaluated.
     """
 
     def __init__(
@@ -788,7 +788,7 @@ class UpperConfidenceBound(AcquisitionFunction):
         gp: MarginalPosterior,
         *,
         beta: float = 2.0,
-        known_points: set[Any] | None = None,
+        known_points: Collection[Any] | None = None,
     ) -> None:
         super().__init__(gp, known_points=known_points)
         self.beta = require_beta(beta)

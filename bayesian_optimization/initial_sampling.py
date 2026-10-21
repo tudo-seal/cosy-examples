@@ -17,7 +17,7 @@ from __future__ import annotations
 import itertools
 import math
 import random
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Collection, Sequence
 from typing import Any, TypeVar
 
 from cosy.core.tree import Tree
@@ -30,6 +30,8 @@ from cosy.search import (
     size_uniform,
     weighted_tree,
 )
+
+from .duplicates import TERM_EQUALITY, DuplicateTest, KnownTerms
 
 NT = TypeVar("NT")
 T = TypeVar("T")
@@ -50,7 +52,7 @@ _MAX_DRAWS_PER_TERM = 100
 def _sample_fallback_tree(
     sampler: Sampler,
     query: Any,
-    seen: set[Any],
+    seen: Collection[Any],
     max_draws: int = _MAX_DRAWS_PER_TERM,
 ) -> Tree[Any]:
     """Draw the first inhabitant of ``query`` that this run has not evaluated yet.
@@ -97,6 +99,7 @@ def distinct_prefix(
     query: Any,
     count: int,
     max_draws_per_term: int = _MAX_DRAWS_PER_TERM,
+    test: DuplicateTest = TERM_EQUALITY,
 ) -> tuple[list[Tree[Any]], int]:
     """Take ``count`` **pairwise distinct** inhabitants from one stream of ``sampler``.
 
@@ -139,6 +142,9 @@ def distinct_prefix(
             bounds the waste and not the size of the design.  Only reachable for samplers that
             draw with replacement, since a stream that repeats nothing never lifts the count
             above zero.
+        test: When two terms are one evaluation.  Under plain term equality, the default, the scan
+            below stands as written; under another test a repeat is a term the test calls one
+            evaluation with one the design holds, so the design is pairwise distinct under it.
 
     Returns:
         tuple[list[Tree[Any]], int]: The terms in stream order, and how many repeats were rejected.
@@ -158,6 +164,8 @@ def distinct_prefix(
         # initializer answers a population of zero.  The loop below cannot answer it: it stops
         # where a term has just been kept, and an empty design keeps none.
         return [], 0
+    plain = type(test) is DuplicateTest
+    held = KnownTerms(test=test)
     drawn: list[Tree[Any]] = []
     rejected = 0
     repeats_in_a_row = 0
@@ -166,7 +174,7 @@ def distinct_prefix(
         # labels alone, and nothing here requires a label to hash consistently with its equality
         # or to stay unchanged afterwards.  ``Tree.__eq__`` compares the size first, so the scan
         # short-circuits on almost every pair and the design is small either way.
-        if any(candidate == kept for kept in drawn):
+        if any(candidate == kept for kept in drawn) if plain else candidate in held:
             rejected += 1
             repeats_in_a_row += 1
             if repeats_in_a_row >= max_draws_per_term:
@@ -179,6 +187,7 @@ def distinct_prefix(
                 raise RuntimeError(msg)
         else:
             drawn.append(candidate)
+            held.add(candidate)
             if len(drawn) == count:
                 return drawn, rejected
             repeats_in_a_row = 0

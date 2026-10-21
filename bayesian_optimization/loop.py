@@ -28,6 +28,7 @@ from cosy.evolutionary_algorithms import Initializer, SampledInitialization
 from cosy.search import Sampler, SizeUniformSampler, generator_query
 
 from .diagnostics import enable_verbose_logging, get_logger, log_suggestion
+from .duplicates import TERM_EQUALITY, DuplicateTest, KnownTerms
 from .initial_sampling import _sample_fallback_tree
 from .state import BOState, Diagnostics, Suggestion
 
@@ -104,8 +105,31 @@ def _require_hashable(candidates: Sequence[Any], source: str) -> None:
             raise TypeError(msg) from unhashable
 
 
+def _require_duplicate_test(value: Any) -> DuplicateTest:
+    """The loop's duplicate test, term equality where none is given.
+
+    Args:
+        value (Any): What ``duplicate_test`` holds.
+
+    Returns:
+        DuplicateTest: The test.
+
+    Raises:
+        TypeError: If it is neither None nor a :class:`~bayesian_optimization.duplicates.DuplicateTest`.
+    """
+    if value is None:
+        return TERM_EQUALITY
+    if not isinstance(value, DuplicateTest):
+        msg = (
+            f"duplicate_test says when two terms are one evaluation and is a DuplicateTest or None, "
+            f"not {type(value).__name__}"
+        )
+        raise TypeError(msg)
+    return value
+
+
 def _distinct_dataset(
-    drawn: Sequence[Any], sampler: Sampler, query: Any, count: int
+    drawn: Sequence[Any], sampler: Sampler, query: Any, count: int, test: DuplicateTest = TERM_EQUALITY
 ) -> tuple[list[Any], int]:
     """Make an initial design pairwise distinct, keeping what the initializer chose.
 
@@ -134,6 +158,9 @@ def _distinct_dataset(
         sampler (Sampler): The loop's sampler, for the replacements.
         query (Any): The generator query.
         count (int): The design size that was asked for.
+        test (DuplicateTest): When two terms are one evaluation.  Under plain term equality, the
+            default, the scans above stand as written; under another test a repeat is a term the
+            test calls one evaluation with a kept one, and the fallback draws past those.
 
     Returns:
         tuple[list[Any], int]: The distinct design, and how many repeats were replaced.
@@ -148,18 +175,19 @@ def _distinct_dataset(
             that has not checked its own design meets the interpreter's message rather than one
             of its own.
     """
+    plain = type(test) is DuplicateTest
     kept: list[Any] = []
-    seen: set[Any] = set()
+    seen = KnownTerms(test=test)
     repeats = 0
     for candidate in drawn:
-        if any(candidate == other for other in kept):
+        if any(candidate == other for other in kept) if plain else candidate in seen:
             repeats += 1
         else:
             kept.append(candidate)
             seen.add(candidate)
     while len(kept) < count:
         replacement = _sample_fallback_tree(sampler, query, seen)
-        if any(replacement == other for other in kept):
+        if any(replacement == other for other in kept) if plain else replacement in seen:
             msg = (
                 "the fallback returned a term already in the initial design.  It rejects a "
                 "repeat with a set, which asks kept == candidate, while this scan asks "
@@ -282,6 +310,12 @@ class AskTellLoop(Generic[NT, T, G]):
         strategy says (``BayesianOptimization``: known points, at the value its posterior expected
         at each), and never proposes an outstanding term.  :meth:`observe` takes the values back in
         any order.  1, the default, is the loop that alternates ``suggest`` and ``observe``.
+    duplicate_test:
+        When two terms are one evaluation (:mod:`bayesian_optimization.duplicates`).  ``None``, the
+        default, is term equality, what every loop always used.  Under a test of the caller's own
+        the loop proposes no term the test calls one evaluation with a measured or an outstanding
+        one, and draws its design pairwise distinct under it; what the surrogate conditions on is
+        still the distinct terms.
     """
 
     #: The phase a pass of this strategy is recorded under in a run's rows and term records.
@@ -296,6 +330,7 @@ class AskTellLoop(Generic[NT, T, G]):
         seed: int | None = None,
         sampler: Sampler | None = None,
         max_outstanding: int = 1,
+        duplicate_test: DuplicateTest | None = None,
     ) -> None:
         # The pair is refused where the caller writes it down, so a mistyped target costs no
         # evaluation of the objective.  This reads the arguments, so it is not the guarantee on
@@ -309,12 +344,13 @@ class AskTellLoop(Generic[NT, T, G]):
         self.seed = seed
         self.sampler = sampler
         self.max_outstanding = _require_capacity(max_outstanding)
+        self.duplicate_test = _require_duplicate_test(duplicate_test)
 
         # --- Ask/Tell state ---------------------------------------------------
         self._bo_state: BOState = BOState.UNINITIALIZED
         self._x_list: list[Any] = []
         self._y_list: list[float] = []
-        self._x_set: set[Any] = set()
+        self._x_set = KnownTerms(test=self.duplicate_test)
         self._initial_repeats_rejected: int = 0
         self._last_suggestion: Suggestion | None = None
         self._sampler: Sampler | None = None
@@ -497,7 +533,7 @@ class AskTellLoop(Generic[NT, T, G]):
         # Checked here rather than at the fit: a dataset that contradicts itself does so the moment
         # it is handed over, and the first suggest() is far from the caller who assembled it.
         self._distinct_pairs()
-        self._x_set = set(self._x_list)
+        self._x_set = KnownTerms(self._x_list, self.duplicate_test)
         # The count is stored with the dataset it describes and not where it is computed.
         # Everything between the draw and the last line of this method can raise, the objective
         # above all, and a failure there leaves the state UNINITIALIZED, which permits a second
@@ -546,7 +582,7 @@ class AskTellLoop(Generic[NT, T, G]):
         # draws may repeat a term.  A guarantee that holds only until someone uses the
         # parameter is the kind of unwritten invariant this API must not have.
         x0_list, repeats = _distinct_dataset(
-            x0_list, self._sampler, self._query(), size
+            x0_list, self._sampler, self._query(), size, self.duplicate_test
         )
         if repeats:
             self._logger.info(
@@ -603,7 +639,7 @@ class AskTellLoop(Generic[NT, T, G]):
         self._outstanding = {}
         self._x_list = []
         self._y_list = []
-        self._x_set = set()
+        self._x_set = KnownTerms(test=self.duplicate_test)
         self._initial_repeats_rejected = repeats
         self._last_suggestion = None
         self._iteration = 0
@@ -828,7 +864,7 @@ class AskTellLoop(Generic[NT, T, G]):
         self._bo_state = BOState.UNINITIALIZED
         self._x_list = []
         self._y_list = []
-        self._x_set = set()
+        self._x_set = KnownTerms(test=self.duplicate_test)
         self._initial_repeats_rejected = 0
         self._last_suggestion = None
         self._iteration = 0

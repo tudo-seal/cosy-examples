@@ -7,7 +7,7 @@ import math
 import random
 import statistics
 import time
-from collections.abc import Callable, Hashable, Sequence
+from collections.abc import Callable, Collection, Hashable, Sequence
 from typing import Any, ClassVar, Generic, Literal, TypeVar
 
 import numpy as np
@@ -50,6 +50,7 @@ from .diagnostics import (
     log_suggestion,
     warn_if_exploitation_stalls,
 )
+from .duplicates import DuplicateTest, KnownTerms
 from .initial_sampling import _sample_fallback_tree
 from .kernels.graph_kernel import clear_kernel_caches
 from .kernels.tree_kernel import OrderedRootedSubtreeKernel
@@ -210,7 +211,7 @@ def _require_factory_signature(factory: Callable[..., Any]) -> None:
 
 
 def _built_by(
-    factory: Callable[..., Any], gp: Any, *, incumbent: float, known_points: set[Any]
+    factory: Callable[..., Any], gp: Any, *, incumbent: float, known_points: Collection[Any]
 ) -> AcquisitionFunction:
     """The acquisition a caller's factory builds for one pass, refused unless it can serve that pass.
 
@@ -238,7 +239,7 @@ def _built_by(
         )
         raise ValueError(msg)
     held = built.known_points
-    if held is None or not known_points <= set(held):
+    if held is None or not all(term in held for term in known_points):
         msg = (
             f"the acquisition factory's {type(built).__name__} does not hold the known points the "
             "pass handed it: without them nothing keeps an observed term below a novel one"
@@ -560,6 +561,12 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         reading it would measure the same term again and again.  A caller's ``surrogate_model``
         models its noise, and answers its latent posterior, itself.  A design stays a set: a term
         is measured again only by a pass.
+    duplicate_test:
+        When two terms are one evaluation; see :class:`~bayesian_optimization.loop.AskTellLoop`.
+        The known points the acquisition floors and the terms the rejection path replaces are the
+        measured and the outstanding ones *under this test*, so a pass never proposes a term the
+        test calls one evaluation with either (under repeated measurements, with an outstanding
+        one).
     """
 
     #: A pass of Bayesian optimization, as the CIFAR driver has always named it in its rows.
@@ -593,6 +600,7 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         surrogate_model: Surrogate | None = None,
         repeated_measurements: bool = False,
         max_outstanding: int = 1,
+        duplicate_test: DuplicateTest | None = None,
     ) -> None:
         # The pair is refused where the caller writes it down, so a mistyped target costs no
         # evaluation of the objective.  ``optimize`` refuses a negative budget in the same way and
@@ -601,7 +609,7 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         # becomes a query.
         super().__init__(
             search_space, request, initializer=initializer, seed=seed, sampler=sampler,
-            max_outstanding=max_outstanding,
+            max_outstanding=max_outstanding, duplicate_test=duplicate_test,
         )
         self.acquisition_function = acquisition_function
         self.ucb_beta = float(ucb_beta)
@@ -827,7 +835,9 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         )
         # The terms no pass may propose: the measured ones, where a term is measured once, and the
         # outstanding ones, which are being measured.
-        avoid = (set() if self.repeated_measurements else set(self._x_set)) | set(pending_terms)
+        avoid = (
+            KnownTerms(test=self.duplicate_test) if self.repeated_measurements else self._x_set.copy()
+        ).union(pending_terms)
         af = self._build_acquisition(scored, incumbent, avoid, posterior=model)
 
         # --- Optimize acquisition function ------------------------------------
@@ -917,7 +927,7 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         self,
         model: MarginalPosterior,
         incumbent: float,
-        known: set[Any],
+        known: Collection[Any],
         *,
         posterior: MarginalPosterior | None = None,
     ) -> AcquisitionFunction:
@@ -954,7 +964,14 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         # pass runs the two are equal, since nothing observes in between, so this changes no
         # decision.  It changes what an acquisition still means once the pass is over, which is
         # exactly what the diagnostics keep one for.
-        known_points = set(known)
+        #
+        # Under plain term equality the acquisition holds a set of terms, as it always did; under a
+        # test of the caller's own it holds them under that test, so that it floors every term the
+        # test merges with a known one.
+        known_points: Collection[Any] = (
+            set(known) if type(self.duplicate_test) is DuplicateTest
+            else known.copy() if isinstance(known, KnownTerms) else KnownTerms(known, self.duplicate_test)
+        )
 
         setting = self.acquisition_function
         if callable(setting) and not isinstance(setting, str):
@@ -1094,7 +1111,7 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
             front.append((value, cost))
         return front
 
-    def _replace_duplicate(self, avoid: set[Any], what: str = "an already evaluated") -> Any:
+    def _replace_duplicate(self, avoid: Collection[Any], what: str = "an already evaluated") -> Any:
         """Draw a term the loop has not evaluated yet, in place of one it already has.
 
         The algorithm as stated lets an evaluation repeat and removes duplicates only when
@@ -1114,7 +1131,7 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         described a state the code cannot be in.
 
         Args:
-            avoid (set[Any]): The terms no pass may propose: the observed set, and the outstanding
+            avoid (Collection[Any]): The terms no pass may propose: the observed set, and the outstanding
                 suggestions.
             what (str): What the returned term was, for the warning: "an already evaluated" or
                 "a pending". (Default value = "an already evaluated")
