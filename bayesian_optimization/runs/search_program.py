@@ -15,6 +15,7 @@ from cosy.evolutionary_algorithms import EvolutionarySearch
 from cosy.search import DepthBoundedRandomSampler, SizeUniformSampler, generator_query
 from cosy.search.determinize import determinize
 
+from bayesian_optimization.duplicates import TERM_EQUALITY, DuplicateTest, KnownTerms
 from bayesian_optimization.initial_sampling import distinct_prefix
 from bayesian_optimization.runs.budgets import step_budget
 
@@ -240,7 +241,7 @@ class _DesignFirst:
         yield from self._sampler.sample(query)
 
 
-def draw_design(sampler, query, size, *, then=0, design=None):
+def draw_design(sampler, query, size, *, then=0, design=None, test=TERM_EQUALITY):
     """Draw a loop's design up front from one stream, and the terms a paired arm draws past it.
 
     ``size`` distinct terms from one stream of ``sampler``, a ``design`` given as terms heading the
@@ -259,6 +260,9 @@ def draw_design(sampler, query, size, *, then=0, design=None):
         then (int): The terms a paired arm draws past the design. (Default value = 0)
         design (Sequence | None): A design given as terms, which heads the stream.
             (Default value = None)
+        test (DuplicateTest): When two terms are one evaluation, the loop's; the draw is pairwise
+            distinct under it, and a given design two of whose terms it merges is refused as a
+            repeated one is. (Default value = term equality)
 
     Returns:
         tuple[list, int]: The design, the first ``size`` terms, and how many repeats the stream
@@ -283,8 +287,13 @@ def draw_design(sampler, query, size, *, then=0, design=None):
         if any(term == earlier for index, term in enumerate(design) for earlier in design[:index]):
             raise ValueError("the design given as terms repeats a term, which the stream would "
                              "replace with the next term the sampler draws")
+        held = KnownTerms(test=test)
+        if type(test) is not DuplicateTest and not all(held.add(term) for term in design):
+            raise ValueError("the duplicate test calls two of its terms one evaluation, so the design "
+                             "given as terms repeats an evaluation, which the stream would replace with "
+                             "the next term the sampler draws")
     source = sampler if design is None else _DesignFirst(design, sampler)
-    terms, repeats = distinct_prefix(source, query, size + then)
+    terms, repeats = distinct_prefix(source, query, size + then, test=test)
     return terms[:size], repeats
 
 

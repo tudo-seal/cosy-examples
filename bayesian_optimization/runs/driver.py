@@ -186,7 +186,8 @@ def _draw_up_front(strategy, size, *, then, design, budgets, echo):
     echo(f"{label[0].upper()}{label[1:]}, from the loop's sampler")
     with step_budget(label, budgets.acquisition_warn):
         started = time.time()
-        head, repeats = draw_design(strategy.sampler, strategy.query, size, then=then, design=design)
+        head, repeats = draw_design(strategy.sampler, strategy.query, size, then=then, design=design,
+                                    test=strategy.duplicate_test)
         seconds = time.time() - started
     return head, DesignDraw(size, then, repeats, seconds, drawn=design is None)
 
@@ -731,6 +732,13 @@ def run_paired(
         raise ValueError("one CSV path per strategy, under the same names")
     if len({id(strategy) for strategy in strategies.values()}) != len(names):
         raise ValueError("one strategy object under two names would run twice on one state")
+    tests = sorted({type(strategy.duplicate_test).__name__ for strategy in strategies.values()})
+    if len(tests) > 1:
+        msg = (
+            "the strategies of a paired run take one design and are compared on it, so they share "
+            f"one duplicate test; these use {', '.join(tests)}"
+        )
+        raise ValueError(msg)
     claimed: dict[str, str] = {}
     for name in names:
         for path in RunArtifacts(csv_paths[name]).paths().values():
