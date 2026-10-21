@@ -23,6 +23,7 @@ from bayesian_optimization.acquisition_function import ExpectedImprovement
 from bayesian_optimization.bo import BayesianOptimization
 from bayesian_optimization.duplicates import TERM_EQUALITY, DuplicateTest, KnownTerms
 from bayesian_optimization.initial_sampling import _sample_fallback_tree, distinct_prefix
+from bayesian_optimization.nsga2 import FormedGeneration
 from tests.integration.test_real_ea_loop import _make_ea
 from tests.spaces import EXPR, add, expression_space, lit, neg
 
@@ -347,6 +348,12 @@ def bayesian_with_bound(bound):
     return BayesianOptimization(search_space=space, request=EXPR, sampler=SizeUniformSampler(BOUND, random.Random(0)),
                                 seed=0, optimizer=_make_ea(space, 0), n_restarts_kernel_optimizer=0,
                                 max_draws_per_term=bound)
+
+
+def test_a_formed_generation_is_built_with_the_fields_it_had_before_the_duplicate_test():
+    formed = FormedGeneration(generation=0, members=(), rows=(), ranks=(), distances=None, offspring=0, evaluated=0,
+                              known=0)
+    assert (formed.costs, formed.answered) == ((), ())
 
 
 def test_a_drawn_design_is_pairwise_distinct_under_the_test():

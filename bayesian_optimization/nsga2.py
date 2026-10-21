@@ -117,7 +117,8 @@ class FormedGeneration:
         costs (tuple[float, ...]): Per place, its member's own exact cost, which ranked it.
         answered (tuple[bool, ...]): Per place, whether its member is another term than the one its
             row was observed for: one the duplicate test merged with it, its value that term's and
-            its cost its own.  All False under term equality.
+            its cost its own.  All False under term equality.  Both empty in a record built without
+            them, as before they existed; NSGA-II fills both.
     """
 
     generation: int
@@ -128,8 +129,8 @@ class FormedGeneration:
     offspring: int
     evaluated: int
     known: int
-    costs: tuple[float, ...]
-    answered: tuple[bool, ...]
+    costs: tuple[float, ...] = ()
+    answered: tuple[bool, ...] = ()
 
 
 class _GivenPopulation:
