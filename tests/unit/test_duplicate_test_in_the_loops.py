@@ -10,6 +10,7 @@ every loop runs exactly as it did.
 
 from __future__ import annotations
 
+import collections
 import hashlib
 import random
 
@@ -272,6 +273,32 @@ def test_a_design_from_an_initializer_of_the_callers_own_is_made_distinct_under_
     assert loop.design[0] == a and loop.design[1] == c, "the initializer's terms the test keeps apart are kept"
     assert len({value(term) for term in loop.design}) == 3
     assert loop.initial_repeats_rejected == 1
+
+
+class AskedCounting(SameValue):
+    """SameValue, counting how often each term's key is asked."""
+
+    def __init__(self) -> None:
+        self.asked: collections.Counter = collections.Counter()
+
+    def key(self, term):
+        self.asked[term] += 1
+        return value(term)
+
+
+def test_nsga2_asks_a_measured_terms_key_a_bounded_number_of_times_however_long_it_runs():
+    space = expression_space()
+    design, _ = distinct_prefix(SizeUniformSampler(9, random.Random(6)), generator_query(space, EXPR), 6,
+                                test=SameValue())
+    test = AskedCounting()
+    search = NSGA2(space, EXPR, cost=lambda term: float(term.size), depth_bound=DEPTH, seed=6, duplicate_test=test)
+    search.initialize(design=design)
+    with pytest.raises(RuntimeError, match="without a term the dataset does not hold"):
+        for _ in range(len(design) + 40):
+            suggestion = search.suggest()
+            search.observe(suggestion.candidate, measure(suggestion.candidate))
+    assert len(search.formed_generations) >= 10, "a run of few generations tells a rebuild from a holding apart"
+    assert max(test.asked[term] for term in design) <= 4
 
 
 def test_a_drawn_design_is_pairwise_distinct_under_the_test():

@@ -271,6 +271,9 @@ class NSGA2(AskTellLoop[NT, T, G]):
         # One fitness tuple per term, built once: the truncation's standing is read back only for
         # the very value objects it was formed from, as the driver's cache hands them over.
         self._fitness: dict[Any, tuple[float, float]] = {}
+        # The terms with a fitness, held under the duplicate test as they get one, in that order:
+        # what a breeding asks an offspring against, so that it is not held anew every generation.
+        self._measured = KnownTerms(test=self.duplicate_test)
         self._costs: dict[Any, float] = {}
         self._row_of: dict[Any, int] = {}
         # Per waiting offspring, the offspring of its generation the duplicate test merged into it,
@@ -388,6 +391,7 @@ class NSGA2(AskTellLoop[NT, T, G]):
             self._row_of.setdefault(term, row)
         for term, value in zip(terms, values, strict=True):
             self._fitness[term] = (value, self._cost_of(term))
+            self._measured.add(term)
         mutation, recombination, rng, selection = self._components()
         self._search = EvolutionarySearch(
             initializer=_GivenPopulation(terms),
@@ -440,7 +444,7 @@ class NSGA2(AskTellLoop[NT, T, G]):
         # Under the duplicate test: an offspring merged with a measured term is answered from it, one
         # merged with an offspring already waiting is answered when that one is measured.  Under
         # term equality neither happens, and this is the former `waiting`, `known` exactly.
-        measured = KnownTerms(self._fitness, self.duplicate_test)
+        measured = self._measured
         queued = KnownTerms(test=self.duplicate_test)
         waiting: list[Any] = []
         answered: list[tuple[Any, Any]] = []
@@ -567,6 +571,7 @@ class NSGA2(AskTellLoop[NT, T, G]):
         term = suggestion.candidate
         self._row_of.setdefault(term, len(self._x_list) - 1)
         self._fitness[term] = (observed, self._cost_of(term))
+        self._measured.add(term)
         for alias in self._aliases.pop(term, ()):
             self._answer_from(alias, term)
 
@@ -577,6 +582,7 @@ class NSGA2(AskTellLoop[NT, T, G]):
         a function of the term.
         """
         self._fitness[term] = (self._fitness[held][0], self._cost_of(term))
+        self._measured.add(term)
         self._row_of.setdefault(term, self._row_of[held])
 
     def finalize(self) -> dict[str, Any]:
