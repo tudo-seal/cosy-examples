@@ -332,3 +332,12 @@ def test_under_term_equality_a_design_is_scanned_without_a_hash():
 def test_something_that_is_no_duplicate_test_is_refused_by_name():
     with pytest.raises(TypeError, match="duplicate_test says when two terms are one evaluation"):
         RandomSearch(expression_space(), EXPR, seed=0, duplicate_test=lambda a, b: a == b)
+
+
+def test_a_loops_duplicate_test_is_fixed_when_the_loop_is_built():
+    # What the loop holds was sorted under the test it was built with; another one read later would
+    # answer about terms held under the first.
+    search = random_search(0, SameValue())
+    with pytest.raises(AttributeError):
+        search.duplicate_test = TERM_EQUALITY
+    assert isinstance(search.duplicate_test, SameValue)

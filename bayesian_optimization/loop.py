@@ -367,7 +367,7 @@ class AskTellLoop(Generic[NT, T, G]):
         self.seed = seed
         self.sampler = sampler
         self.max_outstanding = _require_capacity(max_outstanding)
-        self.duplicate_test = _require_duplicate_test(duplicate_test)
+        self._duplicate_test = _require_duplicate_test(duplicate_test)
 
         # --- Ask/Tell state ---------------------------------------------------
         self._bo_state: BOState = BOState.UNINITIALIZED
@@ -762,6 +762,19 @@ class AskTellLoop(Generic[NT, T, G]):
             terms.append(candidate)
             observations.append(value)
         return terms, observations
+
+    @property
+    def duplicate_test(self) -> DuplicateTest:
+        """When two terms are one evaluation for this loop, fixed when it is built.
+
+        Everything the loop holds is sorted under it, so it is read-only: another test read later
+        would answer about terms held under this one.
+
+        Returns:
+            DuplicateTest: The test, :data:`~bayesian_optimization.duplicates.TERM_EQUALITY` where
+            none was given.
+        """
+        return self._duplicate_test
 
     @property
     def query(self) -> Any:
