@@ -848,10 +848,11 @@ class AskTellLoop(Generic[NT, T, G]):
         if entry.design:
             # A design term goes into the dataset and nowhere else: it has no acquisition value
             # and no pick, so it is no row of the trace and no pass of the count.  The phase ends
-            # with the value of its last term, and the passes begin.
+            # with the value of its last term, and the passes begin.  The held terms first: a
+            # duplicate test may raise, and then nothing of the dataset has moved.
+            self._x_set.add(recorded)
             entry.row = len(self._x_list)
             self._x_list.append(recorded)
-            self._x_set.add(recorded)
             self._y_list.append(value)
             del self._outstanding[recorded]
             self._bo_state = (
@@ -865,9 +866,10 @@ class AskTellLoop(Generic[NT, T, G]):
         # row and no iteration count mention, and the state stays at SUGGESTED, so the very same
         # call is accepted again and appends them a second time.
         self._check_pass_suggestion(entry.suggestion)
+        # The held terms first, as for a design term.
+        self._x_set.add(recorded)
         entry.row = len(self._x_list)
         self._x_list.append(recorded)
-        self._x_set.add(recorded)
         self._y_list.append(value)
         self._record_pass(entry.suggestion, value)
         self._iteration += 1

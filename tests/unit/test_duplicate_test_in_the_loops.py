@@ -381,6 +381,35 @@ def test_something_that_is_no_duplicate_test_is_refused_by_name():
         RandomSearch(expression_space(), EXPR, seed=0, duplicate_test=lambda a, b: a == b)
 
 
+class Switchable(SameValue):
+    """SameValue that cannot read a term while ``broken``."""
+
+    broken = False
+
+    def key(self, term):
+        if self.broken:
+            raise RuntimeError("the test cannot read this term now")
+        return super().key(term)
+
+
+def test_a_test_that_raises_while_a_value_is_taken_back_leaves_the_dataset_as_it_was():
+    test = Switchable()
+    search = random_search(3, test)
+    search.initialize(initial_size=2)
+    for phase in ("design", "design", "pass"):
+        suggestion = search.suggest()
+        before = len(search.get_state_snapshot()["x_list"])
+        test.broken = True
+        with pytest.raises(RuntimeError, match="cannot read this term now"):
+            search.observe(suggestion.candidate, measure(suggestion.candidate))
+        snapshot = search.get_state_snapshot()
+        assert len(snapshot["x_list"]) == len(snapshot["y_list"]) == before, phase
+        test.broken = False
+        search.observe(suggestion.candidate, measure(suggestion.candidate))
+        snapshot = search.get_state_snapshot()
+        assert len(snapshot["x_list"]) == len(snapshot["y_list"]) == before + 1, phase
+
+
 def test_a_loops_duplicate_test_is_fixed_when_the_loop_is_built():
     # What the loop holds was sorted under the test it was built with; another one read later would
     # answer about terms held under the first.
