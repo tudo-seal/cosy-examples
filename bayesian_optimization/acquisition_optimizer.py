@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from typing import Any, Literal, Protocol
 
 from cosy.evolutionary_algorithms import SampledInitialization
@@ -9,6 +9,7 @@ from cosy.search import Sampler
 
 from .acquisition_function import AcquisitionFunction, require_term
 from .diagnostics.frontier import GenerationRecord
+from .duplicates import KnownTerms
 
 
 def _generation_record(state: Any) -> GenerationRecord:
@@ -48,9 +49,16 @@ def _generation_record(state: Any) -> GenerationRecord:
     )
 
 
-def _known_points_of(acquisition_function: AcquisitionFunction) -> frozenset[Any]:
-    """Return the acquisition function's known points as a set that is always safe to test."""
+def _known_points_of(acquisition_function: AcquisitionFunction) -> Collection[Any]:
+    """Return the acquisition function's known points as a collection that is always safe to test.
+
+    Held under a duplicate test they are returned as held, since membership is then the test's:
+    a set of the held terms would answer term equality, and a term the test merges with a known
+    one would be scored as novel.
+    """
     known = getattr(acquisition_function, "known_points", None)
+    if isinstance(known, KnownTerms):
+        return known
     return frozenset(known) if known else frozenset()
 
 

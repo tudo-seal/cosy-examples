@@ -23,6 +23,7 @@ from bayesian_optimization.acquisition_optimizer import (
     _make_acquisition_objective_single,
     resolve_fitness_mode,
 )
+from bayesian_optimization.duplicates import DuplicateTest, KnownTerms
 from tests.unit.test_acquisition import FixedPosterior
 
 # Three candidates whose UCB scores are all far below zero, so a floor that does not look at them
@@ -58,6 +59,35 @@ def test_the_floor_holds_across_generations_not_only_within_one():
     second = objective([_KNOWN, _NOVEL_B])
     assert second[_KNOWN] < second[_NOVEL_B]
     assert second[_KNOWN] < first[_NOVEL_A], "the floor must not rise back over an earlier score"
+
+
+class _Respelled(DuplicateTest):
+    """A term and its ``_again`` spelling are one evaluation."""
+
+    def key(self, term: Any) -> str:
+        return str(term.root).removesuffix("_again")
+
+    def same(self, a: Any, b: Any) -> bool:
+        return self.key(a) == self.key(b)
+
+
+def test_a_term_the_duplicate_test_merges_with_a_known_point_is_floored_across_generations():
+    """Floored as the known point is: in a later generation too, so it never wins.
+
+    The acquisition floors it itself, at the floor of the batch it is asked in, and that number must
+    not be kept as its score: the next generation's novel candidates fall below it.
+    """
+    merged = Tree("evaluated_already_again")
+    known = KnownTerms([_KNOWN], _Respelled())
+    assert merged != _KNOWN
+    assert merged in known
+    gp = FixedPosterior({**_NEGATIVE.posterior, merged: (-1.0, 0.1)})
+    objective = _make_acquisition_objective_batch(UpperConfidenceBound(gp=gp, beta=2.0, known_points=known))
+
+    first = objective([merged, _NOVEL_A])
+    assert first[merged] < first[_NOVEL_A]
+    second = objective([merged, _NOVEL_B])
+    assert second[merged] < second[_NOVEL_B], "the floor must not rise back over a later score"
 
 
 def test_the_batch_objective_scores_every_sample_it_is_given():
