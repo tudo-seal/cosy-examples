@@ -10,12 +10,17 @@ class ResumedDesign(list[TermRecord]):
     the run's stream, which a resumed Bayesian optimization holds against the head of its own
     stream and moves its sampler past; ``"given"`` for one handed over as terms, which no stream was
     drawn for and which therefore resumes under any seed.  A pool written before the origin was
-    recorded counts as drawn, which is how every run then treated its resumed design.
+    recorded counts as drawn, which is how every run then treated its resumed design.  And
+    ``duplicate_test``, the name of the test its run held its terms under
+    (:func:`~bayesian_optimization.duplicates.describe`), which a resuming run must hold too; a pool
+    that names none was measured under term equality.  None where it is not known, as for records
+    put together by hand, which are resumed under any test.
     """
 
-    def __init__(self, records=(), origin="drawn"):
+    def __init__(self, records=(), origin="drawn", duplicate_test=None):
         super().__init__(records)
         self.origin = origin
+        self.duplicate_test = duplicate_test
 
 
 def check_resumed_design(resume_design, drawn_prefix):
@@ -123,6 +128,7 @@ def load_design_records(path, expected, phase="pre_sample"):
         phases = sorted({record.phase for record in records})
         msg = f"{path} holds no {phase!r} records; it has {phases}"
         raise ValueError(msg)
-    return ResumedDesign(design, header.get("design_origin", "drawn"))
+    return ResumedDesign(design, header.get("design_origin", "drawn"),
+                         header.get("duplicate_test", "term equality"))
 
 

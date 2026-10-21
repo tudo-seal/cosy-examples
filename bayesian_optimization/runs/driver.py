@@ -31,7 +31,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from ..bo import BayesianOptimization
-from ..duplicates import TERM_EQUALITY, one_test
+from ..duplicates import TERM_EQUALITY, DuplicateTest, describe, one_test
 from ..loop import AskTellLoop, _require_distinct_under, _require_hashable
 from ..nsga2 import NSGA2
 from ..random_search import RandomSearch
@@ -170,6 +170,13 @@ def _duplicate_test_of(strategy):
     return getattr(strategy, "duplicate_test", None) or TERM_EQUALITY
 
 
+def _recorded_test(strategy):
+    """The name a run's files record its duplicate test under; None under term equality, which a
+    file without one was measured under, so that such a run's files stay as they were."""
+    test = _duplicate_test_of(strategy)
+    return None if type(test) is DuplicateTest else describe(test)
+
+
 def _draw_up_front(strategy, size, *, then, design, budgets, echo):
     """Draw a design, or head the stream with a given one, and ``then`` terms past it, up front.
 
@@ -219,6 +226,16 @@ def _design_of(strategy, *, n_design, n_passes, design, resume, resumed_value, o
     records: list[TermRecord] = []
     terms: list[Any] | None = None
     if resume is not None:
+        recorded = getattr(resume, "duplicate_test", None)
+        holds = describe(_duplicate_test_of(strategy))
+        if recorded is not None and recorded != holds:
+            msg = (
+                f"the resumed design was measured under the duplicate test {recorded!r}, and this "
+                f"run's strategy holds {holds!r}: what the design's terms count as, and every count "
+                "of the run, were read under the first, so a run resumes under the test it was "
+                "measured under"
+            )
+            raise ValueError(msg)
         records = list(resume)
         values = _resumed_values(records, resumed_value, objective)
         terms = [record.term for record in records]
@@ -505,6 +522,7 @@ def run_search(
         recorder = stack.enter_context(EvaluationRecorder(
             csv_path, pretty_algebra, schema, provenance=provenance,
             mode="x" if refuse_taken else "w", design_origin=origin,
+            duplicate_test=_recorded_test(strategy),
         ))
         ea_logger = surrogate_logger = None
         if bayesian and n_passes > 0:
@@ -663,6 +681,8 @@ def run_search(
         ),
         "completed": True,
     }
+    if _recorded_test(strategy) is not None:
+        summary["duplicate_test"] = _recorded_test(strategy)
     if drawn_up_front is not None:
         summary["design_drawn_up_front"] = drawn_up_front.record()
     if isinstance(strategy, RandomSearch):
@@ -819,6 +839,7 @@ def run_paired(
         sorted((record for record in records if record.phase == DESIGN_PHASE),
                key=lambda record: record.index),
         header.get("design_origin", "drawn"),
+        header.get("duplicate_test", "term equality"),
     )
     # A design the first run took over under a reading carries that reading's values, which the
     # objective may not read off the metrics; the other runs take it over under the same reading.

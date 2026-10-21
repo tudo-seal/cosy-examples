@@ -15,7 +15,7 @@ import pytest
 from cosy.search import DepthBoundedRandomSampler, SizeUniformSampler, generator_query
 
 from bayesian_optimization import NSGA2, BayesianOptimization, RandomSearch
-from bayesian_optimization.duplicates import DuplicateTest
+from bayesian_optimization.duplicates import DuplicateTest, describe
 from bayesian_optimization.runs import (
     MetricSchema,
     Objective,
@@ -185,3 +185,36 @@ def test_paired_strategies_under_two_configurations_of_one_test_are_refused(tmp_
              "random": RandomSearch(expression_space(), EXPR, sampler=SizeUniformSampler(BOUND, random.Random(5)), seed=5,
                                     duplicate_test=DuplicateTest())}
     assert set(_paired(tmp_path / "plain", plain)) == {"bo", "random"}, "term equality is one test however it is given"
+
+
+def _searching(test, seed: int = 3) -> RandomSearch:
+    return RandomSearch(expression_space(), EXPR, sampler=SizeUniformSampler(BOUND, random.Random(seed)), seed=seed,
+                        duplicate_test=test)
+
+
+def _ran(path, strategy, **kwargs):
+    return run_search(strategy, lambda term: {"score": measure(term)}, schema=SCHEMA, csv_path=str(path),
+                      pretty_algebra=dict, echo=_quiet, **kwargs)
+
+
+def test_a_run_under_a_test_records_it_and_one_under_term_equality_records_nothing(tmp_path):
+    under = _ran(tmp_path / "under.csv", _searching(SameValue()), n_design=3, n_passes=1)
+    header, _records = read_term_pool(RunArtifacts(str(tmp_path / "under.csv")).path("terms"))
+    assert header["duplicate_test"] == under.summary["duplicate_test"] == describe(SameValue())
+    assert describe(SameValue()).endswith(".SameValue")
+    plain = _ran(tmp_path / "plain.csv", _searching(None), n_design=3, n_passes=1)
+    header, _records = read_term_pool(RunArtifacts(str(tmp_path / "plain.csv")).path("terms"))
+    assert "duplicate_test" not in header and "duplicate_test" not in plain.summary
+
+
+def test_a_design_measured_under_one_test_is_not_resumed_under_another(tmp_path):
+    _ran(tmp_path / "under.csv", _searching(SameValue()), n_design=3)
+    under = load_design_records(RunArtifacts(str(tmp_path / "under.csv")).path("terms"), {})
+    with pytest.raises(ValueError, match="measured under the duplicate test"):
+        _ran(tmp_path / "as_plain.csv", _searching(None), resume=under)
+    assert not (tmp_path / "as_plain.csv").exists(), "the refusal comes before any file is written"
+    _ran(tmp_path / "again.csv", _searching(SameValue()), resume=under)
+    _ran(tmp_path / "plain.csv", _searching(None), n_design=3)
+    plain = load_design_records(RunArtifacts(str(tmp_path / "plain.csv")).path("terms"), {})
+    with pytest.raises(ValueError, match="measured under the duplicate test"):
+        _ran(tmp_path / "as_under.csv", _searching(SameValue()), resume=plain)

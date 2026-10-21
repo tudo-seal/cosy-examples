@@ -137,6 +137,11 @@ class TermPoolWriter:
             of the results. ``"a"`` appends without writing a second header and is only reachable
             through :func:`resume_term_pool`, which has already read and checked the first one.
             (Default value = "w")
+        design_origin (str | None): Where the run's design came from, ``"drawn"`` or ``"given"``.
+            (Default value = None)
+        duplicate_test (str | None): The name of the duplicate test the run held its terms under
+            (:func:`~bayesian_optimization.duplicates.describe`), written where it is not term
+            equality: a pool without one was measured under term equality. (Default value = None)
 
     Raises:
         ValueError: If ``mode`` is not one of the three, or if ``"a"`` is given a provenance.
@@ -144,7 +149,7 @@ class TermPoolWriter:
             provenance would let the caller believe that it had.
     """
 
-    def __init__(self, path, provenance=None, *, mode="w", design_origin=None):
+    def __init__(self, path, provenance=None, *, mode="w", design_origin=None, duplicate_test=None):
         if mode not in ("w", "x", "a"):
             msg = f"mode selects how the file is opened and is 'w', 'x' or 'a', not {mode!r}"
             raise ValueError(msg)
@@ -170,6 +175,10 @@ class TermPoolWriter:
             # "drawn" from the run's stream, or "given" as terms: what a resumed run holds its
             # design against, or not (runs.resume.ResumedDesign).
             header["design_origin"] = design_origin
+        if duplicate_test is not None:
+            # What a resumed run is held to: a design measured under one test is not resumed under
+            # another (runs.driver).
+            header["duplicate_test"] = duplicate_test
         pickle.dump(header, self._file)
         self._file.flush()
 

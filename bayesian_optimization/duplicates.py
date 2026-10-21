@@ -18,7 +18,7 @@ from __future__ import annotations
 from collections.abc import Hashable, Iterable, Iterator
 from typing import Any
 
-__all__ = ["TERM_EQUALITY", "DuplicateTest", "KnownTerms", "one_test"]
+__all__ = ["TERM_EQUALITY", "DuplicateTest", "KnownTerms", "describe", "one_test"]
 
 
 class DuplicateTest:
@@ -78,6 +78,26 @@ class DuplicateTest:
 
 #: The default test of every loop: term equality, as before the test was exchangeable.
 TERM_EQUALITY = DuplicateTest()
+
+
+def describe(test: DuplicateTest) -> str:
+    """The name a run records its duplicate test under.
+
+    ``"term equality"`` for :class:`DuplicateTest` itself, however given; otherwise the test's
+    qualified class name, followed by its ``repr`` where its class defines one, which is where a test
+    whose instances differ by a configuration says which one it is.
+
+    Args:
+        test: The test.
+
+    Returns:
+        str: The name.
+    """
+    if type(test) is DuplicateTest:
+        return "term equality"
+    cls = type(test)
+    name = f"{cls.__module__}.{cls.__qualname__}"
+    return f"{name}: {test!r}" if cls.__repr__ is not object.__repr__ else name
 
 
 def one_test(a: DuplicateTest, b: DuplicateTest) -> bool:
