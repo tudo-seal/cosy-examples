@@ -29,6 +29,11 @@ class DuplicateTest:
     that overrides ``same`` and not ``key`` is refused where it is defined: under the default key,
     the term itself, ``same`` would be asked of equal terms only, and the test would be term
     equality whatever it says.
+
+    ``same`` must be an equivalence on each bucket -- reflexive, symmetric and transitive -- and
+    both methods functions of their terms. :class:`KnownTerms` holds the first term of each class
+    and asks a new term against the held ones only, so under a relation that is not transitive
+    what it holds depends on the order the terms arrive in. Neither property is checked.
     """
 
     def __init_subclass__(cls, **kwargs: Any) -> None:

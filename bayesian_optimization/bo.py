@@ -955,8 +955,9 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
             model (MarginalPosterior): The surrogate this pass scores with.
             incumbent (float): The largest observed value, which the two improvement scores
                 measure a candidate against.
-            known (set[Any]): The terms no pass may propose, which the floor keeps below every
-                other.
+            known (Collection[Any]): The terms no pass may propose, which the floor keeps below
+                every other: a set under term equality, held under the duplicate test otherwise,
+                which floors every term it merges with one of them too.
             posterior (MarginalPosterior | None): The posterior the incumbent was read from, which
                 the front of the expected hypervolume improvement is read from too; ``None`` reads
                 ``model``.  Under repeated measurements with the loop's Gaussian process,

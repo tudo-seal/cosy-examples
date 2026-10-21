@@ -168,6 +168,9 @@ def distinct_prefix(
         test: When two terms are one evaluation.  Under plain term equality, the default, the scan
             below stands as written; under another test a repeat is a term the test calls one
             evaluation with one the design holds, so the design is pairwise distinct under it.
+            The size-uniform stream, which repeats no term, does deliver terms such a test
+            merges, so the count is then not the check described above but the merged terms read
+            past.
 
     Returns:
         tuple[list[Tree[Any]], int]: The terms in stream order, and how many repeats were rejected.
@@ -194,10 +197,11 @@ def distinct_prefix(
     rejected = 0
     repeats_in_a_row = 0
     for candidate in sampler.sample(query):
-        # Structural comparison, not a set: a term hashes once when it is built and from its
-        # labels alone, and nothing here requires a label to hash consistently with its equality
-        # or to stay unchanged afterwards.  ``Tree.__eq__`` compares the size first, so the scan
-        # short-circuits on almost every pair and the design is small either way.
+        # Under term equality a structural comparison, not a set: a term hashes once when it is
+        # built and from its labels alone, and nothing here requires a label to hash consistently
+        # with its equality or to stay unchanged afterwards.  ``Tree.__eq__`` compares the size
+        # first, so the scan short-circuits on almost every pair and the design is small either
+        # way.  Under a test of the caller's own the held terms are asked, which do hash.
         if any(candidate == kept for kept in drawn) if held is None else candidate in held:
             rejected += 1
             repeats_in_a_row += 1

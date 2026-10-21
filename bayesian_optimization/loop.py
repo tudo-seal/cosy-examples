@@ -337,8 +337,10 @@ class AskTellLoop(Generic[NT, T, G]):
         When two terms are one evaluation (:mod:`bayesian_optimization.duplicates`).  ``None``, the
         default, is term equality, what every loop always used.  Under a test of the caller's own
         the loop proposes no term the test calls one evaluation with a measured or an outstanding
-        one, and draws its design pairwise distinct under it; what the surrogate conditions on is
-        still the distinct terms.
+        one, draws its design pairwise distinct under it -- with the default initializer, as the
+        head of one stream the test keeps apart -- and refuses a design handed over as terms that
+        holds two it merges; a dataset handed over with its values is taken as it is.  What the
+        surrogate conditions on is still the distinct terms.  Read-only once the loop is built.
     """
 
     #: The phase a pass of this strategy is recorded under in a run's rows and term records.

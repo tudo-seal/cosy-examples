@@ -96,7 +96,8 @@ class FormedGeneration:
     Attributes:
         generation (int): The generation; 0 is the design.
         members (tuple[Any, ...]): The population, in its order.
-        rows (tuple[int, ...]): Per place, the dataset row its member was observed in.
+        rows (tuple[int, ...]): Per place, the dataset row its member's value was observed in: its
+            own, or, under a duplicate test, that of the measured term it was answered from.
         ranks (tuple[int, ...]): Per place, the rank of its front, 0 for the first: among the fronts
             of parents and offspring together, as the truncation formed the population; for the
             design, among its own members.
@@ -106,9 +107,12 @@ class FormedGeneration:
         offspring (int): How many offspring the previous population bred for this one; 0 for the
             design.
         evaluated (int): How many distinct terms among them the dataset did not hold, each one
-            pass of the loop.
+            pass of the loop; under a duplicate test, pairwise apart under it and none merged
+            with a measured term.
         known (int): How many of the offspring's places held a term the dataset did hold,
-            answered at no cost; a term bred twice counts twice.
+            answered at no cost; a term bred twice counts twice.  Under a duplicate test also
+            every place whose term it merges with a measured one or with one evaluated for this
+            generation.
     """
 
     generation: int

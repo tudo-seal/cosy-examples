@@ -92,8 +92,9 @@ class RandomSearch(AskTellLoop[NT, T, G]):
 
         Zero under the size-uniform sampler after a drawn design.  After a design handed over, it
         counts the design terms the stream delivers again; under a sampler that draws with
-        replacement, it counts the repeats as well.  The design's own repeats are
-        :attr:`initial_repeats_rejected`.
+        replacement, it counts the repeats as well.  Under a duplicate test it counts every term the
+        test merges with a held or a pending one too, under any sampler.  The design's own repeats
+        are :attr:`initial_repeats_rejected`.
 
         Returns:
             int: The count, 0 again after ``reset()``.
