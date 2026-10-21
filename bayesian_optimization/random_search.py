@@ -9,7 +9,7 @@ own, run through the same :class:`~bayesian_optimization.loop.AskTellLoop` as Ba
 from __future__ import annotations
 
 import time
-from collections.abc import Callable, Collection, Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from typing import Any, ClassVar
 
 from cosy.core.solution_space import SolutionSpace
@@ -48,7 +48,9 @@ class RandomSearch(AskTellLoop[NT, T, G]):
         gives up on the next one, the bound ``distinct_prefix`` applies.  A held term the stream
         delivers for the first time, such as a term of a handed-over design at the head of the
         stream, is skipped without counting against it.  Reachable only for a sampler that draws
-        with replacement.
+        with replacement, under term equality; under a duplicate test of the caller's own, a term
+        the test merges with a held one counts as a repeat of it, met for the first time or not,
+        so a coarse test reaches the bound under any sampler.
     duplicate_test:
         When two terms are one evaluation; see :class:`~bayesian_optimization.loop.AskTellLoop`.
         Design and passes skip every term the test calls one evaluation with a held or an
@@ -136,14 +138,14 @@ class RandomSearch(AskTellLoop[NT, T, G]):
         self._delivered = set()
         self._skips_pending = 0
 
-    def _next_new_term(self, held: Collection[Any]) -> Any:
+    def _next_new_term(self, held: KnownTerms) -> Any:
         """Return the next term of the stream that ``held`` does not contain.
 
         Every term passed over on the way is added to ``_skips_pending``, which the caller reads,
         also when this raises.
 
         Args:
-            held (Collection[Any]): The terms not to return again, under the loop's duplicate test.
+            held (KnownTerms): The terms not to return again, under the loop's duplicate test.
 
         Returns:
             Any: The term.
@@ -151,13 +153,15 @@ class RandomSearch(AskTellLoop[NT, T, G]):
         Raises:
             NotImplementedError: If there is no search space to draw from.
             RuntimeError: If the stream ends, or ``max_draws_per_term`` draws in a row repeat a
-                term the stream already delivered, before a new one comes.
+                term the stream already delivered, or one the duplicate test merges with a held
+                one, before a new one comes.
         """
         if self._stream is None:
             self._resolve_sampling()
             if self._sampler is None:
                 raise NotImplementedError("random search draws its terms and requires a real search_space.")
             self._stream = iter(self._sampler.sample(self._query()))
+        plain = type(self.duplicate_test) is DuplicateTest
         repeats_in_a_row = 0
         for term in self._stream:
             _require_hashable([term], "the sampler's stream")
@@ -166,18 +170,27 @@ class RandomSearch(AskTellLoop[NT, T, G]):
             if term not in held:
                 return term
             self._skips_pending += 1
-            if not repeat:
+            if not repeat and (plain or held.match(term) == term):
                 # Held, but new to this stream: a term of a design handed over, met once at the
-                # head of the stream.  That is progress through the stream, not a repeat.
+                # head of the stream.  That is progress through the stream, not a repeat.  A term
+                # the duplicate test merges with another, held one is a repeat of that evaluation.
                 repeats_in_a_row = 0
                 continue
             repeats_in_a_row += 1
             if repeats_in_a_row >= self.max_draws_per_term:
-                msg = (
-                    f"the sampler's stream repeated a delivered term {repeats_in_a_row} times in "
-                    "a row: under a sampler that draws with replacement, the space within its "
-                    "bound is exhausted or nearly so"
-                )
+                if plain:
+                    msg = (
+                        f"the sampler's stream repeated a delivered term {repeats_in_a_row} times "
+                        "in a row: under a sampler that draws with replacement, the space within "
+                        "its bound is exhausted or nearly so"
+                    )
+                else:
+                    msg = (
+                        f"the sampler's stream delivered {repeats_in_a_row} terms in a row that "
+                        "repeat a delivered term or that the duplicate test merges with a held one: "
+                        "the stream offers no evaluation the run has not made, at least not within "
+                        "max_draws_per_term draws, which a coarse test may need raised"
+                    )
                 raise RuntimeError(msg)
         msg = (
             f"the sampler's stream ended after {len(held)} held terms: every term within its "

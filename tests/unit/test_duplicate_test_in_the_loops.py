@@ -47,6 +47,33 @@ class SameValue(DuplicateTest):
         return value(a) == value(b)
 
 
+class Parity(DuplicateTest):
+    """Two expressions of one parity are one evaluation: a test that two terms exhaust."""
+
+    def key(self, term):
+        return value(term) % 2
+
+    def same(self, a, b) -> bool:
+        return value(a) % 2 == value(b) % 2
+
+
+class Bounded:
+    """A sampler that refuses to draw past a limit, so that a guard which never fires fails rather than spins."""
+
+    def __init__(self, inner, limit: int) -> None:
+        self.inner, self.limit, self.drawn = inner, limit, 0
+
+    def sample(self, query):
+        for term in self.inner.sample(query):
+            self.drawn += 1
+            if self.drawn > self.limit:
+                raise AssertionError(f"drew {self.limit} terms and no guard fired")
+            yield term
+
+    def at_least(self, query, count):
+        return self.inner.at_least(query, count)
+
+
 def measure(term) -> float:
     """A measurement of the value alone, deterministic and spread over [0, 1)."""
     digest = hashlib.sha256(str(value(term)).encode()).digest()
@@ -99,6 +126,17 @@ def test_random_search_evaluates_the_first_terms_of_its_stream_the_test_keeps_ap
     assert measured == expected
     plain = run(random_search(3), 3, 5)
     assert len({value(term) for term in plain}) < len(plain), "the stream must repeat a value, or nothing is merged"
+
+
+def test_random_search_counts_a_term_the_test_merges_with_a_held_one_against_its_draws():
+    sampler = Bounded(DepthBoundedRandomSampler(8, random.Random(0)), 2000)
+    search = RandomSearch(expression_space(), EXPR, sampler=sampler, seed=0, max_draws_per_term=20,
+                          duplicate_test=Parity())
+    run(search, 2, 0)
+    drawn = sampler.drawn
+    with pytest.raises(RuntimeError, match="the duplicate test merges with a held one"):
+        search.suggest()
+    assert sampler.drawn - drawn == 20, "the bound is the number of merged draws in a row, no more, no less"
 
 
 def test_bayesian_optimization_never_proposes_what_the_test_merges():
