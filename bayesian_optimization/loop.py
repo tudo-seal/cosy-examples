@@ -262,6 +262,31 @@ def _check_request_against_space(search_space: Any, request: Any) -> None:
     raise ValueError(msg)
 
 
+def _require_draw_bound(value: Any) -> int:
+    """Refuse a bound on draws in a row that is not a positive count.
+
+    Refused where the loop is built: a bound read only at the first repeat would fail there, and for
+    a replacement of Bayesian optimization that is after evaluations were paid.
+
+    Args:
+        value (Any): What ``max_draws_per_term`` holds.
+
+    Returns:
+        int: The bound.
+
+    Raises:
+        ValueError: For anything but a positive int; a bool is refused, though Python counts it.
+    """
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        msg = (
+            f"max_draws_per_term is how many draws in a row the loop looks at for one term of its "
+            f"own, a positive count, not {value!r}"
+        )
+        raise ValueError(msg)
+    bound: int = value
+    return bound
+
+
 def _require_capacity(value: Any) -> int:
     """Refuse a capacity that is not a positive count.
 
@@ -380,7 +405,7 @@ class AskTellLoop(Generic[NT, T, G]):
         self.sampler = sampler
         self.max_outstanding = _require_capacity(max_outstanding)
         self._duplicate_test = _require_duplicate_test(duplicate_test)
-        self.max_draws_per_term = max_draws_per_term
+        self.max_draws_per_term = _require_draw_bound(max_draws_per_term)
 
         # --- Ask/Tell state ---------------------------------------------------
         self._bo_state: BOState = BOState.UNINITIALIZED

@@ -333,6 +333,22 @@ def test_nsga2_asks_the_test_nothing_while_it_takes_a_value_back_beyond_holding_
     assert search.offspring_known > 0, "nothing was answered from the dataset, so no answer asked the test"
 
 
+def test_a_loops_bound_on_draws_is_a_positive_count():
+    for bound in (None, 0, -1, True, 2.5, "100"):
+        with pytest.raises((TypeError, ValueError), match="max_draws_per_term"):
+            RandomSearch(expression_space(), EXPR, seed=0, max_draws_per_term=bound)
+        with pytest.raises((TypeError, ValueError), match="max_draws_per_term"):
+            bayesian_with_bound(bound)
+    assert random_search(0).max_draws_per_term == 100
+
+
+def bayesian_with_bound(bound):
+    space = expression_space()
+    return BayesianOptimization(search_space=space, request=EXPR, sampler=SizeUniformSampler(BOUND, random.Random(0)),
+                                seed=0, optimizer=_make_ea(space, 0), n_restarts_kernel_optimizer=0,
+                                max_draws_per_term=bound)
+
+
 def test_a_drawn_design_is_pairwise_distinct_under_the_test():
     query = generator_query(expression_space(), EXPR)
     design, rejected = distinct_prefix(DepthBoundedRandomSampler(3, random.Random(0)), query, 5, test=SameValue())
