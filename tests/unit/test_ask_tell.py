@@ -72,7 +72,9 @@ def test_duplicate_candidate_triggers_fallback(monkeypatch, bo_factory, tree_cor
     fresh = Tree("fallback_fresh")
     call_count = {"n": 0}
 
-    def fake_fallback(sampler, query, seen):
+    def fake_fallback(sampler, query, seen, max_draws):
+        # The loop's bound on draws in a row reaches the fallback; under the default it is 100.
+        assert max_draws == 100
         call_count["n"] += 1
         return fresh
 
@@ -106,7 +108,7 @@ def test_a_fallback_that_returns_a_known_term_is_a_contract_violation(
 
     always_known = tree_corpus[0]
 
-    def fake_fallback(sampler, query, seen):
+    def fake_fallback(sampler, query, seen, max_draws):
         return always_known  # Breaks the contract on purpose.
 
     monkeypatch.setattr(bo_mod, "_sample_fallback_tree", fake_fallback)

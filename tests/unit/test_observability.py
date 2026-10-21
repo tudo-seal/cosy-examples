@@ -45,7 +45,7 @@ def _fallback_bo(monkeypatch, bo_factory, tree_corpus):
     """A BO whose optimizer returns an already-known candidate, forcing the fallback path."""
     from bayesian_optimization import bo as bo_mod
 
-    monkeypatch.setattr(bo_mod, "_sample_fallback_tree", lambda sampler, query, seen: Tree("fresh"))
+    monkeypatch.setattr(bo_mod, "_sample_fallback_tree", lambda sampler, query, seen, max_draws: Tree("fresh"))
 
     bo = bo_factory(candidates=[tree_corpus[0]])  # tree_corpus[0] is in x0, so it is a duplicate
     bo.initialize(x0=tree_corpus[:3], y0=[1.0, 2.0, 0.5])
