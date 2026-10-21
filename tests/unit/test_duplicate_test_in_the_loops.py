@@ -162,6 +162,18 @@ def test_bayesian_optimization_never_proposes_what_the_test_merges():
     assert len({value(term) for term in plain}) < len(plain), "the run must repeat a value, or nothing is merged"
 
 
+def test_a_trace_row_counts_the_distinct_terms_where_the_test_merges_two_handed_over():
+    a, b = merged_pair()
+    c = next(term for term in SizeUniformSampler(BOUND, random.Random(5)).sample(generator_query(expression_space(), EXPR))
+             if value(term) != value(a))
+    loop = bayesian(2, SameValue())
+    loop.initialize(x0=[a, b, c], y0=[measure(a), measure(b), measure(c)])
+    suggestion = loop.suggest()
+    loop.observe(suggestion.candidate, measure(suggestion.candidate))
+    record = loop.trace[-1]
+    assert (record.evaluations, record.distinct_observations) == (4, 4)
+
+
 def test_nsga2_answers_what_the_test_merges_from_the_term_it_measured():
     space = expression_space()
     design, _ = distinct_prefix(SizeUniformSampler(9, random.Random(0)), generator_query(space, EXPR), 6,

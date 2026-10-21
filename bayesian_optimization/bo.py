@@ -1416,7 +1416,11 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
             best=max(observed, incumbent),
             fallback_used=diagnostics["fallback_used"],
             evaluations=len(self._x_list),
-            distinct_observations=len(self._x_set),
+            # Distinct terms: under a duplicate test of the caller's own the held terms are one per
+            # evaluation the test forms, which a dataset handed over through x0 can merge.
+            distinct_observations=(
+                len(self._x_set) if self._x_set.plain else len(set(self._x_list))
+            ),
         )
 
     @property
