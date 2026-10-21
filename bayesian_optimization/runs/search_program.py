@@ -260,9 +260,10 @@ def draw_design(sampler, query, size, *, then=0, design=None, test=TERM_EQUALITY
         then (int): The terms a paired arm draws past the design. (Default value = 0)
         design (Sequence | None): A design given as terms, which heads the stream.
             (Default value = None)
-        test (DuplicateTest): When two terms are one evaluation, the loop's; the draw is pairwise
-            distinct under it, and a given design two of whose terms it merges is refused as a
-            repeated one is. (Default value = term equality)
+        test (DuplicateTest | None): When two terms are one evaluation, the loop's, None being term
+            equality as for the loops; the draw is pairwise distinct under it, and a given design
+            two of whose terms it merges is refused as a repeated one is.
+            (Default value = term equality)
 
     Returns:
         tuple[list, int]: The design, the first ``size`` terms, and how many repeats the stream
@@ -279,6 +280,7 @@ def draw_design(sampler, query, size, *, then=0, design=None, test=TERM_EQUALITY
     if then < 0:
         raise ValueError(f"a paired arm draws a non-negative number of terms past the design, "
                          f"not {then}")
+    test = TERM_EQUALITY if test is None else test
     if design is not None:
         if len(design) != size:
             raise ValueError(f"the design given as terms holds {len(design)} terms, and the draw "

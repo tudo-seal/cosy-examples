@@ -105,7 +105,7 @@ def _require_hashable(candidates: Sequence[Any], source: str) -> None:
             raise TypeError(msg) from unhashable
 
 
-def _require_distinct_under(terms: Sequence[Any], test: DuplicateTest) -> None:
+def _require_distinct_under(terms: Sequence[Any], test: DuplicateTest | None) -> None:
     """Refuse a design two of whose terms the duplicate test calls one evaluation.
 
     Asked where a design handed over as terms is refused for a repeated term, after that check;
@@ -113,12 +113,12 @@ def _require_distinct_under(terms: Sequence[Any], test: DuplicateTest) -> None:
 
     Args:
         terms (Sequence[Any]): The design, no term repeated.
-        test (DuplicateTest): The loop's duplicate test.
+        test (DuplicateTest | None): The loop's duplicate test; None is term equality.
 
     Raises:
         ValueError: If the test merges two of the terms.
     """
-    if type(test) is DuplicateTest:
+    if test is None or type(test) is DuplicateTest:
         return
     held = KnownTerms(test=test)
     if not all(held.add(term) for term in terms):

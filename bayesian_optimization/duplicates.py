@@ -129,10 +129,12 @@ class KnownTerms:
 
     Args:
         terms: The terms to hold from the start, in order.
-        test: The duplicate test. (Default value = :data:`TERM_EQUALITY`)
+        test: The duplicate test; None is term equality, as for the loops.
+            (Default value = :data:`TERM_EQUALITY`)
     """
 
-    def __init__(self, terms: Iterable[Any] = (), test: DuplicateTest = TERM_EQUALITY) -> None:
+    def __init__(self, terms: Iterable[Any] = (), test: DuplicateTest | None = TERM_EQUALITY) -> None:
+        test = TERM_EQUALITY if test is None else test
         self.test = test
         self._plain = type(test) is DuplicateTest
         self._set: set[Any] = set()

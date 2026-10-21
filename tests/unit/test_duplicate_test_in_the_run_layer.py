@@ -15,7 +15,9 @@ import pytest
 from cosy.search import DepthBoundedRandomSampler, SizeUniformSampler, generator_query
 
 from bayesian_optimization import NSGA2, BayesianOptimization, RandomSearch
-from bayesian_optimization.duplicates import DuplicateTest, describe
+from bayesian_optimization.duplicates import TERM_EQUALITY, DuplicateTest, KnownTerms, describe
+from bayesian_optimization.initial_sampling import distinct_prefix
+from bayesian_optimization.loop import _require_distinct_under
 from bayesian_optimization.runs import (
     MetricSchema,
     Objective,
@@ -247,3 +249,29 @@ def test_an_nsga2_run_under_a_test_logs_each_members_own_cost_and_whether_it_was
                lambda term: {"score": measure(term)}, schema=SCHEMA, n_design=6, n_passes=5, csv_path=plain_path,
                pretty_algebra=dict, echo=_quiet)
     assert all("costs" not in line and "answered" not in line for line in _generations(plain_path))
+
+
+class Falsy(SameValue):
+    """SameValue that is falsy, as a test with a length of its own may be."""
+
+    def __len__(self) -> int:
+        return 0
+
+
+def test_a_falsy_test_is_a_test_to_the_run_layer(tmp_path):
+    a, b = merged_pair()
+    assert not Falsy()
+    with pytest.raises(ValueError, match="the duplicate test calls two terms of the design one evaluation"):
+        _ran(tmp_path / "run.csv", _searching(Falsy()), design=[a, b], n_passes=1)
+    assert not list(tmp_path.iterdir()), "the refusal comes before any file is written"
+
+
+def test_none_is_term_equality_to_every_function_that_takes_a_test():
+    query = _query()
+    for draw in (distinct_prefix, lambda sampler, query, count, test=TERM_EQUALITY: draw_design(sampler, query, count,
+                                                                                                test=test)):
+        assert draw(DepthBoundedRandomSampler(3, random.Random(0)), query, 5, test=None) == draw(
+            DepthBoundedRandomSampler(3, random.Random(0)), query, 5)
+    a, b = merged_pair()
+    assert KnownTerms([a, b], None).plain and len(KnownTerms([a, b], None)) == 2
+    _require_distinct_under([a, b], None)

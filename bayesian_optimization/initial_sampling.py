@@ -121,7 +121,7 @@ def distinct_prefix(
     query: Any,
     count: int,
     max_draws_per_term: int = _MAX_DRAWS_PER_TERM,
-    test: DuplicateTest = TERM_EQUALITY,
+    test: DuplicateTest | None = TERM_EQUALITY,
 ) -> tuple[list[Tree[Any]], int]:
     """Take ``count`` **pairwise distinct** inhabitants from one stream of ``sampler``.
 
@@ -165,9 +165,10 @@ def distinct_prefix(
             for samplers that draw with replacement, since a stream that repeats nothing never
             lifts the count above zero; under another test a term it merges with one the design
             holds lifts the count under any sampler.
-        test: When two terms are one evaluation.  Under plain term equality, the default, the scan
-            below stands as written; under another test a repeat is a term the test calls one
-            evaluation with one the design holds, so the design is pairwise distinct under it.
+        test: When two terms are one evaluation; None is term equality, as for the loops.  Under
+            plain term equality, the default, the scan below stands as written; under another test
+            a repeat is a term the test calls one evaluation with one the design holds, so the
+            design is pairwise distinct under it.
             The size-uniform stream, which repeats no term, does deliver terms such a test
             merges, so the count is then not the check described above but the merged terms read
             past.
@@ -190,6 +191,7 @@ def distinct_prefix(
         # initializer answers a population of zero.  The loop below cannot answer it: it stops
         # where a term has just been kept, and an empty design keeps none.
         return [], 0
+    test = TERM_EQUALITY if test is None else test
     plain = type(test) is DuplicateTest
     # Under term equality the scan below compares structurally and hashes nothing.
     held = None if plain else KnownTerms(test=test)

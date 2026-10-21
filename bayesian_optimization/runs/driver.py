@@ -166,8 +166,12 @@ def _require_uninitialized(strategy: AskTellLoop, name: str = "the strategy") ->
 
 
 def _duplicate_test_of(strategy):
-    """The strategy's duplicate test, term equality where it carries none."""
-    return getattr(strategy, "duplicate_test", None) or TERM_EQUALITY
+    """The strategy's duplicate test, term equality where it carries none.
+
+    Asked by ``is None``: a test of the caller's own may be falsy, one with a length of its own.
+    """
+    test = getattr(strategy, "duplicate_test", None)
+    return TERM_EQUALITY if test is None else test
 
 
 def _recorded_test(strategy):
