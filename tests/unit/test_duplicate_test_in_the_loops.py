@@ -301,6 +301,38 @@ def test_nsga2_asks_a_measured_terms_key_a_bounded_number_of_times_however_long_
     assert max(test.asked[term] for term in design) <= 4
 
 
+class TrapOnSecondLook(SameValue):
+    """SameValue that, while armed, refuses to be asked about one term twice in a row: once is the loop holding a term
+    it takes back; a second ask in the same call is a test asked again after the dataset has moved."""
+
+    def __init__(self) -> None:
+        self.armed = False
+        self.last = None
+
+    def key(self, term):
+        if self.armed and self.last is term:
+            raise RuntimeError("asked about the same term again")
+        self.last = term
+        return value(term)
+
+
+def test_nsga2_asks_the_test_nothing_while_it_takes_a_value_back_beyond_holding_the_term():
+    space = expression_space()
+    design, _ = distinct_prefix(SizeUniformSampler(9, random.Random(5)), generator_query(space, EXPR), 6,
+                                test=SameValue())
+    test = TrapOnSecondLook()
+    search = NSGA2(space, EXPR, cost=lambda term: float(term.size), depth_bound=DEPTH, seed=5, duplicate_test=test)
+    search.initialize(design=design)
+    for _ in range(len(design) + 3):
+        suggestion = search.suggest()
+        test.armed, test.last = True, None
+        search.observe(suggestion.candidate, measure(suggestion.candidate))
+        test.armed = False
+    snapshot = search.get_state_snapshot()
+    assert len(snapshot["x_list"]) == len(snapshot["y_list"]) == len(design) + 3
+    assert search.offspring_known > 0, "nothing was answered from the dataset, so no answer asked the test"
+
+
 def test_a_drawn_design_is_pairwise_distinct_under_the_test():
     query = generator_query(expression_space(), EXPR)
     design, rejected = distinct_prefix(DepthBoundedRandomSampler(3, random.Random(0)), query, 5, test=SameValue())
