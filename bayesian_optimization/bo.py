@@ -51,7 +51,7 @@ from .diagnostics import (
     warn_if_exploitation_stalls,
 )
 from .duplicates import DuplicateTest, KnownTerms, one_test
-from .initial_sampling import _sample_fallback_tree
+from .initial_sampling import _MAX_DRAWS_PER_TERM, _sample_fallback_tree
 from .kernels.graph_kernel import clear_kernel_caches
 from .kernels.tree_kernel import OrderedRootedSubtreeKernel
 from .loop import (  # noqa: F401  (re-exported: callers and tests import them from here)
@@ -586,6 +586,10 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         measured and the outstanding ones *under this test*, so a pass never proposes a term the
         test calls one evaluation with either (under repeated measurements, with an outstanding
         one).
+    max_draws_per_term:
+        How many draws in a row a replacement for a duplicate, or a term of the design the loop
+        draws, may look at before the loop gives up; see
+        :class:`~bayesian_optimization.loop.AskTellLoop`.
     """
 
     #: A pass of Bayesian optimization, as the CIFAR driver has always named it in its rows.
@@ -620,6 +624,7 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         repeated_measurements: bool = False,
         max_outstanding: int = 1,
         duplicate_test: DuplicateTest | None = None,
+        max_draws_per_term: int = _MAX_DRAWS_PER_TERM,
     ) -> None:
         # The pair is refused where the caller writes it down, so a mistyped target costs no
         # evaluation of the objective.  ``optimize`` refuses a negative budget in the same way and
@@ -629,6 +634,7 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
         super().__init__(
             search_space, request, initializer=initializer, seed=seed, sampler=sampler,
             max_outstanding=max_outstanding, duplicate_test=duplicate_test,
+            max_draws_per_term=max_draws_per_term,
         )
         self.acquisition_function = acquisition_function
         self.ucb_beta = float(ucb_beta)
@@ -1186,7 +1192,7 @@ class BayesianOptimization(AskTellLoop[NT, T, G]):
                 f"there is no search space to draw a replacement from.{given}"
             )
             raise RuntimeError(msg)
-        candidate = _sample_fallback_tree(self._sampler, self._query(), avoid)
+        candidate = _sample_fallback_tree(self._sampler, self._query(), avoid, self.max_draws_per_term)
         if candidate in avoid:
             raise RuntimeError(
                 f"the fallback sampler returned {candidate}, which has already been "

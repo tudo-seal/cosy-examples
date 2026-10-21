@@ -26,12 +26,14 @@ from bayesian_optimization.runs import (
     load_design_records,
     read_term_pool,
 )
-from bayesian_optimization.runs.driver import run_paired, run_search
+from bayesian_optimization.runs.budgets import StepBudgets
+from bayesian_optimization.runs.driver import _draw_up_front, run_paired, run_search
 from bayesian_optimization.runs.search_program import draw_design
 from tests.spaces import EXPR, expression_space
 from tests.unit.test_duplicate_test_in_the_loops import (
     BOUND,
     DEPTH,
+    Parity,
     SameValue,
     measure,
     merged_pair,
@@ -275,3 +277,14 @@ def test_none_is_term_equality_to_every_function_that_takes_a_test():
     a, b = merged_pair()
     assert KnownTerms([a, b], None).plain and len(KnownTerms([a, b], None)) == 2
     _require_distinct_under([a, b], None)
+
+
+def test_a_draw_up_front_gives_up_at_the_leaders_bound():
+    with pytest.raises(RuntimeError, match="drew 7 terms in a row"):
+        draw_design(DepthBoundedRandomSampler(8, random.Random(0)), _query(), 3, test=Parity(), max_draws_per_term=7)
+    leader = BayesianOptimization(expression_space(), EXPR, sampler=DepthBoundedRandomSampler(8, random.Random(0)), seed=0,
+                                  optimizer=build_acquisition_optimizer(population_size=6, generations=2, depth_bound=4,
+                                                                        seed=0),
+                                  max_draws_per_term=7, duplicate_test=Parity())
+    with pytest.raises(RuntimeError, match="drew 7 terms in a row"):
+        _draw_up_front(leader, 3, then=0, design=None, budgets=StepBudgets(), echo=_quiet)

@@ -68,6 +68,7 @@ from cosy.search import DepthBoundedRandomSampler, Sampler
 
 from .diagnostics import enable_verbose_logging, get_logger
 from .duplicates import DuplicateTest, KnownTerms
+from .initial_sampling import _MAX_DRAWS_PER_TERM
 from .loop import NT, AskTellLoop, G, T
 from .state import Diagnostics, Suggestion
 
@@ -187,6 +188,9 @@ class NSGA2(AskTellLoop[NT, T, G]):
         offspring already waiting in its generation is answered when that one is measured.  So no
         two offspring the test merges are evaluated, and every place of a generation has a value
         when the next population is formed.
+    max_draws_per_term:
+        How many draws in a row a term of the design the loop draws may look at before the loop
+        gives up; see :class:`~bayesian_optimization.loop.AskTellLoop`.
     mutation, recombination, rng, selection_rng:
         The variation's components and generators, each built from ``seed`` where it is not
         given: ``ResolutionMutation`` over a ``DepthBoundedRandomSampler``, ``SubtreeSwap``, the
@@ -217,6 +221,7 @@ class NSGA2(AskTellLoop[NT, T, G]):
         rng: random.Random | None = None,
         selection_rng: random.Random | None = None,
         duplicate_test: DuplicateTest | None = None,
+        max_draws_per_term: int = _MAX_DRAWS_PER_TERM,
     ) -> None:
         if search_space is None:
             raise ValueError(
@@ -225,7 +230,7 @@ class NSGA2(AskTellLoop[NT, T, G]):
             )
         super().__init__(
             search_space, request, initializer=initializer, seed=seed, sampler=sampler,
-            max_outstanding=1, duplicate_test=duplicate_test,
+            max_outstanding=1, duplicate_test=duplicate_test, max_draws_per_term=max_draws_per_term,
         )
         if not callable(cost):
             msg = f"cost is the exact cost of a term, a callable, not {cost!r}"

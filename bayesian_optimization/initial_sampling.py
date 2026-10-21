@@ -98,8 +98,8 @@ def _sample_fallback_tree(
                 msg = (
                     f"the fallback drew {drawn} inhabitants from {sampler!r}, and each one had been "
                     "evaluated or the duplicate test merges it with an evaluated one; under the test "
-                    "the bounded search space appears exhausted, or this many draws are too few for "
-                    "how coarse the test is"
+                    "the bounded search space appears exhausted, or this many draws, the loop's "
+                    "max_draws_per_term, are too few for how coarse the test is"
                 )
             raise RuntimeError(msg)
     if plain:

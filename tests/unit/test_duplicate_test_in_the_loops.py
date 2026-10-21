@@ -410,6 +410,28 @@ def test_a_test_that_raises_while_a_value_is_taken_back_leaves_the_dataset_as_it
         assert len(snapshot["x_list"]) == len(snapshot["y_list"]) == before + 1, phase
 
 
+def test_the_bound_on_draws_in_a_row_is_every_loops_to_set():
+    # Under Parity two terms exhaust the space, so a design of three, or a pass after a design of two, draws only
+    # terms the test merges until the bound gives up.
+    def bayesian_bounded():
+        space = expression_space()
+        return BayesianOptimization(search_space=space, request=EXPR, sampler=DepthBoundedRandomSampler(8, random.Random(0)),
+                                    seed=0, optimizer=_make_ea(space, 0), n_restarts_kernel_optimizer=0,
+                                    max_draws_per_term=7, duplicate_test=Parity())
+
+    def nsga2_bounded():
+        return NSGA2(expression_space(), EXPR, cost=lambda term: float(term.size), depth_bound=DEPTH, seed=0,
+                     sampler=DepthBoundedRandomSampler(8, random.Random(0)), max_draws_per_term=7, duplicate_test=Parity())
+
+    for make in (bayesian_bounded, nsga2_bounded):
+        with pytest.raises(RuntimeError, match="drew 7 terms in a row"):
+            make().initialize(initial_size=3)
+    loop = bayesian_bounded()
+    with pytest.raises(RuntimeError, match="the fallback drew 7 inhabitants"):
+        run(loop, 2, 1)
+    assert bayesian(0).max_draws_per_term == random_search(0).max_draws_per_term == 100
+
+
 def test_a_loops_duplicate_test_is_fixed_when_the_loop_is_built():
     # What the loop holds was sorted under the test it was built with; another one read later would
     # answer about terms held under the first.

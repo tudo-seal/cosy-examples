@@ -29,7 +29,7 @@ from cosy.search import Sampler, SizeUniformSampler, generator_query
 
 from .diagnostics import enable_verbose_logging, get_logger, log_suggestion
 from .duplicates import TERM_EQUALITY, DuplicateTest, KnownTerms
-from .initial_sampling import _sample_fallback_tree, distinct_prefix
+from .initial_sampling import _MAX_DRAWS_PER_TERM, _sample_fallback_tree, distinct_prefix
 from .state import BOState, Diagnostics, Suggestion
 
 NT = TypeVar("NT", bound=Hashable)
@@ -152,7 +152,8 @@ def _require_duplicate_test(value: Any) -> DuplicateTest:
 
 
 def _distinct_dataset(
-    drawn: Sequence[Any], sampler: Sampler, query: Any, count: int, test: DuplicateTest = TERM_EQUALITY
+    drawn: Sequence[Any], sampler: Sampler, query: Any, count: int, test: DuplicateTest = TERM_EQUALITY,
+    max_draws: int = _MAX_DRAWS_PER_TERM,
 ) -> tuple[list[Any], int]:
     """Make an initial design pairwise distinct, keeping what the initializer chose.
 
@@ -184,6 +185,8 @@ def _distinct_dataset(
         test (DuplicateTest): When two terms are one evaluation.  Under plain term equality, the
             default, the scans above stand as written; under another test a repeat is a term the
             test calls one evaluation with a kept one, and the fallback draws past those.
+        max_draws (int): How many draws the fallback looks at for one replacement before it gives
+            up, the loop's ``max_draws_per_term``. (Default value = 100)
 
     Returns:
         tuple[list[Any], int]: The distinct design, and how many repeats were replaced.
@@ -209,7 +212,7 @@ def _distinct_dataset(
             kept.append(candidate)
             seen.add(candidate)
     while len(kept) < count:
-        replacement = _sample_fallback_tree(sampler, query, seen)
+        replacement = _sample_fallback_tree(sampler, query, seen, max_draws)
         if any(replacement == other for other in kept) if plain else replacement in seen:
             msg = (
                 "the fallback returned a term already in the initial design.  It rejects a "
@@ -341,6 +344,12 @@ class AskTellLoop(Generic[NT, T, G]):
         head of one stream the test keeps apart -- and refuses a design handed over as terms that
         holds two it merges; a dataset handed over with its values is taken as it is.  What the
         surrogate conditions on is still the distinct terms.  Read-only once the loop is built.
+    max_draws_per_term:
+        How many draws in a row the loop looks at for one term of its own -- a term of the design
+        it draws, a replacement for a duplicate -- before it gives up, as ``distinct_prefix``
+        bounds them.  Under term equality only a sampler that draws with replacement reaches it;
+        under a coarse duplicate test any sampler can, and the bound may need raising.
+        100 is the bound the loops always used.
     """
 
     #: The phase a pass of this strategy is recorded under in a run's rows and term records.
@@ -356,6 +365,7 @@ class AskTellLoop(Generic[NT, T, G]):
         sampler: Sampler | None = None,
         max_outstanding: int = 1,
         duplicate_test: DuplicateTest | None = None,
+        max_draws_per_term: int = _MAX_DRAWS_PER_TERM,
     ) -> None:
         # The pair is refused where the caller writes it down, so a mistyped target costs no
         # evaluation of the objective.  This reads the arguments, so it is not the guarantee on
@@ -370,6 +380,7 @@ class AskTellLoop(Generic[NT, T, G]):
         self.sampler = sampler
         self.max_outstanding = _require_capacity(max_outstanding)
         self._duplicate_test = _require_duplicate_test(duplicate_test)
+        self.max_draws_per_term = max_draws_per_term
 
         # --- Ask/Tell state ---------------------------------------------------
         self._bo_state: BOState = BOState.UNINITIALIZED
@@ -594,7 +605,8 @@ class AskTellLoop(Generic[NT, T, G]):
             # Under a coarser test the stream holds terms the test merges, and the repair below
             # would replace one from a new stream, which is another design than that head; so the
             # stream is read on past them, as the run layer reads it.
-            return distinct_prefix(self._sampler, self._query(), size, test=self.duplicate_test)
+            return distinct_prefix(self._sampler, self._query(), size,
+                                   max_draws_per_term=self.max_draws_per_term, test=self.duplicate_test)
         # The previous code drew a pool a hundred times the size and thinned it with a
         # greedy determinantal point process, which is related work rather than either of the
         # initializers this loop admits, and it warned and came back short where the stream
@@ -618,7 +630,7 @@ class AskTellLoop(Generic[NT, T, G]):
         # draws may repeat a term.  A guarantee that holds only until someone uses the
         # parameter is the kind of unwritten invariant this API must not have.
         x0_list, repeats = _distinct_dataset(
-            x0_list, self._sampler, self._query(), size, self.duplicate_test
+            x0_list, self._sampler, self._query(), size, self.duplicate_test, self.max_draws_per_term
         )
         if repeats:
             self._logger.info(

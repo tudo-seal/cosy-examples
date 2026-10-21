@@ -74,9 +74,8 @@ class RandomSearch(AskTellLoop[NT, T, G]):
     ) -> None:
         super().__init__(
             search_space, request, seed=seed, sampler=sampler, max_outstanding=max_outstanding,
-            duplicate_test=duplicate_test,
+            duplicate_test=duplicate_test, max_draws_per_term=max_draws_per_term,
         )
-        self.max_draws_per_term = max_draws_per_term
         self._stream: Iterator[Any] | None = None
         # The terms the open stream has delivered, which is what tells a repeat of the stream from
         # a held term it delivers for the first time.

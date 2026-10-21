@@ -32,6 +32,7 @@ from typing import Any
 
 from ..bo import BayesianOptimization
 from ..duplicates import TERM_EQUALITY, DuplicateTest, describe, one_test
+from ..initial_sampling import _MAX_DRAWS_PER_TERM
 from ..loop import AskTellLoop, _require_distinct_under, _require_hashable
 from ..nsga2 import NSGA2
 from ..random_search import RandomSearch
@@ -204,7 +205,9 @@ def _draw_up_front(strategy, size, *, then, design, budgets, echo):
     with step_budget(label, budgets.acquisition_warn):
         started = time.time()
         head, repeats = draw_design(strategy.sampler, strategy.query, size, then=then, design=design,
-                                    test=_duplicate_test_of(strategy))
+                                    test=_duplicate_test_of(strategy),
+                                    max_draws_per_term=getattr(strategy, "max_draws_per_term",
+                                                               _MAX_DRAWS_PER_TERM))
         seconds = time.time() - started
     return head, DesignDraw(size, then, repeats, seconds, drawn=design is None)
 
