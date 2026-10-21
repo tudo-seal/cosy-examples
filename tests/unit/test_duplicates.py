@@ -8,6 +8,7 @@ expressions with one value.
 from __future__ import annotations
 
 import random
+from typing import Any
 
 import pytest
 from cosy.core.tree import Tree
@@ -120,3 +121,55 @@ def test_a_test_that_overrides_same_and_not_key_is_refused_where_it_is_defined()
 
     assert Tree(add, (Tree(lit, ()), Tree(lit, ()))) not in KnownTerms([Tree(lit, ())], KeyOnly())
     assert len(KnownTerms([Tree(lit, ()), Tree(neg, (Tree(neg, (Tree(lit, ()),)),))], BothFromTheBase())) == 1
+
+
+class Counting(SameValue):
+    """SameValue in buckets of three values, counting what it is asked."""
+
+    def __init__(self) -> None:
+        self.keys = self.sames = 0
+
+    def key(self, term):
+        self.keys += 1
+        return value(term) // 3
+
+    def same(self, a, b) -> bool:
+        self.sames += 1
+        return super().same(a, b)
+
+
+def _of_value(n: int) -> Tree[Any]:
+    """A term of value ``n``: a chain of additions, negated below zero."""
+    one: Tree[Any] = Tree(lit, ())
+    if n == 0:
+        return Tree(add, (one, Tree(neg, (one,))))
+    if n < 0:
+        return Tree(neg, (_of_value(-n),))
+    term = one
+    for _ in range(n - 1):
+        term = Tree(add, (term, one))
+    return term
+
+
+def test_a_copy_asks_the_test_nothing_and_a_union_asks_only_of_the_terms_it_adds():
+    query = generator_query(expression_space(), EXPR)
+    terms = [term for term, _ in zip(DepthBoundedRandomSampler(4, random.Random(0)).sample(query), range(60))]
+    test = Counting()
+    held = KnownTerms(terms, test)
+    asked = test.sames
+    assert asked > len(terms), "the buckets must hold several classes, or same() is asked once per term"
+    test.keys = test.sames = 0
+    copy = held.copy()
+    assert (test.keys, test.sames) == (0, 0)
+    assert list(copy) == list(held) and len(copy) == len(held)
+    fresh = _of_value(50)
+    assert fresh not in held
+    test.keys = test.sames = 0
+    both = held.union([fresh])
+    assert test.keys == 1
+    assert len(both) == len(held) + 1 and fresh in both and all(term in both for term in held)
+    values = {value(term) for term in held}
+    beside = _of_value(next(v for v in range(-30, 30) if v not in values and any(u // 3 == v // 3 for u in values)))
+    size = len(held)
+    assert copy.add(beside)
+    assert len(held) == size and beside not in held, "the copy holds its own buckets"

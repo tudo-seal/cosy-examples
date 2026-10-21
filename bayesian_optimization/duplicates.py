@@ -166,24 +166,35 @@ class KnownTerms:
     def union(self, terms: Iterable[Any]) -> KnownTerms:
         """A new holding of these terms and the given ones, under the same test; this one unchanged.
 
+        The test is asked of the given terms only.
+
         Args:
             terms: The terms to add.
 
         Returns:
             KnownTerms: The union.
         """
-        both = KnownTerms(self, self.test)
+        both = self.copy()
         for term in terms:
             both.add(term)
         return both
 
     def copy(self) -> KnownTerms:
-        """A new holding of the same terms under the same test.
+        """A new holding of the same terms under the same test, which it does not ask again.
+
+        The held terms are pairwise apart under the test already, so the copy takes their buckets as
+        they stand: under a test as costly as an isomorphism, holding them anew would ask it of
+        every pair in a bucket.
 
         Returns:
             KnownTerms: The copy.
         """
-        return KnownTerms(self, self.test)
+        clone = KnownTerms(test=self.test)
+        clone._set = set(self._set)
+        clone._order = list(self._order)
+        clone._buckets = {key: list(bucket) for key, bucket in self._buckets.items()}
+        clone._count = self._count
+        return clone
 
     def __contains__(self, term: Any) -> bool:
         if self._plain:
