@@ -14,12 +14,13 @@ import hashlib
 import random
 
 import pytest
+from cosy.core.tree import Tree
 from cosy.search import DepthBoundedRandomSampler, SizeUniformSampler, generator_query
 
 from bayesian_optimization import NSGA2, RandomSearch
 from bayesian_optimization.bo import BayesianOptimization
-from bayesian_optimization.duplicates import TERM_EQUALITY, DuplicateTest
-from bayesian_optimization.initial_sampling import distinct_prefix
+from bayesian_optimization.duplicates import TERM_EQUALITY, DuplicateTest, KnownTerms
+from bayesian_optimization.initial_sampling import _sample_fallback_tree, distinct_prefix
 from tests.integration.test_real_ea_loop import _make_ea
 from tests.spaces import EXPR, add, expression_space, lit, neg
 
@@ -137,6 +138,20 @@ def test_random_search_counts_a_term_the_test_merges_with_a_held_one_against_its
     with pytest.raises(RuntimeError, match="the duplicate test merges with a held one"):
         search.suggest()
     assert sampler.drawn - drawn == 20, "the bound is the number of merged draws in a row, no more, no less"
+
+
+def test_a_draw_that_meets_only_terms_the_test_merges_says_so_rather_than_that_they_were_evaluated():
+    query = generator_query(expression_space(), EXPR)
+    one = Tree(lit, ())
+    seen = KnownTerms([one, Tree(add, (one, one))], Parity())
+    with pytest.raises(RuntimeError, match="the duplicate test merges it with an evaluated one"):
+        _sample_fallback_tree(DepthBoundedRandomSampler(8, random.Random(0)), query, seen)
+    with pytest.raises(RuntimeError, match="the duplicate test keeps apart"):
+        _sample_fallback_tree(SizeUniformSampler(5, random.Random(0)), query, seen, max_draws=10**6)
+    with pytest.raises(RuntimeError, match="the duplicate test merges with one"):
+        distinct_prefix(DepthBoundedRandomSampler(8, random.Random(0)), query, 3, test=Parity())
+    with pytest.raises(RuntimeError, match="the duplicate test keeps apart"):
+        distinct_prefix(SizeUniformSampler(5, random.Random(0)), query, 3, max_draws_per_term=10**6, test=Parity())
 
 
 def test_bayesian_optimization_never_proposes_what_the_test_merges():

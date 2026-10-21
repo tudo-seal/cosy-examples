@@ -80,6 +80,15 @@ class KnownTerms:
         for term in terms:
             self.add(term)
 
+    @property
+    def plain(self) -> bool:
+        """Whether the test is plain term equality, :class:`DuplicateTest` itself.
+
+        Returns:
+            bool: Whether membership is a set's.
+        """
+        return self._plain
+
     def match(self, term: Any) -> Any | None:
         """The held term ``term`` is one evaluation with, or None.
 

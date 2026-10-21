@@ -65,12 +65,16 @@ def _sample_fallback_tree(
     Under the size-uniform sampler the stream lists every inhabitant within the bound exactly once,
     so it enumerates the bounded space and ends, and the loop then falls through to the error.
     ``max_draws`` exists for the samplers that draw *with* replacement, where an exhausted space
-    would otherwise spin forever.  It is deliberately not a fallback value: both exits raise.
+    would otherwise spin forever; under a duplicate test it is reachable under any sampler, since
+    a term the test merges with an evaluated one is no novel draw either.  It is deliberately not
+    a fallback value: both exits raise.
 
     Args:
         sampler: The sampler to draw from.
         query: The generator query naming the search space and the requested type.
-        seen: The candidates this run has already evaluated.
+        seen: The candidates this run has already evaluated; held under the loop's duplicate test
+            (:class:`~bayesian_optimization.duplicates.KnownTerms`), a term the test merges with
+            one of them counts as evaluated.
         max_draws: How many inhabitants to look at before giving up.
 
     Returns:
@@ -80,18 +84,36 @@ def _sample_fallback_tree(
         RuntimeError: If the stream ended, or ``max_draws`` inhabitants were drawn, without a
             novel one among them.
     """
+    plain = not isinstance(seen, KnownTerms) or seen.plain
     for drawn, candidate in enumerate(sampler.sample(query), start=1):
         if candidate not in seen:
             return candidate
         if drawn >= max_draws:
-            raise RuntimeError(
-                f"the fallback drew {drawn} inhabitants from {sampler!r} and every one of them "
-                f"had already been evaluated; the bounded search space appears exhausted"
-            )
-    raise RuntimeError(
-        f"the stream of {sampler!r} ended without an inhabitant outside the "
-        f"{len(seen)} already evaluated ones; the bounded search space is exhausted"
-    )
+            if plain:
+                msg = (
+                    f"the fallback drew {drawn} inhabitants from {sampler!r} and every one of them "
+                    f"had already been evaluated; the bounded search space appears exhausted"
+                )
+            else:
+                msg = (
+                    f"the fallback drew {drawn} inhabitants from {sampler!r}, and each one had been "
+                    "evaluated or the duplicate test merges it with an evaluated one; under the test "
+                    "the bounded search space appears exhausted, or this many draws are too few for "
+                    "how coarse the test is"
+                )
+            raise RuntimeError(msg)
+    if plain:
+        msg = (
+            f"the stream of {sampler!r} ended without an inhabitant outside the "
+            f"{len(seen)} already evaluated ones; the bounded search space is exhausted"
+        )
+    else:
+        msg = (
+            f"the stream of {sampler!r} ended without an inhabitant the duplicate test keeps apart "
+            f"from the {len(seen)} evaluations already held; under the test the bounded search "
+            "space is exhausted"
+        )
+    raise RuntimeError(msg)
 
 
 def distinct_prefix(
@@ -139,9 +161,10 @@ def distinct_prefix(
         count: How many distinct inhabitants to collect.
         max_draws_per_term: How many draws in a row may repeat a term the design already holds
             before this gives up.  The count restarts whenever a term enters the design, so it
-            bounds the waste and not the size of the design.  Only reachable for samplers that
-            draw with replacement, since a stream that repeats nothing never lifts the count
-            above zero.
+            bounds the waste and not the size of the design.  Under term equality only reachable
+            for samplers that draw with replacement, since a stream that repeats nothing never
+            lifts the count above zero; under another test a term it merges with one the design
+            holds lifts the count under any sampler.
         test: When two terms are one evaluation.  Under plain term equality, the default, the scan
             below stands as written; under another test a repeat is a term the test calls one
             evaluation with one the design holds, so the design is pairwise distinct under it.
@@ -152,9 +175,9 @@ def distinct_prefix(
     Raises:
         ValueError: If ``count`` is negative.
         RuntimeError: If the stream ends, or ``max_draws_per_term`` draws in a row repeat a term
-            the design already holds, before ``count`` distinct inhabitants are collected.  A
-            short design is not a design, and topping it up with repeats is the thing this
-            function exists to prevent.
+            the design already holds or one the test merges with it, before ``count`` distinct
+            inhabitants are collected.  A short design is not a design, and topping it up with
+            repeats is the thing this function exists to prevent.
     """
     if count < 0:
         msg = f"a design holds a non-negative number of terms, not {count}"
@@ -178,12 +201,21 @@ def distinct_prefix(
             rejected += 1
             repeats_in_a_row += 1
             if repeats_in_a_row >= max_draws_per_term:
-                msg = (
-                    f"{sampler!r} repeated a term the design already holds "
-                    f"{repeats_in_a_row} times in a row, with {len(drawn)} of the {count} "
-                    f"terms collected.  The bounded search space appears too small for this "
-                    f"design"
-                )
+                if plain:
+                    msg = (
+                        f"{sampler!r} repeated a term the design already holds "
+                        f"{repeats_in_a_row} times in a row, with {len(drawn)} of the {count} "
+                        f"terms collected.  The bounded search space appears too small for this "
+                        f"design"
+                    )
+                else:
+                    msg = (
+                        f"{sampler!r} drew {repeats_in_a_row} terms in a row that repeat a term the "
+                        f"design holds or that the duplicate test merges with one, with "
+                        f"{len(drawn)} of the {count} terms collected.  Under the test the bounded "
+                        "search space appears too small for this design, or max_draws_per_term too "
+                        "low for how coarse the test is"
+                    )
                 raise RuntimeError(msg)
         else:
             drawn.append(candidate)
@@ -191,11 +223,19 @@ def distinct_prefix(
             if len(drawn) == count:
                 return drawn, rejected
             repeats_in_a_row = 0
-    msg = (
-        f"the stream of {sampler!r} ended after {len(drawn)} distinct inhabitants "
-        f"({rejected} repeats rejected) and the design asks for {count}; within its bound the "
-        f"space holds fewer inhabitants than the run spends"
-    )
+    if plain:
+        msg = (
+            f"the stream of {sampler!r} ended after {len(drawn)} distinct inhabitants "
+            f"({rejected} repeats rejected) and the design asks for {count}; within its bound the "
+            f"space holds fewer inhabitants than the run spends"
+        )
+    else:
+        msg = (
+            f"the stream of {sampler!r} ended after {len(drawn)} inhabitants the duplicate test "
+            f"keeps apart ({rejected} repeated or merged ones rejected) and the design asks for "
+            f"{count}; within its bound the space holds fewer evaluations under the test than the "
+            "run spends"
+        )
     raise RuntimeError(msg)
 
 
