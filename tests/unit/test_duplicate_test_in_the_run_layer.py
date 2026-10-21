@@ -8,14 +8,23 @@ those of :mod:`tests.unit.test_duplicate_test_in_the_loops`: one value, one eval
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import random
+from collections.abc import Callable
+from typing import Any
 
 import pytest
 from cosy.search import DepthBoundedRandomSampler, SizeUniformSampler, generator_query
 
 from bayesian_optimization import NSGA2, BayesianOptimization, RandomSearch
-from bayesian_optimization.duplicates import TERM_EQUALITY, DuplicateTest, KnownTerms, describe
+from bayesian_optimization.duplicates import (
+    TERM_EQUALITY,
+    DuplicateTest,
+    KnownTerms,
+    describe,
+    one_test,
+)
 from bayesian_optimization.initial_sampling import distinct_prefix
 from bayesian_optimization.loop import _require_distinct_under
 from bayesian_optimization.runs import (
@@ -288,3 +297,80 @@ def test_a_draw_up_front_gives_up_at_the_leaders_bound():
                                   max_draws_per_term=7, duplicate_test=Parity())
     with pytest.raises(RuntimeError, match="drew 7 terms in a row"):
         _draw_up_front(leader, 3, then=0, design=None, budgets=StepBudgets(), echo=_quiet)
+
+
+def _reading(term):
+    """A network reading, as a test of a caller's own might hold one."""
+    return value(term)
+
+
+@dataclasses.dataclass(frozen=True)
+class ReaderTest(DuplicateTest):
+    """A test holding a function: its dataclass repr carries the function's address, which no other process shares."""
+
+    reader: Callable[[Any], Any] = _reading
+
+    def key(self, term):
+        return self.reader(term)
+
+    def same(self, a, b) -> bool:
+        return bool(self.reader(a) == self.reader(b))
+
+
+class Configured(DuplicateTest):
+    """Values agreeing modulo ``k``, a configuration it names where a run records it."""
+
+    def __init__(self, k: int) -> None:
+        self.k = k
+
+    def key(self, term):
+        return value(term) % self.k
+
+    def same(self, a, b) -> bool:
+        return value(a) % self.k == value(b) % self.k
+
+    def recorded_as(self) -> str:
+        return f"{super().recorded_as()}(k={self.k})"
+
+
+def test_a_test_is_recorded_by_its_class_and_by_the_configuration_it_names_never_by_its_repr():
+    assert describe(ReaderTest()) == f"{ReaderTest.__module__}.{ReaderTest.__qualname__}"
+    assert "0x" not in repr(describe(ReaderTest())) and "0x" in repr(ReaderTest())
+    assert describe(Configured(7)).endswith(".Configured(k=7)")
+    assert describe(None) == describe(TERM_EQUALITY) == describe(DuplicateTest()) == "term equality"
+    assert one_test(None, TERM_EQUALITY) and one_test(DuplicateTest(), None) and one_test(None, None)
+    assert not one_test(None, SameValue())
+
+
+def test_a_design_measured_under_one_configuration_is_not_resumed_under_another(tmp_path):
+    _ran(tmp_path / "seven.csv", _searching(Configured(7)), n_design=3)
+    seven = load_design_records(RunArtifacts(str(tmp_path / "seven.csv")).path("terms"), {})
+    with pytest.raises(ValueError, match="measured under the duplicate test"):
+        _ran(tmp_path / "thousand.csv", _searching(Configured(1000)), resume=seven)
+    _ran(tmp_path / "again.csv", _searching(Configured(7)), resume=seven)
+
+
+class Drifting(SameValue):
+    """SameValue whose recorded name changes with use -- against the contract, and a paired run must not mind."""
+
+    def __init__(self) -> None:
+        self.asked = 0
+
+    def key(self, term):
+        self.asked += 1
+        return value(term)
+
+    def recorded_as(self) -> str:
+        return f"{super().recorded_as()}({self.asked})"
+
+    def __repr__(self) -> str:
+        return f"Drifting(asked={self.asked})"
+
+
+def test_the_arms_of_a_paired_run_are_held_to_one_test_once_before_anything_is_drawn(tmp_path):
+    test = Drifting()
+    strategies = {"first": _searching(test, 5), "second": _searching(test, 5)}
+    outcomes = run_paired(strategies, lambda term: {"score": measure(term)}, schema=SCHEMA, n_design=4, n_passes=2,
+                          csv_paths={name: str(tmp_path / f"{name}.csv") for name in strategies},
+                          pretty_algebra=dict, echo=_quiet)
+    assert set(outcomes) == {"first", "second"}

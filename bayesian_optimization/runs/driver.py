@@ -843,11 +843,12 @@ def run_paired(
     )}
     header, records = read_term_pool(RunArtifacts(csv_paths[first]).path("terms"))
     # in the order the design was drawn in, whatever order its rows completed in
+    # The arms were held to one test before anything was drawn (one_test, above), so the design is
+    # not held to the leader's recorded name again: a refusal here would come after its run.
     shared = ResumedDesign(
         sorted((record for record in records if record.phase == DESIGN_PHASE),
                key=lambda record: record.index),
         header.get("design_origin", "drawn"),
-        header.get("duplicate_test", "term equality"),
     )
     # A design the first run took over under a reading carries that reading's values, which the
     # objective may not read off the metrics; the other runs take it over under the same reading.

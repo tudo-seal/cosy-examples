@@ -38,7 +38,9 @@ class DuplicateTest:
     Where two tests must be one -- the strategies of a paired run, which are compared on one
     design -- they are one when :func:`one_test` says so: the same object, both term equality, or
     equal by the class's own ``==``. A test whose instances differ by a configuration is one object
-    handed to each, or defines ``__eq__`` (and ``__hash__``) over that configuration.
+    handed to each, or defines ``__eq__`` (and ``__hash__``) over that configuration. A run records
+    its test by :meth:`recorded_as`, and a resumed design is held to that name; a test whose
+    configuration changes which terms it merges names the configuration there.
     """
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
@@ -50,6 +52,23 @@ class DuplicateTest:
                 "equality; give key() a bucket that the terms same() merges share"
             )
             raise TypeError(msg)
+
+    def recorded_as(self) -> str:
+        """The name a run records this test under, and holds a resumed design to.
+
+        ``"term equality"`` for this class itself; otherwise the test's qualified class name. A
+        test whose configuration changes which terms it merges names that configuration here, as a
+        function of the configuration alone: an earlier process wrote the name a resume is held to,
+        so an address, a cache or a count in it would refuse a resume of the very same test, and a
+        configuration left out would let another one resume.
+
+        Returns:
+            str: The name.
+        """
+        cls = type(self)
+        if cls is DuplicateTest:
+            return "term equality"
+        return f"{cls.__module__}.{cls.__qualname__}"
 
     def key(self, term: Any) -> Hashable:
         """The bucket a term falls in; two terms in different buckets are never one evaluation.
@@ -80,40 +99,37 @@ class DuplicateTest:
 TERM_EQUALITY = DuplicateTest()
 
 
-def describe(test: DuplicateTest) -> str:
-    """The name a run records its duplicate test under.
+def describe(test: DuplicateTest | None) -> str:
+    """The name a run records its duplicate test under: :meth:`DuplicateTest.recorded_as`.
 
-    ``"term equality"`` for :class:`DuplicateTest` itself, however given; otherwise the test's
-    qualified class name, followed by its ``repr`` where its class defines one, which is where a test
-    whose instances differ by a configuration says which one it is.
+    Never the test's ``repr``, which may carry an address or a cache.
 
     Args:
-        test: The test.
+        test: The test; None is term equality, as for the loops.
 
     Returns:
         str: The name.
     """
-    if type(test) is DuplicateTest:
-        return "term equality"
-    cls = type(test)
-    name = f"{cls.__module__}.{cls.__qualname__}"
-    return f"{name}: {test!r}" if cls.__repr__ is not object.__repr__ else name
+    return (TERM_EQUALITY if test is None else test).recorded_as()
 
 
-def one_test(a: DuplicateTest, b: DuplicateTest) -> bool:
+def one_test(a: DuplicateTest | None, b: DuplicateTest | None) -> bool:
     """Whether two duplicate tests are one.
 
     They are where they are the same object, where both are term equality (:class:`DuplicateTest`
-    itself, however many instances), or where the class's own ``==`` says so; without an ``__eq__``
-    of its own, two instances of one class are two tests, since a configuration may tell them apart.
+    itself, however many instances, or None), or where the class's own ``==`` says so; without an
+    ``__eq__`` of its own, two instances of one class are two tests, since a configuration may tell
+    them apart.
 
     Args:
-        a: A test.
-        b: A test.
+        a: A test; None is term equality.
+        b: A test; None is term equality.
 
     Returns:
         bool: Whether they are one.
     """
+    a = TERM_EQUALITY if a is None else a
+    b = TERM_EQUALITY if b is None else b
     if a is b or (type(a) is DuplicateTest and type(b) is DuplicateTest):
         return True
     return type(a) is type(b) and bool(a == b)
