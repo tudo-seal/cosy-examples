@@ -377,6 +377,58 @@ def test_a_layer_with_several_outputs_produces_a_parallel_edge():
     assert adjacency[node_d][node_e] == 1.0
 
 
+class CountingLabel:
+    """A layer label that counts how often the algebra spells it out.
+
+    A repository label is a dataclass, and the algebra writes its ``repr`` into the layer's node name, so every spelling walks the
+    label's fields.
+    """
+
+    def __init__(self) -> None:
+        self.spelled = 0
+
+    def __repr__(self) -> str:
+        self.spelled += 1
+        return "Counted()"
+
+
+LAYER_COMBINATORS = (
+    "linear_layer", "conv2d", "maxpool2d", "batchnorm2d", "sigmoid", "relu", "tanh", "sum", "product", "copy",
+)
+
+
+@pytest.mark.parametrize("deduplicate", [False, True])
+@pytest.mark.parametrize(
+    "combinator", [*LAYER_COMBINATORS, *(f"{combinator}_h1" for combinator in LAYER_COMBINATORS)]
+)
+def test_a_layer_spells_its_name_once_however_wide_it_is(combinator, deduplicate):
+    """A layer of three inputs and 64 outputs: its edges, 64 outputs and one position, its label spelled once.
+
+    The outputs are one per wire, and in the CNN repository a wire is a feature, so a layer can be 65 536 wide. A name built
+    per wire spells the label once per feature and per input, and on such widths that was most of what converting a term to
+    its graph cost. The name is the same for every wire, so building it once changes no value.
+    """
+    label = CountingLabel()
+    arguments = (label, 3, 64) if combinator.endswith("_h1") else (label, 3, 64, *([None] * 7))
+    place = edgelist_algebra(False, deduplicate=deduplicate)[combinator](*arguments)
+    edges, outputs, positions = place((X0, Y0), ["x", "x", "y"])
+    assert label.spelled == 1
+    node = "(Counted(), 3, 64)" + str((X0, Y0))
+    assert outputs == [node] * 64
+    assert positions == {node: (X0, Y0)}
+    expected = [("x", node), ("y", node)] if deduplicate else [("x", node), ("x", node), ("y", node)]
+    assert edges == expected
+
+
+def test_a_coarser_node_keeps_its_name_on_every_wire():
+    """From granularity 2 a layer is a ``node``: the same edges, outputs and position, named by its coordinate alone."""
+    edges, outputs, positions = edgelist_algebra(False)["node"](3, 64)((X0, Y0), ["x", "x", "y"])
+    node = "node" + str((X0, Y0))
+    assert outputs == [node] * 64
+    assert positions == {node: (X0, Y0)}
+    assert edges == [("x", node), ("x", node), ("y", node)]
+
+
 # ---------------------------------------------------------------------------
 # as_DAMG, the relabel and what its regular expression does and does not reach
 # ---------------------------------------------------------------------------

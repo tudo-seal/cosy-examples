@@ -46,6 +46,7 @@ TERM_DEFINITIONS = {
     "edgelist_learner",
     "_beside_edgelists",
     "_before_edgelists",
+    "_layer_edges",
     "edgelist_algebra",
     "hierarchy_algebra",
     "request_algebra",

@@ -209,6 +209,16 @@ def _before_edgelists(x, y, id, inputs):
     return second[0] + first[0], second[1], second[2] | first[2]
 
 
+def _layer_edges(name, id, inputs, o, sources):
+    """One layer read as edges: an edge from each source it reads, its name on every output wire, and its position.
+
+    The name is built once and shared by the wires. In the CNN repository a wire is a feature, so a layer can be tens of
+    thousands of wires wide, and a name built per wire spelled the label's ``repr`` once per feature, which was most of what
+    converting a term to its graph cost. The value is the same: every output of a layer carries the layer's name.
+    """
+    return [(x, name) for x in sources(inputs)], [name] * o, {name: id}
+
+
 def edgelist_algebra(verbose=False, deduplicate=False):
         """Interpret a term as the edge list of the computation graph it denotes.
 
@@ -237,45 +247,25 @@ def edgelist_algebra(verbose=False, deduplicate=False):
 
             "swap": (lambda io, n, m, para1, para2, para3, para4, para5, para6, para7, para8, para9, para10, para11, para12, para13, para14, para15, para16: lambda id, inputs: ([], inputs[n:] + inputs[:n], {})),
 
-            "linear_layer": (lambda l, i, o, para1, para2, para3, para4, para5, para6, para7: lambda id, inputs: (
-                [(x, str((l, i, o)) + str(id)) for x in sources(inputs)], [str((l, i, o)) + str(id) for _ in range(o)],
-                {str((l, i, o)) + str(id): id})),
+            "linear_layer": (lambda l, i, o, para1, para2, para3, para4, para5, para6, para7: lambda id, inputs: _layer_edges(str((l, i, o)) + str(id), id, inputs, o, sources)),
 
-            "conv2d": (lambda l, i, o, para1, para2, para3, para4, para5, para6, para7: lambda id, inputs: (
-                [(x, str((l, i, o)) + str(id)) for x in sources(inputs)], [str((l, i, o)) + str(id) for _ in range(o)],
-                {str((l, i, o)) + str(id): id})),
+            "conv2d": (lambda l, i, o, para1, para2, para3, para4, para5, para6, para7: lambda id, inputs: _layer_edges(str((l, i, o)) + str(id), id, inputs, o, sources)),
 
-            "maxpool2d": (lambda l, i, o, para1, para2, para3, para4, para5, para6, para7: lambda id, inputs: (
-                [(x, str((l, i, o)) + str(id)) for x in sources(inputs)], [str((l, i, o)) + str(id) for _ in range(o)],
-                {str((l, i, o)) + str(id): id})),
+            "maxpool2d": (lambda l, i, o, para1, para2, para3, para4, para5, para6, para7: lambda id, inputs: _layer_edges(str((l, i, o)) + str(id), id, inputs, o, sources)),
 
-            "batchnorm2d": (lambda l, i, o, para1, para2, para3, para4, para5, para6, para7: lambda id, inputs: (
-                [(x, str((l, i, o)) + str(id)) for x in sources(inputs)], [str((l, i, o)) + str(id) for _ in range(o)],
-                {str((l, i, o)) + str(id): id})),
+            "batchnorm2d": (lambda l, i, o, para1, para2, para3, para4, para5, para6, para7: lambda id, inputs: _layer_edges(str((l, i, o)) + str(id), id, inputs, o, sources)),
 
-            "sigmoid": (lambda l, i, o, para1, para2, para3, para4, para5, para6, para7: lambda id, inputs: (
-                [(x, str((l, i, o)) + str(id)) for x in sources(inputs)], [str((l, i, o)) + str(id) for _ in range(o)],
-                {str((l, i, o)) + str(id): id})),
+            "sigmoid": (lambda l, i, o, para1, para2, para3, para4, para5, para6, para7: lambda id, inputs: _layer_edges(str((l, i, o)) + str(id), id, inputs, o, sources)),
 
-            "relu": (lambda l, i, o, para1, para2, para3, para4, para5, para6, para7: lambda id, inputs: (
-                [(x, str((l, i, o)) + str(id)) for x in sources(inputs)], [str((l, i, o)) + str(id) for _ in range(o)],
-                {str((l, i, o)) + str(id): id})),
+            "relu": (lambda l, i, o, para1, para2, para3, para4, para5, para6, para7: lambda id, inputs: _layer_edges(str((l, i, o)) + str(id), id, inputs, o, sources)),
 
-            "tanh": (lambda l, i, o, para1, para2, para3, para4, para5, para6, para7: lambda id, inputs: (
-                [(x, str((l, i, o)) + str(id)) for x in sources(inputs)], [str((l, i, o)) + str(id) for _ in range(o)],
-                {str((l, i, o)) + str(id): id})),
+            "tanh": (lambda l, i, o, para1, para2, para3, para4, para5, para6, para7: lambda id, inputs: _layer_edges(str((l, i, o)) + str(id), id, inputs, o, sources)),
 
-            "sum": (lambda l, i, o, para1, para2, para3, para4, para5, para6, para7: lambda id, inputs: (
-                [(x, str((l, i, o)) + str(id)) for x in sources(inputs)], [str((l, i, o)) + str(id) for _ in range(o)],
-                {str((l, i, o)) + str(id): id})),
+            "sum": (lambda l, i, o, para1, para2, para3, para4, para5, para6, para7: lambda id, inputs: _layer_edges(str((l, i, o)) + str(id), id, inputs, o, sources)),
 
-            "product": (lambda l, i, o, para1, para2, para3, para4, para5, para6, para7: lambda id, inputs: (
-                [(x, str((l, i, o)) + str(id)) for x in sources(inputs)], [str((l, i, o)) + str(id) for _ in range(o)],
-                {str((l, i, o)) + str(id): id})),
+            "product": (lambda l, i, o, para1, para2, para3, para4, para5, para6, para7: lambda id, inputs: _layer_edges(str((l, i, o)) + str(id), id, inputs, o, sources)),
 
-            "copy": (lambda l, i, o, para1, para2, para3, para4, para5, para6, para7: lambda id, inputs: (
-                [(x, str((l, i, o)) + str(id)) for x in sources(inputs)], [str((l, i, o)) + str(id) for _ in range(o)],
-                {str((l, i, o)) + str(id): id})),
+            "copy": (lambda l, i, o, para1, para2, para3, para4, para5, para6, para7: lambda id, inputs: _layer_edges(str((l, i, o)) + str(id), id, inputs, o, sources)),
 
             "beside_singleton": (lambda i, o, ls, para, x: x),
 
@@ -308,45 +298,25 @@ def edgelist_algebra(verbose=False, deduplicate=False):
             "swap_h1": (
                 lambda io, n, m: lambda id, inputs: ([], inputs[n:] + inputs[:n], {})),
 
-            "linear_layer_h1": (lambda l, i, o: lambda id, inputs: (
-                [(x, str((l, i, o)) + str(id)) for x in sources(inputs)], [str((l, i, o)) + str(id) for _ in range(o)],
-                {str((l, i, o)) + str(id): id})),
+            "linear_layer_h1": (lambda l, i, o: lambda id, inputs: _layer_edges(str((l, i, o)) + str(id), id, inputs, o, sources)),
 
-            "conv2d_h1": (lambda l, i, o: lambda id, inputs: (
-                [(x, str((l, i, o)) + str(id)) for x in sources(inputs)], [str((l, i, o)) + str(id) for _ in range(o)],
-                {str((l, i, o)) + str(id): id})),
+            "conv2d_h1": (lambda l, i, o: lambda id, inputs: _layer_edges(str((l, i, o)) + str(id), id, inputs, o, sources)),
 
-            "maxpool2d_h1": (lambda l, i, o: lambda id, inputs: (
-                [(x, str((l, i, o)) + str(id)) for x in sources(inputs)], [str((l, i, o)) + str(id) for _ in range(o)],
-                {str((l, i, o)) + str(id): id})),
+            "maxpool2d_h1": (lambda l, i, o: lambda id, inputs: _layer_edges(str((l, i, o)) + str(id), id, inputs, o, sources)),
 
-            "batchnorm2d_h1": (lambda l, i, o: lambda id, inputs: (
-                [(x, str((l, i, o)) + str(id)) for x in sources(inputs)], [str((l, i, o)) + str(id) for _ in range(o)],
-                {str((l, i, o)) + str(id): id})),
+            "batchnorm2d_h1": (lambda l, i, o: lambda id, inputs: _layer_edges(str((l, i, o)) + str(id), id, inputs, o, sources)),
 
-            "sigmoid_h1": (lambda l, i, o: lambda id, inputs: (
-                [(x, str((l, i, o)) + str(id)) for x in sources(inputs)], [str((l, i, o)) + str(id) for _ in range(o)],
-                {str((l, i, o)) + str(id): id})),
+            "sigmoid_h1": (lambda l, i, o: lambda id, inputs: _layer_edges(str((l, i, o)) + str(id), id, inputs, o, sources)),
 
-            "relu_h1": (lambda l, i, o: lambda id, inputs: (
-                [(x, str((l, i, o)) + str(id)) for x in sources(inputs)], [str((l, i, o)) + str(id) for _ in range(o)],
-                {str((l, i, o)) + str(id): id})),
+            "relu_h1": (lambda l, i, o: lambda id, inputs: _layer_edges(str((l, i, o)) + str(id), id, inputs, o, sources)),
 
-            "tanh_h1": (lambda l, i, o: lambda id, inputs: (
-                [(x, str((l, i, o)) + str(id)) for x in sources(inputs)], [str((l, i, o)) + str(id) for _ in range(o)],
-                {str((l, i, o)) + str(id): id})),
+            "tanh_h1": (lambda l, i, o: lambda id, inputs: _layer_edges(str((l, i, o)) + str(id), id, inputs, o, sources)),
 
-            "sum_h1": (lambda l, i, o: lambda id, inputs: (
-                [(x, str((l, i, o)) + str(id)) for x in sources(inputs)], [str((l, i, o)) + str(id) for _ in range(o)],
-                {str((l, i, o)) + str(id): id})),
+            "sum_h1": (lambda l, i, o: lambda id, inputs: _layer_edges(str((l, i, o)) + str(id), id, inputs, o, sources)),
 
-            "product_h1": (lambda l, i, o: lambda id, inputs: (
-                [(x, str((l, i, o)) + str(id)) for x in sources(inputs)], [str((l, i, o)) + str(id) for _ in range(o)],
-                {str((l, i, o)) + str(id): id})),
+            "product_h1": (lambda l, i, o: lambda id, inputs: _layer_edges(str((l, i, o)) + str(id), id, inputs, o, sources)),
 
-            "copy_h1": (lambda l, i, o: lambda id, inputs: (
-                [(x, str((l, i, o)) + str(id)) for x in sources(inputs)], [str((l, i, o)) + str(id) for _ in range(o)],
-                {str((l, i, o)) + str(id): id})),
+            "copy_h1": (lambda l, i, o: lambda id, inputs: _layer_edges(str((l, i, o)) + str(id), id, inputs, o, sources)),
 
             "beside_singleton_h1": (lambda i, o, x: x),
 
@@ -360,9 +330,7 @@ def edgelist_algebra(verbose=False, deduplicate=False):
 
             "learner_h1": (lambda i, o, e, loss, optimizer, scheduler, model: edgelist_learner(model, loss, optimizer, e, scheduler=scheduler, verbose=verbose)),
 
-            "node": (lambda i, o: lambda id, inputs: (
-                [(x, "node" + str(id)) for x in sources(inputs)], ["node" + str(id) for _ in range(o)],
-                {"node" + str(id): id})),
+            "node": (lambda i, o: lambda id, inputs: _layer_edges("node" + str(id), id, inputs, o, sources)),
 
             "loss": "loss",
 
