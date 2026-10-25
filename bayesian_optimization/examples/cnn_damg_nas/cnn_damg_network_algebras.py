@@ -301,6 +301,36 @@ class CopyModule(nn.Module):
 #: denotes, only how that network is trained.
 _DEFAULT_BATCH_SIZE = 128
 
+#: How many examples one inference pass of an evaluation holds.  A pass over a whole held-out set at
+#: once needs memory in proportion to the set: a wide network over the 10 000 CIFAR test images
+#: needed more than a 24 GB card holds, while its training at a batch of 128 needed a fraction of
+#: it.  A network in eval mode answers each example independently of the others in its pass, so
+#: the pass is cut into chunks and the outputs are put back together in order.
+EVALUATION_CHUNK = 500
+
+
+def forward_in_chunks(model, x, chunk=EVALUATION_CHUNK):
+    """The model's outputs over ``x``, ``chunk`` examples at a time, concatenated in order.
+
+    Args:
+        model (nn.Module): The network, in eval mode.
+        x (torch.Tensor): The examples, one per row.
+        chunk (int): The most examples one pass holds.
+
+    Returns:
+        torch.Tensor: What ``model(x)`` returns, one row per example, up to the rounding of the
+        kernels a device may pick for another batch size.
+
+    Raises:
+        ValueError: If ``chunk`` is below 1.
+    """
+    if chunk < 1:
+        msg = f"a pass holds at least one example, not {chunk}"
+        raise ValueError(msg)
+    if x.shape[0] <= chunk:
+        return model(x)
+    return torch.cat([model(x[start:start + chunk]) for start in range(0, x.shape[0], chunk)])
+
 
 @dataclass(frozen=True)
 class TrainingProtocol:
@@ -535,9 +565,9 @@ def learner(i, open_model, loss_fn, optim, n_epochs, x, y, x_test, y_test, batch
     model.eval()
     with torch.inference_mode():
         if is_classification:
-            loss = loss_fn(model(x_test), y_test)
+            loss = loss_fn(forward_in_chunks(model, x_test), y_test)
         else:
-            loss = loss_fn(model(x_test).ravel().reshape_as(y_test), y_test)
+            loss = loss_fn(forward_in_chunks(model, x_test).ravel().reshape_as(y_test), y_test)
         return loss.item()
 
 

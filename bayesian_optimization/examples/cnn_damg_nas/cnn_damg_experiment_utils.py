@@ -112,6 +112,7 @@ from bayesian_optimization.examples.cnn_damg_nas.cnn_damg_network_algebras impor
     P50_CORRECTED_DIGITS,
     TrainingProtocol,
     apply_he_initialisation,
+    forward_in_chunks,
     pytorch_components_algebra,
 )
 from bayesian_optimization.examples.cnn_damg_nas.cnn_damg_network_algebras import (
@@ -455,12 +456,12 @@ def _train_candidate_once(tree, x, y, x_val, y_val, batch_size, protocol,
 
     # `learner` already moved the model onto the data's device and trained it in place.
     with torch.inference_mode():
-        predictions = model(x_val).argmax(dim=-1)
+        predictions = forward_in_chunks(model, x_val).argmax(dim=-1)
         accuracy = (predictions == y_val).float().mean().item()
         # Recorded, never optimized against, see the docstring.
         test_accuracy = None
         if x_test is not None and y_test is not None:
-            test_predictions = model(x_test).argmax(dim=-1)
+            test_predictions = forward_in_chunks(model, x_test).argmax(dim=-1)
             test_accuracy = (test_predictions == y_test).float().mean().item()
 
     return {
