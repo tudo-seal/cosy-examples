@@ -585,8 +585,7 @@ class DAMGrepository(SwapLaws):
                 value = tuple(map(self.para_tuples.normalize, value))
             while(not self.normalform(value)):
                 new_value = value
-                index = 0 # index in new_value
-                for l, r in zip(value[:-1], value[1:]):
+                for index, (l, r) in enumerate(zip(value[:-1], value[1:])):
                     if _is_singleton_tuple(l):
                         label, i, o = l[0]
                         parts = _swap_parts(label)
@@ -678,7 +677,9 @@ class DAMGrepository(SwapLaws):
                                                 after_i = new_value[index + 2:]
                                                 new_value = before_i + (((("swap", m + n, p), m + n + p, m + n + p),),) + after_i
                                                 break
-                for l, m, r in zip(value[:-2], value[1:-1], value[2:]):
+                for index, (l, m, r) in enumerate(zip(value[:-2], value[1:-1], value[2:])):
+                    if new_value is not value: # one rewrite per round: a pair rewritten above moved the indices
+                        break
                     if _is_singleton_tuple(l):
                         left_label, left_i, left_o = l[0]
                         left_parts = _swap_parts(left_label)
