@@ -78,6 +78,8 @@ NETWORK_DEFINITIONS = {
     "BeforeModule",
     "CopyModule",
     "_DEFAULT_BATCH_SIZE",
+    "EVALUATION_CHUNK",
+    "forward_in_chunks",
     "TrainingProtocol",
     "P50",
     "P50_CORRECTED_CIFAR",
