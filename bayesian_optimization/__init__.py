@@ -50,6 +50,7 @@ from .kernels.kernel_base import StructuredKernelBase
 from .kernels.tree_kernel import OrderedRootedSubtreeKernel, SubsetTreeKernel
 from .loop import AskTellLoop
 from .nsga2 import NSGA2, FormedGeneration
+from .random_forest import RandomForestPosterior, RandomForestSurrogate
 from .random_search import RandomSearch
 from .state import BOState, Diagnostics, Suggestion
 
@@ -79,6 +80,8 @@ __all__ = [
     "OrderedRootedSubtreeKernel",
     "PiStrategy",
     "ProbabilityOfImprovement",
+    "RandomForestPosterior",
+    "RandomForestSurrogate",
     "RandomSearch",
     "SampleMaximizer",
     "StructuredKernelBase",

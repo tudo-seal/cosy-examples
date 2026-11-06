@@ -132,6 +132,7 @@ is to be minimized is negated on the way in and the reported optimum on the way 
 | `loop.py` | `AskTellLoop`, the ask and tell engine every strategy runs: states, dataset, design phase |
 | `bo.py` | `BayesianOptimization`, the closed loop and the Gaussian process strategy on the engine |
 | `random_search.py` | `RandomSearch`, design and passes from one stream of a sampler, on the same engine |
+| `random_forest.py` | `RandomForestSurrogate`, a random forest on explicit features of the terms in place of the Gaussian process |
 | `acquisition_function.py` | the three scores, `ExpectedImprovement` and its two siblings |
 | `acquisition_optimizer.py` | `AcquisitionOptimizer`, an acquisition as an evolutionary fitness |
 | `initial_sampling.py` | `KernelDiverseInitializer` and the weight strategies it draws with |
@@ -354,6 +355,15 @@ defaults would reach nothing and are refused, at construction and again before a
 reads what only a Gaussian process answers -- its calibration, marginal likelihood and fitted kernel
 -- off any posterior that has them, and leaves those cells empty or `null` for one that has not; the
 constructor kernel's Gram matrix is read only where the Gaussian process is the surrogate.
+
+One such surrogate ships with the package: `RandomForestSurrogate`, scikit-learn's random forest on
+explicit features of the terms, whose posterior answers the mean of the trees' predictions and their
+standard deviation, the spread SMAC reads as the model's uncertainty. The features come from a
+`TermFeatures` map. `WeisfeilerLehmanFeatures` counts the labels a `WeisfeilerLehmanKernel` over the
+same translation and round count compares, so the kernel's normalized Gram is the normalized Gram
+of those counts; `ConcatenatedFeatures` sets several such maps side by side. A fit copies the map,
+fixes its columns on that fit's terms, and answers a posterior of its own; a label only a later
+term carries is dropped, since no tree could split on it.
 
 ## Acquisition functions
 
