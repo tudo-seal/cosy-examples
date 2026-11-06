@@ -36,6 +36,11 @@ from .initial_sampling import (
     PiStrategy,
     exponential_decay,
 )
+from .kernels.graph_features import (
+    ConcatenatedFeatures,
+    TermFeatures,
+    WeisfeilerLehmanFeatures,
+)
 from .kernels.graph_kernel import (
     HierarchicalWLKernel,
     WeisfeilerLehmanKernel,
@@ -58,6 +63,7 @@ __all__ = [
     "BOState",
     "BayesianOptimization",
     "CalibrationRead",
+    "ConcatenatedFeatures",
     "Diagnostics",
     "ExpectedHypervolumeImprovement",
     "ExpectedImprovement",
@@ -79,9 +85,11 @@ __all__ = [
     "SubsetTreeKernel",
     "Suggestion",
     "Surrogate",
+    "TermFeatures",
     "TraceRead",
     "TraceRecord",
     "UpperConfidenceBound",
+    "WeisfeilerLehmanFeatures",
     "WeisfeilerLehmanKernel",
     "clear_kernel_caches",
     "exponential_decay",

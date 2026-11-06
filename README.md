@@ -135,7 +135,7 @@ is to be minimized is negated on the way in and the reported optimum on the way 
 | `acquisition_function.py` | the three scores, `ExpectedImprovement` and its two siblings |
 | `acquisition_optimizer.py` | `AcquisitionOptimizer`, an acquisition as an evolutionary fitness |
 | `initial_sampling.py` | `KernelDiverseInitializer` and the weight strategies it draws with |
-| `kernels/` | the four structured kernels and their shared base class |
+| `kernels/` | the four structured kernels and their shared base class, and the Weisfeiler-Lehman label counts as explicit features |
 | `diagnostics/` | the five reads over a run, and the run log beneath them |
 | `state.py` | `BOState`, `Suggestion`, `Diagnostics` |
 | `utils.py` | the conversions from a term to a labeled graph the graph kernels read |
